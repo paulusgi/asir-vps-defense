@@ -173,7 +173,9 @@ create_users() {
 
     # 1. Real Admin User
     echo -e "${YELLOW}>>> Configuración del ADMIN REAL (Tú)${NC}"
-    read -p "Introduce el nombre para tu usuario administrador (ej: sys_ops): " REAL_USER
+    # Force read from TTY to support curl | bash piping
+    echo -n "Introduce el nombre para tu usuario administrador (ej: sys_ops): "
+    read -r REAL_USER < /dev/tty
     
     if id "$REAL_USER" &>/dev/null; then
         log_warn "El usuario $REAL_USER ya existe."
@@ -184,18 +186,52 @@ create_users() {
     fi
 
     # Setup SSH Key for Real Admin
-    echo -e "Pega tu CLAVE PÚBLICA SSH (comienza por ssh-rsa o ssh-ed25519):"
-    read -r SSH_KEY
+    local ASK_FOR_KEY=true
+    
+    # Check if user already has keys (e.g. from Cloud-Init)
+    if [ -s "/home/$REAL_USER/.ssh/authorized_keys" ]; then
+        echo -e "${YELLOW}¡Atención! Se han detectado claves SSH existentes para el usuario $REAL_USER.${NC}"
+        echo -n "¿Quieres usar las claves existentes y saltar el paso de añadir una nueva? (S/n): "
+        read -r USE_EXISTING < /dev/tty
+        # Default to Yes
+        if [[ "$USE_EXISTING" =~ ^[Ss]$ ]] || [[ -z "$USE_EXISTING" ]]; then
+            ASK_FOR_KEY=false
+            log_info "Manteniendo claves existentes..."
+        fi
+    fi
+
+    if [ "$ASK_FOR_KEY" = true ]; then
+        echo -e "Pega tu CLAVE PÚBLICA SSH (comienza por ssh-rsa o ssh-ed25519):"
+        read -r SSH_KEY < /dev/tty
+        
+        if [ -n "$SSH_KEY" ]; then
+            mkdir -p "/home/$REAL_USER/.ssh"
+            
+            # Append key instead of overwrite
+            if grep -qF "$SSH_KEY" "/home/$REAL_USER/.ssh/authorized_keys" 2>/dev/null; then
+                log_info "La clave SSH ya estaba autorizada."
+            else
+                echo "$SSH_KEY" >> "/home/$REAL_USER/.ssh/authorized_keys"
+                log_success "Clave SSH añadida correctamente."
+            fi
+        else
+            log_warn "No has introducido ninguna clave. Asegúrate de poder acceder."
+        fi
+    fi
+
+    # Ensure permissions are correct (Critical step)
     mkdir -p "/home/$REAL_USER/.ssh"
-    echo "$SSH_KEY" > "/home/$REAL_USER/.ssh/authorized_keys"
     chmod 700 "/home/$REAL_USER/.ssh"
-    chmod 600 "/home/$REAL_USER/.ssh/authorized_keys"
+    if [ -f "/home/$REAL_USER/.ssh/authorized_keys" ]; then
+        chmod 600 "/home/$REAL_USER/.ssh/authorized_keys"
+    fi
     chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER/.ssh"
-    log_success "Clave SSH configurada para $REAL_USER."
+    log_success "Configuración SSH y permisos verificados para $REAL_USER."
 
     # 2. Honeypot User
     echo -e "${YELLOW}>>> Configuración del USUARIO CEBO (Honeypot)${NC}"
-    read -p "Introduce el nombre para el usuario cebo (ej: admin, support): " HONEYPOT_USER
+    echo -n "Introduce el nombre para el usuario cebo (ej: admin, support): "
+    read -r HONEYPOT_USER < /dev/tty
     
     if id "$HONEYPOT_USER" &>/dev/null; then
         log_warn "El usuario $HONEYPOT_USER ya existe."
@@ -215,7 +251,8 @@ create_users() {
 generate_env() {
     log_info "Generando secretos y configuración (.env)..."
     
-    read -p "Introduce el DOMINIO del VPS (o la IP Pública si no tienes dominio): " DOMAIN_NAME
+    echo -n "Introduce el DOMINIO del VPS (o la IP Pública si no tienes dominio): "
+    read -r DOMAIN_NAME < /dev/tty
     
     # Generate random passwords
     MYSQL_ROOT_PASS=$(openssl rand -base64 24)
