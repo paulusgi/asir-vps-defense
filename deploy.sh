@@ -425,7 +425,10 @@ INSERT INTO users (username, password_hash, role) VALUES
 EOF
     
     # Save credentials to a secure file for the user
-    cat > admin_credentials.txt <<EOF
+    # We save it to the secure admin's home directory to ensure ownership and persistence
+    local CRED_FILE="/home/$SECURE_ADMIN/admin_credentials.txt"
+    
+    cat > "$CRED_FILE" <<EOF
 ==================================================
 ASIR VPS DEFENSE - CREDENCIALES DE ACCESO
 ==================================================
@@ -445,12 +448,15 @@ Contraseña: $GRAFANA_PASS
 Root Password: $MYSQL_ROOT_PASS
 App User Password: $MYSQL_APP_PASS
 
-NOTA: Guarda este archivo en un lugar seguro y bórralo del servidor si es necesario.
+NOTA: Este archivo es propiedad de $SECURE_ADMIN y tiene permisos restrictivos (600).
 EOF
-    chmod 600 admin_credentials.txt
+    
+    # Secure the file
+    chown "$SECURE_ADMIN:$SECURE_ADMIN" "$CRED_FILE"
+    chmod 600 "$CRED_FILE"
 
     log_success "Semilla de base de datos generada (mysql/init/02-seed.sql)."
-    log_success "Credenciales guardadas en 'admin_credentials.txt'."
+    log_success "Credenciales guardadas de forma segura en '$CRED_FILE'."
     export WEB_ADMIN_PASS
 }
 
@@ -515,17 +521,23 @@ main() {
     echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
     docker compose ps
     
-    echo -e "\n${YELLOW}>>> CREDENCIALES GENERADAS (¡COPIA ESTO AHORA!) <<<${NC}"
-    echo -e "${RED}ATENCIÓN: Estas credenciales se muestran aquí por única vez.${NC}"
-    echo -e "--------------------------------------------------"
-    if [ -f "admin_credentials.txt" ]; then
-        cat "admin_credentials.txt"
+    echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
+    echo -e "Por seguridad, las contraseñas NO se muestran en pantalla."
+    echo -e "Se han guardado en un archivo protegido en el home de tu usuario:"
+    echo -e "${BLUE}/home/$SECURE_ADMIN/admin_credentials.txt${NC}"
+    echo -e ""
+    echo -e "Para verlas, conéctate por SSH con tu nuevo usuario y ejecuta:"
+    echo -e "   ${YELLOW}cat ~/admin_credentials.txt${NC}"
+    
+    echo -e "\n--------------------------------------------------"
+    echo -n "¿Deseas ver SOLO la contraseña temporal del Panel Web para acceder ahora? (S/n): "
+    read -r SHOW_WEB_PASS < /dev/tty
+    if [[ "$SHOW_WEB_PASS" =~ ^[Ss]$ ]] || [[ -z "$SHOW_WEB_PASS" ]]; then
+        echo -e "Contraseña Panel Web: ${GREEN}$WEB_ADMIN_PASS${NC}"
     else
-        echo "Error: No se pudo leer el archivo de credenciales."
+        echo -e "Entendido. Recuerda consultar el archivo de credenciales."
     fi
     echo -e "--------------------------------------------------"
-    echo -e "${RED}NOTA: El archivo 'admin_credentials.txt' ha sido creado en el directorio actual.${NC}"
-    echo -e "${RED}      Recomendamos guardarlo en tu gestor de contraseñas y borrarlo del servidor: rm admin_credentials.txt${NC}"
 
     echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
     echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
