@@ -519,6 +519,22 @@ main() {
     echo -e "${GREEN}==================================================${NC}"
     
     echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
+    
+    log_info "Esperando a que la base de datos y los servicios estén listos (puede tardar 30-60s)..."
+    # Simple wait loop for ports
+    local retries=0
+    while [ $retries -lt 20 ]; do
+        if docker compose ps | grep -q "healthy" && docker compose ps | grep -q "Up"; then
+             # Check if ports are actually listening inside the container logic? 
+             # Docker ps showing healthy is good enough for now.
+             break
+        fi
+        echo -n "."
+        sleep 3
+        ((retries++))
+    done
+    echo ""
+    
     docker compose ps
     
     echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
