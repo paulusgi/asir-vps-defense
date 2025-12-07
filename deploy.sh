@@ -507,22 +507,36 @@ main() {
     finalize_deferred_conversion
     history -c
     
+    clear
     echo -e "${GREEN}==================================================${NC}"
     echo -e "${GREEN}   DESPLIEGUE COMPLETADO CON ÉXITO                ${NC}"
     echo -e "${GREEN}==================================================${NC}"
-    echo -e "IMPORTANTE: Se ha generado un archivo 'admin_credentials.txt' con todas las contraseñas."
+    
+    echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
+    docker compose ps
+    
+    echo -e "\n${YELLOW}>>> CREDENCIALES GENERADAS (¡COPIA ESTO AHORA!) <<<${NC}"
+    echo -e "${RED}ATENCIÓN: Estas credenciales se muestran aquí por única vez.${NC}"
+    echo -e "--------------------------------------------------"
+    if [ -f "admin_credentials.txt" ]; then
+        cat "admin_credentials.txt"
+    else
+        echo "Error: No se pudo leer el archivo de credenciales."
+    fi
+    echo -e "--------------------------------------------------"
+    echo -e "${RED}NOTA: El archivo 'admin_credentials.txt' ha sido creado en el directorio actual.${NC}"
+    echo -e "${RED}      Recomendamos guardarlo en tu gestor de contraseñas y borrarlo del servidor: rm admin_credentials.txt${NC}"
+
+    echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
+    echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
+    echo -e "2. Ejecuta el siguiente comando para crear el túnel seguro:"
+    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
     echo -e ""
-    echo -e "INSTRUCCIONES DE ACCESO:"
-    echo -e "1. Establece el Túnel SSH desde tu máquina local:"
-    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 <USUARIO>@<IP_O_DOMINIO>${NC}"
-    echo -e "   (Ejemplo: ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME)"
+    echo -e "3. Abre tu navegador web y accede a:"
+    echo -e "   - Panel de Administración: ${GREEN}http://localhost:8888${NC}"
+    echo -e "   - Monitorización Grafana:  ${GREEN}http://localhost:3000${NC}"
     echo -e ""
-    echo -e "2. Abre el Panel Unificado en tu navegador:"
-    echo -e "   URL: http://localhost:8888"
-    echo -e "   Credenciales: admin / (Ver archivo admin_credentials.txt)"
-    echo -e ""
-    echo -e "NOTA: El WAF público escucha en los puertos 8000 (HTTP) y 8443 (HTTPS)"
-    echo -e "      para no interferir con otros servicios web en el puerto 80/443."
+    echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
     echo -e "${GREEN}==================================================${NC}"
 }
 
