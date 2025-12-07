@@ -108,8 +108,28 @@ wait_for_apt_locks() {
 install_dependencies() {
     wait_for_apt_locks
     log_info "Actualizando repositorios e instalando dependencias base..."
-    apt-get update -qq
-    apt-get install -y -qq psmisc curl git ufw fail2ban software-properties-common
+    
+    # Update with retry logic
+    if ! apt-get update; then
+        log_warn "Fallo al actualizar repositorios. Reintentando en 5s..."
+        sleep 5
+        apt-get update || log_error "No se pudieron actualizar los repositorios. Continuando bajo riesgo..."
+    fi
+
+    # Install with retry and verification
+    log_info "Instalando paquetes (curl, git, ufw, fail2ban)..."
+    if ! apt-get install -y psmisc curl git ufw fail2ban software-properties-common; then
+        log_warn "Fallo en la instalación de paquetes. Reintentando tras espera..."
+        wait_for_apt_locks
+        apt-get install -y psmisc curl git ufw fail2ban software-properties-common
+    fi
+
+    # Critical check: Fail2Ban must be present
+    if ! command -v fail2ban-client &> /dev/null; then
+        log_error "CRÍTICO: Fail2Ban no se instaló correctamente. Abortando para seguridad."
+        log_info "Intenta ejecutar manualmente: apt-get install -y fail2ban"
+        exit 1
+    fi
 
     # Install Docker if not present
     if ! command -v docker &> /dev/null; then
