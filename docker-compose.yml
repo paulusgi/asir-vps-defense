@@ -61,7 +61,8 @@ services:
       - frontend_net
       - backend_net
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
 
   # ============================================================================
   # DATABASE (Isolated)
@@ -75,6 +76,11 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - mysql_data:/var/lib/mysql
       - ./mysql/init:/docker-entrypoint-initdb.d:ro
@@ -131,7 +137,8 @@ services:
 
 networks:
   frontend_net:
-    internal: true
+    # External access required for WAF
+    driver: bridge
   backend_net:
     internal: true
 
