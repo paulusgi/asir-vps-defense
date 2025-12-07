@@ -528,19 +528,61 @@ main() {
     echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
     
     log_info "Esperando a que la base de datos y los servicios estén listos (puede tardar 30-60s)..."
-    # Simple wait loop for ports
+    
+    # 1. Wait for MySQL Healthcheck
     local retries=0
-    while [ $retries -lt 20 ]; do
-        if docker compose ps | grep -q "healthy" && docker compose ps | grep -q "Up"; then
-             # Check if ports are actually listening inside the container logic? 
-             # Docker ps showing healthy is good enough for now.
+    while [ $retries -lt 30 ]; do
+        if docker compose ps | grep -q "healthy"; then
              break
+        fi
+        echo -n "."
+        sleep 2
+        ((retries++))
+    done
+    echo ""
+
+    # 2. Verify Admin Panel Port (8888) is actually listening and responding
+    log_info "Verificando disponibilidad real del Panel de Administración..."
+    local port_ready=false
+    retries=0
+    while [ $retries -lt 20 ]; do
+        # Try to fetch headers from localhost:8888
+        if curl -s -I http://127.0.0.1:8888 >/dev/null; then
+            port_ready=true
+            log_success "¡Panel de Administración ONLINE en puerto 8888!"
+            break
         fi
         echo -n "."
         sleep 3
         ((retries++))
     done
     echo ""
+
+    if [ "$port_ready" = false ]; then
+        log_error "El servicio en el puerto 8888 no responde aún."
+        log_warn "Es posible que los contenedores sigan iniciándose o haya un error."
+        log_warn "Revisa los logs con: docker compose logs -f"
+    fi
+
+    # 3. Verify Grafana Port (3000)
+    log_info "Verificando disponibilidad real de Grafana..."
+    local grafana_ready=false
+    retries=0
+    while [ $retries -lt 20 ]; do
+        if curl -s -I http://127.0.0.1:3000 >/dev/null; then
+            grafana_ready=true
+            log_success "¡Grafana ONLINE en puerto 3000!"
+            break
+        fi
+        echo -n "."
+        sleep 3
+        ((retries++))
+    done
+    echo ""
+    
+    if [ "$grafana_ready" = false ]; then
+        log_error "El servicio Grafana (3000) no responde aún."
+    fi
     
     docker compose ps
     
@@ -565,11 +607,12 @@ main() {
     echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
     echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
     echo -e "2. Ejecuta el siguiente comando para crear el túnel seguro:"
-    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
+    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3001:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
+    echo -e "   (Usamos el puerto local 3001 para Grafana para evitar conflictos con tu PC)"
     echo -e ""
     echo -e "3. Abre tu navegador web y accede a:"
     echo -e "   - Panel de Administración: ${GREEN}http://localhost:8888${NC}"
-    echo -e "   - Monitorización Grafana:  ${GREEN}http://localhost:3000${NC}"
+    echo -e "   - Monitorización Grafana:  ${GREEN}http://localhost:3001${NC}"
     echo -e ""
     echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
     echo -e "${GREEN}==================================================${NC}"
