@@ -33,7 +33,15 @@ El sistema utiliza **Docker Compose** para orquestar servicios aislados en redes
 
 ## 📦 Instalación Rápida
 
-Conéctate a tu VPS por SSH y ejecuta el siguiente comando:
+### Requisitos Previos (Best Practices)
+Para garantizar un despliegue limpio y seguro, se recomienda:
+1.  **VPS Limpio:** Una instalación fresca de Debian 11/12 o Ubuntu 20.04/22.04.
+2.  **Acceso Inicial:** Conéctate como `root` (o un usuario con `sudo` completo).
+    *   *Nota:* No es necesario pre-configurar usuarios complejos en el panel de tu proveedor (Contabo, Hetzner, AWS). El script se encargará de crear la estructura de usuarios segura.
+3.  **Clave SSH:** Ten a mano tu clave pública (archivo `.pub`) para configurar el acceso del administrador final.
+
+### Comando de Despliegue
+Conéctate a tu VPS y ejecuta:
 
 ```bash
 curl -sL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/main/deploy.sh | sudo bash
