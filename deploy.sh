@@ -89,10 +89,27 @@ detect_os() {
     fi
 }
 
+wait_for_apt_locks() {
+    log_info "Verificando si el gestor de paquetes está ocupado..."
+    
+    # Loop until no apt/dpkg processes are running
+    while pgrep -a apt > /dev/null || pgrep -a apt-get > /dev/null || pgrep -a dpkg > /dev/null; do
+        log_warn "El sistema está instalando actualizaciones automáticas en segundo plano. Esperando..."
+        sleep 10
+    done
+    
+    # Double check lock files
+    while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+        log_warn "Bloqueo de base de datos dpkg detectado. Esperando..."
+        sleep 5
+    done
+}
+
 install_dependencies() {
+    wait_for_apt_locks
     log_info "Actualizando repositorios e instalando dependencias base..."
     apt-get update -qq
-    apt-get install -y -qq curl git ufw fail2ban software-properties-common
+    apt-get install -y -qq psmisc curl git ufw fail2ban software-properties-common
 
     # Install Docker if not present
     if ! command -v docker &> /dev/null; then
