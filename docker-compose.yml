@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # PUBLIC WAF (Web Application Firewall)
+  # Moved to 8000/8443 to avoid conflict with host web servers (Port 80/443)
+  # ============================================================================
+  waf:
+    image: owasp/modsecurity-crs:nginx
+    container_name: asir_waf
+    restart: always
+    ports:
+      - "8000:80"
+      - "8443:443"
+    environment:
+      - PARANOIA=1
+      - ANOMALY_INBOUND=5
+      - ANOMALY_OUTBOUND=4
+    volumes:
+      - ./nginx/conf.d/public.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/modsec:/etc/modsecurity.d/owasp-crs/custom:ro
+      - waf_logs:/var/log/nginx
+    networks:
+      - frontend_net
+    depends_on:
+      - php-app
+
+  # ============================================================================
+  # PRIVATE ADMIN PANEL (Accessible only via SSH Tunnel)
+  # ============================================================================
+  admin-nginx:
+    image: nginx:alpine
+    container_name: asir_admin_nginx
+    restart: always
+    ports:
+      - "127.0.0.1:8888:80" # Only binds to localhost:8888
+    volumes:
+      - ./nginx/conf.d/admin.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./src:/var/www/html:ro
+    networks:
+      - frontend_net
+    depends_on:
+      - php-app
+
+  # ============================================================================
+  # APPLICATION BACKEND (PHP-FPM)
+  # ============================================================================
+  php-app:
+    build: ./php
+    container_name: asir_php
+    restart: always
+    user: "1000:1000" # Run as non-root user
+    volumes:
+      - ./src:/var/www/html
+      - ./php/conf.d/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+    environment:
+      - MYSQL_HOST=mysql
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - LOKI_URL=http://loki:3100
+    networks:
+      - frontend_net
+      - backend_net
+    depends_on:
+      - mysql
+
+  # ============================================================================
+  # DATABASE (Isolated)
+  # ============================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: asir_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - backend_net
+    # No ports exposed to host!
+
+  # ============================================================================
+  # OBSERVABILITY STACK (Loki + Promtail + Grafana)
+  # ============================================================================
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: asir_loki
+    restart: always
+    volumes:
+      - ./loki/config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - backend_net
+
+  promtail:
+    image: grafana/promtail:2.9.2
+    container_name: asir_promtail
+    restart: always
+    volumes:
+      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      - waf_logs:/var/log/nginx:ro
+      - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - backend_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: asir_grafana
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000" # Only binds to localhost
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Allow embedding in iframe
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      # Enable Anonymous View (So it works inside PHP without double login)
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      # Inject MySQL password for the datasource provisioning
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - backend_net
+
+networks:
+  frontend_net:
+    internal: true
+  backend_net:
+    internal: true
+
+volumes:
+  mysql_data:
+  loki_data:
+  grafana_data:
+  waf_logs:

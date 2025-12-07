@@ -1,0 +1,43 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: nginx_waf
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx_waf
+          __path__: /var/log/nginx/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            client_ip: remote_addr
+            request: request
+            status: status
+            http_user_agent: http_user_agent
+      - labels:
+          status:
+
+  - job_name: fail2ban
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: fail2ban
+          __path__: /var/log/host/fail2ban.log
+
+  - job_name: system_auth
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: auth
+          __path__: /var/log/host/auth.log
