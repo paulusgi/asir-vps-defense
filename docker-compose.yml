@@ -129,6 +129,11 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       # Inject MySQL password for the datasource provisioning
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
