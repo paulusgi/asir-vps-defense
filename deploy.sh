@@ -28,6 +28,13 @@ NC='\033[0m' # No Color
 INSTALL_DIR="/opt/asir-vps-defense"
 ENV_FILE=".env"
 
+# Global flag to track if we need to convert the current user later
+CONVERT_CURRENT_USER_TO_HONEYPOT=false
+HONEYPOT_TARGET_USER=""
+HONEYPOT_TARGET_PASS=""
+SECURE_ADMIN=""
+CURRENT_REAL_USER=""
+
 # ==============================================================================
 # Helper Functions
 # ==============================================================================
@@ -46,6 +53,16 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+detect_context() {
+    # Identify the real human user running the script (even behind sudo)
+    if [ -n "$SUDO_USER" ]; then
+        CURRENT_REAL_USER="$SUDO_USER"
+    else
+        CURRENT_REAL_USER=$(whoami)
+    fi
+    log_info "Contexto de ejecución: Usuario real detectado -> $CURRENT_REAL_USER"
 }
 
 check_root() {
@@ -168,29 +185,32 @@ EOF
     log_success "Fail2Ban configurado con política estricta (Bantime: 1h, MaxRetry: 3)."
 }
 
-create_users() {
-    log_info "Iniciando Wizard de Usuarios..."
+create_secure_admin() {
+    log_info "Iniciando creación del Administrador Seguro..."
 
-    # 1. Real Admin User
     echo -e "${YELLOW}>>> Configuración del ADMIN REAL (Tú)${NC}"
-    # Force read from TTY to support curl | bash piping
     echo -n "Introduce el nombre para tu usuario administrador (ej: sys_ops): "
-    read -r REAL_USER < /dev/tty
-    
-    if id "$REAL_USER" &>/dev/null; then
-        log_warn "El usuario $REAL_USER ya existe."
+    read -r SECURE_ADMIN < /dev/tty
+
+    if [ -z "$SECURE_ADMIN" ]; then
+        log_error "El nombre de usuario no puede estar vacío."
+        exit 1
+    fi
+
+    if id "$SECURE_ADMIN" &>/dev/null; then
+        log_warn "El usuario $SECURE_ADMIN ya existe. Se asumirá que es correcto."
     else
-        useradd -m -s /bin/bash "$REAL_USER"
-        usermod -aG sudo,docker "$REAL_USER"
-        log_success "Usuario $REAL_USER creado."
+        useradd -m -s /bin/bash "$SECURE_ADMIN"
+        usermod -aG sudo,docker "$SECURE_ADMIN"
+        log_success "Usuario $SECURE_ADMIN creado."
     fi
 
     # Setup SSH Key for Real Admin
     local ASK_FOR_KEY=true
     
     # Check if user already has keys (e.g. from Cloud-Init)
-    if [ -s "/home/$REAL_USER/.ssh/authorized_keys" ]; then
-        echo -e "${YELLOW}¡Atención! Se han detectado claves SSH existentes para el usuario $REAL_USER.${NC}"
+    if [ -s "/home/$SECURE_ADMIN/.ssh/authorized_keys" ]; then
+        echo -e "${YELLOW}¡Atención! Se han detectado claves SSH existentes para el usuario $SECURE_ADMIN.${NC}"
         echo -n "¿Quieres usar las claves existentes y saltar el paso de añadir una nueva? (S/n): "
         read -r USE_EXISTING < /dev/tty
         # Default to Yes
@@ -205,13 +225,13 @@ create_users() {
         read -r SSH_KEY < /dev/tty
         
         if [ -n "$SSH_KEY" ]; then
-            mkdir -p "/home/$REAL_USER/.ssh"
+            mkdir -p "/home/$SECURE_ADMIN/.ssh"
             
             # Append key instead of overwrite
-            if grep -qF "$SSH_KEY" "/home/$REAL_USER/.ssh/authorized_keys" 2>/dev/null; then
+            if grep -qF "$SSH_KEY" "/home/$SECURE_ADMIN/.ssh/authorized_keys" 2>/dev/null; then
                 log_info "La clave SSH ya estaba autorizada."
             else
-                echo "$SSH_KEY" >> "/home/$REAL_USER/.ssh/authorized_keys"
+                echo "$SSH_KEY" >> "/home/$SECURE_ADMIN/.ssh/authorized_keys"
                 log_success "Clave SSH añadida correctamente."
             fi
         else
@@ -220,32 +240,100 @@ create_users() {
     fi
 
     # Ensure permissions are correct (Critical step)
-    mkdir -p "/home/$REAL_USER/.ssh"
-    chmod 700 "/home/$REAL_USER/.ssh"
-    if [ -f "/home/$REAL_USER/.ssh/authorized_keys" ]; then
-        chmod 600 "/home/$REAL_USER/.ssh/authorized_keys"
+    mkdir -p "/home/$SECURE_ADMIN/.ssh"
+    chmod 700 "/home/$SECURE_ADMIN/.ssh"
+    if [ -f "/home/$SECURE_ADMIN/.ssh/authorized_keys" ]; then
+        chmod 600 "/home/$SECURE_ADMIN/.ssh/authorized_keys"
     fi
-    chown -R "$REAL_USER:$REAL_USER" "/home/$REAL_USER/.ssh"
-    log_success "Configuración SSH y permisos verificados para $REAL_USER."
+    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "/home/$SECURE_ADMIN/.ssh"
+    
+    # Allow the new admin to log in via SSH immediately (even before full hardening)
+    # This is a safety measure in case the script fails later
+    log_success "Configuración SSH y permisos verificados para $SECURE_ADMIN."
+}
 
-    # 2. Honeypot User
+handle_honeypot_logic() {
+    log_info "Configurando lógica del Honeypot..."
+
     echo -e "${YELLOW}>>> Configuración del USUARIO CEBO (Honeypot)${NC}"
     echo -n "Introduce el nombre para el usuario cebo (ej: admin, support): "
-    read -r HONEYPOT_USER < /dev/tty
-    
-    if id "$HONEYPOT_USER" &>/dev/null; then
-        log_warn "El usuario $HONEYPOT_USER ya existe."
-    else
-        useradd -m -s /bin/bash "$HONEYPOT_USER"
-        # Set a complex password for the honeypot user so bots can't actually login easily
-        # but Fail2ban will catch the attempts
-        echo "$HONEYPOT_USER:AsirVpsDefense2025!Secure" | chpasswd
-        log_success "Usuario cebo $HONEYPOT_USER creado."
+    read -r HONEYPOT_TARGET_USER < /dev/tty
+
+    if [ -z "$HONEYPOT_TARGET_USER" ]; then
+        HONEYPOT_TARGET_USER="admin"
+        log_info "Usando nombre por defecto: admin"
     fi
 
-    # Return users for next steps
-    export REAL_USER
-    export HONEYPOT_USER
+    # Check for conflict: Is the current real user the same as the desired honeypot user?
+    if [ "$CURRENT_REAL_USER" == "$HONEYPOT_TARGET_USER" ]; then
+        echo -e "${RED}¡CONFLICTO DETECTADO!${NC}"
+        echo -e "Estás logueado como '$CURRENT_REAL_USER', pero quieres usar ese nombre como Honeypot."
+        echo -e "Para hacer esto de forma segura, debemos:"
+        echo -e "1. Crear tu nuevo usuario seguro ($SECURE_ADMIN) - YA REALIZADO"
+        echo -e "2. Convertir tu usuario actual ($CURRENT_REAL_USER) en el Honeypot AL FINAL del script."
+        echo -e "   (Esto evitará que tu sesión se corte ahora mismo)"
+        
+        echo -n "¿Deseas proceder con esta conversión diferida? (S/n): "
+        read -r CONFIRM_CONVERSION < /dev/tty
+        
+        if [[ "$CONFIRM_CONVERSION" =~ ^[Ss]$ ]] || [[ -z "$CONFIRM_CONVERSION" ]]; then
+            CONVERT_CURRENT_USER_TO_HONEYPOT=true
+            log_warn "Conversión diferida ACTIVADA. '$CURRENT_REAL_USER' se convertirá en Honeypot al finalizar."
+        else
+            log_error "Operación cancelada por el usuario. Elige otro nombre para el Honeypot."
+            exit 1
+        fi
+    else
+        # No conflict, create honeypot normally if it doesn't exist
+        if id "$HONEYPOT_TARGET_USER" &>/dev/null; then
+            log_warn "El usuario $HONEYPOT_TARGET_USER ya existe. Se configurará como Honeypot."
+        else
+            useradd -m -s /bin/bash "$HONEYPOT_TARGET_USER"
+            log_success "Usuario cebo $HONEYPOT_TARGET_USER creado."
+        fi
+    fi
+
+    # Set Honeypot Password
+    echo -n "Introduce una contraseña para el Honeypot (o ENTER para generar una aleatoria): "
+    read -r HONEYPOT_TARGET_PASS < /dev/tty
+    
+    if [ -z "$HONEYPOT_TARGET_PASS" ]; then
+        HONEYPOT_TARGET_PASS=$(openssl rand -base64 12)
+        log_info "Contraseña generada para Honeypot: $HONEYPOT_TARGET_PASS"
+    fi
+
+    # If NOT converting current user, set password now. 
+    # If converting, we wait until the end.
+    if [ "$CONVERT_CURRENT_USER_TO_HONEYPOT" = false ]; then
+        echo "$HONEYPOT_TARGET_USER:$HONEYPOT_TARGET_PASS" | chpasswd
+        log_success "Contraseña establecida para $HONEYPOT_TARGET_USER."
+    fi
+}
+
+finalize_deferred_conversion() {
+    if [ "$CONVERT_CURRENT_USER_TO_HONEYPOT" = true ]; then
+        log_warn ">>> EJECUTANDO CONVERSIÓN DIFERIDA DE USUARIO <<<"
+        log_info "Convirtiendo '$CURRENT_REAL_USER' en Honeypot..."
+
+        # 1. Remove sudo privileges from the old user
+        deluser "$CURRENT_REAL_USER" sudo 2>/dev/null || true
+        deluser "$CURRENT_REAL_USER" docker 2>/dev/null || true
+        
+        # 2. Set the honeypot password
+        echo "$CURRENT_REAL_USER:$HONEYPOT_TARGET_PASS" | chpasswd
+        
+        # 3. Ensure SSH config allows password for this user (already done in configure_ssh)
+        # But we might want to clear authorized_keys to force password usage?
+        # Ideally yes, to simulate a real vulnerable user.
+        if [ -f "/home/$CURRENT_REAL_USER/.ssh/authorized_keys" ]; then
+            mv "/home/$CURRENT_REAL_USER/.ssh/authorized_keys" "/home/$CURRENT_REAL_USER/.ssh/authorized_keys.bak_conversion"
+            log_info "Claves SSH de '$CURRENT_REAL_USER' desactivadas (backup creado)."
+        fi
+
+        log_success "Conversión completada. '$CURRENT_REAL_USER' es ahora un usuario restringido (Honeypot)."
+        echo -e "${RED}ATENCIÓN: Tu sesión actual sigue activa, pero si te desconectas, no podrás volver a entrar como '$CURRENT_REAL_USER' sin contraseña.${NC}"
+        echo -e "Debes usar el nuevo usuario seguro: ${GREEN}$SECURE_ADMIN${NC}"
+    fi
 }
 
 generate_env() {
@@ -340,6 +428,7 @@ main() {
     echo -e "${GREEN}==================================================${NC}"
     
     check_root
+    detect_context
     detect_os
     
     # Step 1: System Prep
@@ -358,8 +447,10 @@ main() {
     setup_firewall
     
     # Step 2: User & Security Config
-    create_users
-    configure_ssh "$REAL_USER" "$HONEYPOT_USER"
+    create_secure_admin
+    handle_honeypot_logic
+    
+    configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
     configure_fail2ban
     
     # Step 3: Application Deployment
@@ -375,7 +466,8 @@ main() {
     log_info "Desplegando contenedores Docker..."
     docker compose up -d --build
     
-    # Step 4: Final Cleanup
+    # Step 4: Final Cleanup & Deferred Actions
+    finalize_deferred_conversion
     history -c
     
     echo -e "${GREEN}==================================================${NC}"
@@ -386,7 +478,7 @@ main() {
     echo -e "INSTRUCCIONES DE ACCESO:"
     echo -e "1. Establece el Túnel SSH desde tu máquina local:"
     echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 <USUARIO>@<IP_O_DOMINIO>${NC}"
-    echo -e "   (Ejemplo: ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 $REAL_USER@$DOMAIN_NAME)"
+    echo -e "   (Ejemplo: ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME)"
     echo -e ""
     echo -e "2. Abre el Panel Unificado en tu navegador:"
     echo -e "   URL: http://localhost:8888"
