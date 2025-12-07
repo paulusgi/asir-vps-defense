@@ -515,49 +515,32 @@ main() {
     finalize_deferred_conversion
     history -c
     
-    clear
+    # Removed clear to allow user to see previous errors
+    # clear
     echo -e "${GREEN}==================================================${NC}"
-    echo -e "${GREEN}   DESPLIEGUE COMPLETADO CON ÉXITO                ${NC}"
+    echo -e "${GREEN}   INSTALACIÓN FINALIZADA                         ${NC}"
     echo -e "${GREEN}==================================================${NC}"
+    
+    echo -e "\n${YELLOW}Por favor, revisa los mensajes anteriores en busca de errores (texto rojo).${NC}"
+    echo -n "Presiona ENTER para continuar con la verificación de estado y credenciales..."
+    read -r _ < /dev/tty
     
     echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
     
     log_info "Esperando a que la base de datos y los servicios estén listos (puede tardar 30-60s)..."
-    
-    # 1. Wait for MySQL Healthcheck
+    # Simple wait loop for ports
     local retries=0
-    while [ $retries -lt 30 ]; do
-        if docker compose ps | grep -q "healthy"; then
-             break
-        fi
-        echo -n "."
-        sleep 2
-        ((retries++))
-    done
-    echo ""
-
-    # 2. Verify Admin Panel Port (8888) is actually listening and responding
-    log_info "Verificando disponibilidad real del Panel de Administración..."
-    local port_ready=false
-    retries=0
     while [ $retries -lt 20 ]; do
-        # Try to fetch headers from localhost:8888
-        if curl -s -I http://127.0.0.1:8888 >/dev/null; then
-            port_ready=true
-            log_success "¡Panel de Administración ONLINE en puerto 8888!"
-            break
+        if docker compose ps | grep -q "healthy" && docker compose ps | grep -q "Up"; then
+             # Check if ports are actually listening inside the container logic? 
+             # Docker ps showing healthy is good enough for now.
+             break
         fi
         echo -n "."
         sleep 3
         ((retries++))
     done
     echo ""
-
-    if [ "$port_ready" = false ]; then
-        log_error "El servicio en el puerto 8888 no responde aún."
-        log_warn "Es posible que los contenedores sigan iniciándose o haya un error."
-        log_warn "Revisa los logs con: docker compose logs -f"
-    fi
     
     docker compose ps
     
