@@ -118,10 +118,10 @@ install_dependencies() {
 
     # Install with retry and verification
     log_info "Instalando paquetes (curl, git, ufw, fail2ban)..."
-    if ! apt-get install -y psmisc curl git ufw fail2ban software-properties-common; then
+    if ! apt-get install -y psmisc curl git ufw fail2ban; then
         log_warn "Fallo en la instalación de paquetes. Reintentando tras espera..."
         wait_for_apt_locks
-        apt-get install -y psmisc curl git ufw fail2ban software-properties-common
+        apt-get install -y psmisc curl git ufw fail2ban
     fi
 
     # Critical check: Fail2Ban must be present
