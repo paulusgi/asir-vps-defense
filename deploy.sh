@@ -487,6 +487,14 @@ main() {
         git clone https://github.com/paulusgi/asir-vps-defense.git "$INSTALL_DIR"
         cd "$INSTALL_DIR" || exit 1
         log_success "Repositorio clonado en $INSTALL_DIR"
+    else
+        # If files exist, ensure we are in the right place
+        log_info "Archivos de configuración detectados localmente."
+        # Ensure we have the latest version if it's a git repo
+        if [ -d ".git" ]; then
+            log_info "Actualizando repositorio..."
+            git pull || log_warn "No se pudo actualizar el repositorio. Usando versión local."
+        fi
     fi
 
     setup_firewall
