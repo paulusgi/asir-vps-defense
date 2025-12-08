@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # ==============================================================================
 # ASIR VPS Defense - Automated Deployment Script
@@ -150,10 +151,8 @@ setup_firewall() {
     ufw default deny incoming
     ufw default allow outgoing
     
-    # Allow critical ports
-    ufw allow 22/tcp comment 'SSH'
-    ufw allow 80/tcp comment 'HTTP'
-    ufw allow 443/tcp comment 'HTTPS'
+    # Allow only SSH; rate-limit to mitigate brute force
+    ufw limit 22/tcp comment 'SSH (rate limited)'
     
     # Enable UFW without prompt
     echo "y" | ufw enable
@@ -184,6 +183,17 @@ AllowTcpForwarding yes
 PrintMotd no
 AcceptEnv LANG LC_*
 Subsystem sftp /usr/lib/openssh/sftp-server
+
+# Hardening extra
+AllowUsers $REAL_USER $HONEYPOT_USER
+MaxAuthTries 3
+MaxStartups 5:30:10
+LoginGraceTime 20
+ClientAliveInterval 300
+ClientAliveCountMax 2
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+MACs hmac-sha2-512,hmac-sha2-256
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes256-ctr
 
 # Honeypot User Configuration (Allow Password)
 Match User $HONEYPOT_USER

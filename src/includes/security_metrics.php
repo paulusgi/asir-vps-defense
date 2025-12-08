@@ -9,90 +9,11 @@ function fetchSecurityMetrics(PDO $pdo): array
     $client = new LokiClient(getenv('LOKI_URL') ?: 'http://loki:3100');
 
     try {
-        $totals = [
-            'last5m' => $client->queryScalar('sum(count_over_time({job="nginx_waf",status="403"}[5m]))'),
-            'last1h' => $client->queryScalar('sum(count_over_time({job="nginx_waf",status="403"}[1h]))'),
-            'last24h' => $client->queryScalar('sum(count_over_time({job="nginx_waf",status="403"}[24h]))'),
-        ];
-
-        $trend = $client->queryRangeSeries(
-            'sum(count_over_time({job="nginx_waf",status="403"}[1m]))',
-            60,
-            '60s'
-        );
-
-        $topIps = formatTopIps($pdo, $client->queryVector(
-            'topk(5, sum by (client_ip) (count_over_time({job="nginx_waf",status="403"}[1h])))'
-        ));
-
-        $recentLogs = $client->queryRangeRaw(
-            '{job="nginx_waf",status="403"}',
-            time() - 3600,
-            time(),
-            '30s',
-            500
-        );
-
-        $recentEvents = [];
-        $attackTypeCounts = [];
-        $surfaceCounts = [];
-        $countryCounts = [];
-        $geoCache = [];
-
-        foreach ($recentLogs as $entry) {
-            $payload = json_decode($entry['line'], true);
-            if (!is_array($payload)) {
-                continue;
-            }
-
-            $ip = $payload['remote_addr'] ?? ($payload['client_ip'] ?? ($entry['labels']['client_ip'] ?? null));
-            if (!$ip) {
-                continue;
-            }
-
-            if (!isset($geoCache[$ip])) {
-                $geoCache[$ip] = lookupGeoForIp($pdo, $ip);
-            }
-            $geo = $geoCache[$ip];
-
-            $attackType = classifyAttackType((string) ($payload['request'] ?? ''));
-            $surface = determineSurface((string) ($payload['uri'] ?? '/'));
-
-            $attackTypeCounts[$attackType] = ($attackTypeCounts[$attackType] ?? 0) + 1;
-            $surfaceCounts[$surface] = ($surfaceCounts[$surface] ?? 0) + 1;
-
-            if (!isset($countryCounts[$geo['country_code']])) {
-                $countryCounts[$geo['country_code']] = [
-                    'label' => $geo['country_name'],
-                    'count' => 0,
-                ];
-            }
-            $countryCounts[$geo['country_code']]['count']++;
-
-            $recentEvents[] = [
-                'timestamp' => $entry['timestamp'],
-                'ip' => $ip,
-                'request' => $payload['request'] ?? 'N/A',
-                'country' => $geo['country_name'],
-                'country_code' => $geo['country_code'],
-                'attack_type' => $attackType,
-                'surface' => $surface,
-                'user_agent' => $payload['user_agent'] ?? ($payload['http_user_agent'] ?? 'N/A'),
-            ];
-        }
-
         $fail2ban = fetchFail2BanMetrics($client, $pdo);
         $ssh = fetchSshMetrics($client, $pdo);
 
         return [
             'generatedAt' => time(),
-            'totals' => normalizeTotals($totals),
-            'trend' => $trend,
-            'attackTypes' => normalizeCounts($attackTypeCounts),
-            'surfaces' => normalizeCounts($surfaceCounts),
-            'countries' => normalizeCountryCounts($countryCounts),
-            'topIps' => $topIps,
-            'events' => array_slice($recentEvents, 0, 25),
             'fail2ban' => $fail2ban,
             'ssh' => $ssh,
         ];
@@ -101,97 +22,6 @@ function fetchSecurityMetrics(PDO $pdo): array
             'error' => $exception->getMessage(),
         ];
     }
-}
-
-/**
- * @param array<int, array<string, mixed>> $results
- * @return array<int, array<string, mixed>>
- */
-function formatTopIps(PDO $pdo, array $results): array
-{
-    $topIps = [];
-    foreach ($results as $row) {
-        $ip = $row['metric']['client_ip'] ?? null;
-        if (!$ip) {
-            continue;
-        }
-
-        $geo = lookupGeoForIp($pdo, $ip);
-        $value = $row['value'][1] ?? 0;
-        $topIps[] = [
-            'ip' => $ip,
-            'count' => (int) round((float) $value),
-            'country' => $geo['country_name'],
-            'country_code' => $geo['country_code'],
-        ];
-    }
-
-    return $topIps;
-}
-
-function classifyAttackType(string $request): string
-{
-    $needle = strtolower($request);
-
-    $rules = [
-        'SQL Injection' => ['union select', 'sleep(', 'benchmark(', "' or '1'='1", 'or 1=1', 'information_schema'],
-        'Cross-Site Scripting' => ['<script', 'onerror=', 'svg/onload', 'alert('],
-        'Command Injection' => [';cat /etc/passwd', ';ls', '|nc', '| bash', '`whoami`'],
-        'Remote File Inclusion' => ['http://', 'https://', 'php://', 'file://'],
-        'Path Traversal' => ['../', '..\\', '%2e%2e/'],
-        'Insecure Deserialization' => ['phpggc', 'O:'],
-    ];
-
-    foreach ($rules as $label => $patterns) {
-        foreach ($patterns as $pattern) {
-            if (str_contains($needle, strtolower($pattern))) {
-                return $label;
-            }
-        }
-    }
-
-    return 'Exploit Desconocido';
-}
-
-function determineSurface(string $uri): string
-{
-    $uri = strtolower($uri);
-
-    if (str_contains($uri, 'login')) {
-        return 'Portal de Autenticacion';
-    }
-
-    if (str_contains($uri, 'admin')) {
-        return 'Gateway Administrativo';
-    }
-
-    if (str_contains($uri, 'api')) {
-        return 'API Interna';
-    }
-
-    if (str_contains($uri, 'php')) {
-        return 'Aplicacion PHP';
-    }
-
-    return 'Sitio Publico';
-}
-
-/**
- * @param array<string, int|float> $counts
- * @return array<int, array{label:string,count:int}>
- */
-function normalizeCounts(array $counts): array
-{
-    arsort($counts);
-    $normalized = [];
-    foreach ($counts as $label => $count) {
-        $normalized[] = [
-            'label' => (string) $label,
-            'count' => (int) round((float) $count),
-        ];
-    }
-
-    return $normalized;
 }
 
 function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
@@ -355,34 +185,24 @@ function formatIpCountList(PDO $pdo, array $counts, int $limit = 5): array
 }
 
 /**
- * @param array<string, array{label:string,count:int|float}> $counts
- * @return array<int, array{code:string,label:string,count:int}>
+ * @param array<string, int|float> $counts
+ * @return array<int, array{label:string,count:int}>
  */
-function normalizeCountryCounts(array $counts): array
+function normalizeCounts(array $counts): array
 {
-    uasort($counts, static fn($a, $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0));
+    arsort($counts);
     $normalized = [];
-
-    foreach ($counts as $code => $data) {
+    foreach ($counts as $label => $count) {
         $normalized[] = [
-            'code' => (string) $code,
-            'label' => (string) ($data['label'] ?? $code),
-            'count' => (int) round((float) ($data['count'] ?? 0)),
+            'label' => (string) $label,
+            'count' => (int) round((float) $count),
         ];
     }
 
     return $normalized;
 }
 
-function normalizeTotals(array $totals): array
-{
-    return [
-        'last5m' => (int) ($totals['last5m'] ?? 0),
-        'last1h' => (int) ($totals['last1h'] ?? 0),
-        'last24h' => (int) ($totals['last24h'] ?? 0),
-    ];
-}
-
+/**
 function lookupGeoForIp(PDO $pdo, string $ip): array
 {
     $default = [

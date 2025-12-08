@@ -1,4 +1,13 @@
 <?php
+// Secure session settings; secure flag will activate when served over HTTPS
+$cookieSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'secure' => $cookieSecure,
+    'httponly' => true,
+    'samesite' => 'Strict',
+]);
 session_start();
 require_once __DIR__ . '/includes/security_metrics.php';
 
@@ -48,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
     $user = $stmt->fetch();
 
     if ($user && password_verify($_POST['password'], $user['password_hash'])) {
+        session_regenerate_id(true);
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
         $_SESSION['role'] = $user['role'];
@@ -82,117 +92,62 @@ if (!isset($_SESSION['user_id'])) {
         button { width: 100%; padding: 10px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; }
         button:hover { background: #1b5e20; }
         .error { color: red; text-align: center; margin-bottom: 10px; }
-    </style>
-</head>
-<body>
-    <div class="login-box">
-        <h2>🔒 Acceso Seguro</h2>
-        <?php if ($error): ?><div class="error"><?= htmlspecialchars($error) ?></div><?php endif; ?>
-        <form method="POST">
-            <input type="text" name="username" placeholder="Usuario" required>
-            <input type="password" name="password" placeholder="Contraseña" required>
-            <button type="submit">Entrar</button>
-        </form>
-    </div>
-</body>
-</html>
-<?php
-    exit;
-}
+        <section class="cards-grid">
+            <div class="card">
+                <span class="label">Baneos Fail2Ban (24h)</span>
+                <strong id="fail2ban24h">--</strong>
+                <small>Última hora: <span id="fail2ban1h">--</span></small>
+            </div>
+            <div class="card">
+                <span class="label">Intentos SSH fallidos (1h)</span>
+                <strong id="ssh1h">--</strong>
+                <small>Últimos 5 min: <span id="ssh5m">--</span></small>
+            </div>
+        </section>
 
-// --- AUTHENTICATED AREA ---
-
-// Fetch Audit Logs
-$logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
-?>
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ASIR Defense Panel</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg: #04060d;
-            --panel: rgba(12, 14, 25, 0.85);
-            --panel-border: rgba(255, 255, 255, 0.08);
-            --accent: #2de0c5;
-            --accent-2: #ff7b72;
-            --text-muted: rgba(255, 255, 255, 0.65);
-        }
-
-        * { box-sizing: border-box; }
-
-        body {
-            font-family: 'Space Grotesk', sans-serif;
-            margin: 0;
-            min-height: 100vh;
-            background: radial-gradient(circle at 10% 20%, #082032 0%, #04060d 55%) fixed;
-            color: #f5f7ff;
-            padding: 30px 15px;
-        }
-
-        .dashboard {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-        }
-
-        .hero {
-            background: var(--panel);
-            border: 1px solid var(--panel-border);
-            border-radius: 18px;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
-        }
-
-        .hero header {
-            display: flex;
-            justify-content: space-between;
+        <section class="panels-grid">
+            <div class="panel table-scroll">
+                <h3>Top IP baneadas (Fail2Ban)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>País</th>
+                            <th>Eventos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="banIpsBody"></tbody>
+                </table>
+            </div>
+            <div class="panel table-scroll">
+                <h3>Baneos recientes (Fail2Ban)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Jail</th>
+                            <th>Origen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="banEventsBody"></tbody>
+                </table>
+            </div>
+        </section>
             flex-wrap: wrap;
             gap: 16px;
         }
-
-        .hero h1 {
-            margin: 0;
-            font-size: 2rem;
-        }
-
-        .badge {
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            background: rgba(255, 255, 255, 0.1);
-        }
+                <h3>Top IP ofensivas (SSH)</h3>
 
         .badge-admin { background: rgba(45, 224, 197, 0.2); }
         .badge-viewer { background: rgba(255, 123, 114, 0.25); }
-
-        .status-pill {
-            display: inline-flex;
+                            <th>IP</th>
+                            <th>País</th>
+                            <th>Intentos</th>
             align-items: center;
             gap: 6px;
-            padding: 6px 12px;
+                    <tbody id="sshIpsBody"></tbody>
             border-radius: 999px;
             font-size: 0.85rem;
-            color: #2de0c5;
-            background: rgba(45, 224, 197, 0.25);
-        }
-
-        .cards-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
         }
 
@@ -430,19 +385,6 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
 
         <section class="panels-grid">
             <div class="panel table-scroll">
-                <h3>Top IP ofensivas (SSH)</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>IP</th>
-                            <th>País</th>
-                            <th>Intentos</th>
-                        </tr>
-                    </thead>
-                    <tbody id="sshIpsBody"></tbody>
-                </table>
-            </div>
-            <div class="panel table-scroll">
                 <h3>Intentos SSH recientes</h3>
                 <table>
                     <thead>
@@ -485,55 +427,13 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
         </section>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        const charts = {};
-
-        const palette = ['#2de0c5', '#ff7b72', '#ffd166', '#5a6cea', '#9c6bff', '#4ad3ff'];
-
-        const initCharts = () => {
-            const trendCtx = document.getElementById('trendChart').getContext('2d');
-            charts.trend = new Chart(trendCtx, {
-                type: 'line',
-                data: { labels: [], datasets: [{ label: 'Bloqueos/min', data: [], borderColor: '#2de0c5', backgroundColor: 'rgba(45,224,197,0.2)', tension: 0.35, fill: true }] },
-                options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: 'rgba(255,255,255,0.6)' } }, y: { ticks: { color: 'rgba(255,255,255,0.6)' }, beginAtZero: true } } }
-            });
-
-            charts.attackTypes = new Chart(document.getElementById('attackTypesChart'), {
-                type: 'doughnut',
-                data: { labels: [], datasets: [{ data: [], backgroundColor: palette }] },
-                options: { plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.8)' } } } }
-            });
-
-            charts.countries = new Chart(document.getElementById('countryChart'), {
-                type: 'polarArea',
-                data: { labels: [], datasets: [{ data: [], backgroundColor: palette }] },
-                options: { scales: { r: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { display: false } } }, plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.8)' } } } }
-            });
-        };
-
         const setText = (id, value) => {
             const el = document.getElementById(id);
             if (el) { el.textContent = value; }
         };
 
         const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
-
-        const updateTiles = (containerId, items) => {
-            const grid = document.getElementById(containerId);
-            if (!grid) return;
-            grid.innerHTML = '';
-            if (!items || !items.length) {
-                grid.innerHTML = '<div class="surface-tile"><small>Sin datos</small><strong>0</strong></div>';
-                return;
-            }
-            items.forEach((item) => {
-                const tile = document.createElement('div');
-                tile.className = 'surface-tile';
-                tile.innerHTML = `<small>${item.label}</small><strong>${item.count}</strong>`;
-                grid.appendChild(tile);
-            });
-        };
 
         const updateTable = (tbodyId, rows, columns = 4) => {
             const tbody = document.getElementById(tbodyId);
@@ -570,10 +470,6 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
 
                 document.getElementById('metricsError').classList.remove('show');
 
-                setText('total5m', data.totals.last5m ?? 0);
-                setText('total1h', data.totals.last1h ?? 0);
-                setText('total24h', data.totals.last24h ?? 0);
-
                 const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
                 setText('fail2ban24h', fail2banTotals.last24h ?? 0);
                 setText('fail2ban1h', fail2banTotals.last1h ?? 0);
@@ -583,25 +479,6 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
                 setText('ssh5m', sshTotals.last5m ?? 0);
 
                 setText('lastRefresh', new Date((data.generatedAt ?? Date.now()/1000) * 1000).toLocaleTimeString('es-ES'));
-
-                charts.trend.data.labels = data.trend.map((entry) => new Date(entry.ts).toLocaleTimeString('es-ES', { minute: '2-digit', second: '2-digit' }));
-                charts.trend.data.datasets[0].data = data.trend.map((entry) => entry.value);
-                charts.trend.update('none');
-
-                charts.attackTypes.data.labels = data.attackTypes.map((item) => item.label);
-                charts.attackTypes.data.datasets[0].data = data.attackTypes.map((item) => item.count);
-                charts.attackTypes.update('none');
-
-                charts.countries.data.labels = data.countries.map((item) => `${item.label} (${item.count})`);
-                charts.countries.data.datasets[0].data = data.countries.map((item) => item.count);
-                charts.countries.update('none');
-
-                updateTiles('surfaceGrid', data.surfaces);
-                updateTiles('jailGrid', (data.fail2ban && data.fail2ban.topJails) || []);
-
-                updateTable('topIpsBody', (data.topIps || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
-
-                updateTable('eventsBody', (data.events || []).map((row) => [formatTs(row.timestamp), `${row.ip} · ${row.country_code}`, row.attack_type, row.surface]), 4);
 
                 updateTable('banIpsBody', ((data.fail2ban && data.fail2ban.topIps) || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
 
@@ -617,7 +494,6 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
             }
         };
 
-        initCharts();
         refreshMetrics();
         setInterval(refreshMetrics, 5000);
     </script>
