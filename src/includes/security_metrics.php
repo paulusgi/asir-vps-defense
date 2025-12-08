@@ -223,6 +223,8 @@ function normalizeCounts(array $counts): array
  */
 function lookupGeoForIp(PDO $pdo, string $ip): array
 {
+    static $memo = [];
+    static $lookupBudget = 25; // Limit external lookups per request to avoid timeouts
     $default = [
         'country_code' => '??',
         'country_name' => 'Desconocido',
@@ -290,6 +292,10 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         return $default;
     }
 
+    if (isset($memo[$ip])) {
+        return $memo[$ip];
+    }
+
     $stmt = $pdo->prepare('SELECT country_code, country_name, lat, lon, updated_at FROM ip_geo_cache WHERE ip = :ip');
     $stmt->execute(['ip' => $ip]);
     $row = $stmt->fetch();
@@ -299,7 +305,7 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         $stale = strtotime((string) $row['updated_at']) <= $freshThreshold;
         $hasCoords = $row['lat'] !== null && $row['lon'] !== null;
         if (!$stale && $hasCoords) {
-            return [
+            return $memo[$ip] = [
                 'country_code' => $row['country_code'] ?? '??',
                 'country_name' => $row['country_name'] ?? 'Desconocido',
                 'lat' => (float) $row['lat'],
@@ -308,7 +314,19 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         }
     }
 
-    $geo = fetchGeoFromApi($ip) ?: $default;
+    $fallback = $default;
+    if ($row && isset($row['country_code'])) {
+        $fallback = $countryFallback((string) $row['country_code']);
+        $fallback['country_name'] = $row['country_name'] ?? $fallback['country_name'];
+    }
+
+    if ($lookupBudget <= 0) {
+        return $memo[$ip] = $fallback;
+    }
+
+    $lookupBudget--;
+
+    $geo = fetchGeoFromApi($ip) ?: $fallback;
     if (($geo['lat'] === null || $geo['lon'] === null) && ($geo['country_code'] ?? '??') !== '??') {
         $geoFallback = $countryFallback($geo['country_code']);
         $geo['lat'] = $geo['lat'] ?? $geoFallback['lat'];
@@ -324,7 +342,7 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         'lon' => $geo['lon'],
     ]);
 
-    return $geo;
+    return $memo[$ip] = $geo;
 }
 
 function fetchGeoFromApi(string $ip): ?array
@@ -333,7 +351,7 @@ function fetchGeoFromApi(string $ip): ?array
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 3,
+        CURLOPT_TIMEOUT => 2,
         CURLOPT_USERAGENT => 'asir-vps-defense-panel/1.0',
     ]);
 
