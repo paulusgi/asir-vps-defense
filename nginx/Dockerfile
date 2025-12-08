@@ -10,11 +10,14 @@ RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/templates/conf.d/default.con
 
 # Copy our custom configuration
 COPY conf.d/public.conf /etc/nginx/conf.d/public.conf
+COPY html/ /usr/share/nginx/html/
 
 # Switch to root to fix permissions (The image runs as nginx user by default)
 
 RUN chown root:root /etc/nginx/conf.d/public.conf && \
-    chmod 644 /etc/nginx/conf.d/public.conf
+    chmod 644 /etc/nginx/conf.d/public.conf && \
+    chown -R root:root /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html
 
 # Create the directory where ModSecurity tries to copy files and give it permissions
 # We use UID 101 (nginx) to be precise and avoid name resolution issues
