@@ -20,5 +20,9 @@ RUN mkdir -p /etc/modsecurity.d && \
     chown -R 101:101 /etc/modsecurity.d && \
     chmod -R 755 /etc/modsecurity.d
 
+# Disable the problematic script that tries to copy config files
+# We will rely on default config or mount our own if needed
+RUN mv /docker-entrypoint.d/90-copy-modsecurity-config.sh /docker-entrypoint.d/90-copy-modsecurity-config.sh.disabled
+
 # Switch back to the default user (usually nginx or 101)
 USER 101
