@@ -1,7 +1,7 @@
 FROM owasp/modsecurity-crs:nginx
 
-# Remove default configuration file if it exists
-RUN rm -f /etc/nginx/conf.d/default.conf
+# Remove default server template to avoid PROXY_SSL_CONFIG placeholder issues
+RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/templates/conf.d/default.conf.template
 
 # Copy our custom configuration
 COPY conf.d/public.conf /etc/nginx/conf.d/public.conf
