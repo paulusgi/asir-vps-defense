@@ -88,7 +88,7 @@ if (!isset($_SESSION['user_id'])) {
         button { width: 100%; padding: 12px; background: #10b981; color: #0b1220; border: none; border-radius: 6px; cursor: pointer; font-weight: 700; }
         button:hover { background: #0ea371; }
         .error { color: #f87171; text-align: center; margin-bottom: 10px; }
-        small { display: block; text-align: center; color: #94a3b8; }
+        small { display: block; text-align: center; color: #94a3b8; padding-top: 1rem; }
     </style>
 </head>
 <body>
