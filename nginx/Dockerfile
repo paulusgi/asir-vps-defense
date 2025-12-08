@@ -1,8 +1,5 @@
 FROM owasp/modsecurity-crs:nginx
 
-# Disable default configuration generation to prevent conflicts
-ENV NGINX_ENVSUBST_TEMPLATE_SUFFIX=.disabled
-
 # Remove default configuration file if it exists
 RUN rm -f /etc/nginx/conf.d/default.conf
 
