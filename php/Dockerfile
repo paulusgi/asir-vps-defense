@@ -21,5 +21,8 @@ RUN apk add --no-cache shadow && \
 # Set working directory
 WORKDIR /var/www/html
 
+# Copy tuned PHP-FPM pool configuration
+COPY pool.d/www.conf /usr/local/etc/php-fpm.d/zz-custom.conf
+
 # Switch to non-root user
 USER www-data
