@@ -180,7 +180,9 @@ function h($value) {
                 <div class="user-row">
                     <span>Hola, <strong><?= h($_SESSION['username']) ?></strong></span>
                     <a class="logout-link" href="?logout=1">Cerrar sesión</a>
-                    <span class="badge"><?= h($_SESSION['role']) ?></span>
+                    <?php if (($_SESSION['role'] ?? '') !== ($_SESSION['username'] ?? '')): ?>
+                        <span class="badge"><?= h($_SESSION['role']) ?></span>
+                    <?php endif; ?>
                 </div>
             </div>
         </header>
