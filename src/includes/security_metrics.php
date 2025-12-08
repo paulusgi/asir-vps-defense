@@ -81,6 +81,9 @@ function fetchSecurityMetrics(PDO $pdo): array
             ];
         }
 
+        $fail2ban = fetchFail2BanMetrics($client, $pdo);
+        $ssh = fetchSshMetrics($client, $pdo);
+
         return [
             'generatedAt' => time(),
             'totals' => normalizeTotals($totals),
@@ -90,6 +93,8 @@ function fetchSecurityMetrics(PDO $pdo): array
             'countries' => normalizeCountryCounts($countryCounts),
             'topIps' => $topIps,
             'events' => array_slice($recentEvents, 0, 25),
+            'fail2ban' => $fail2ban,
+            'ssh' => $ssh,
         ];
     } catch (Throwable $exception) {
         return [
@@ -187,6 +192,166 @@ function normalizeCounts(array $counts): array
     }
 
     return $normalized;
+}
+
+function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
+{
+    $totals = [
+        'last1h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [24h]))'),
+    ];
+
+    $logs = $client->queryRangeRaw(
+        '{job="fail2ban"}',
+        time() - 86400,
+        time(),
+        '60s',
+        800
+    );
+
+    $ipCounts = [];
+    $jailCounts = [];
+    $events = [];
+
+    foreach ($logs as $entry) {
+        $parsed = parseFail2BanEvent($entry['line']);
+        if (!$parsed || $parsed['action'] !== 'Ban') {
+            continue;
+        }
+
+        $ip = $parsed['ip'];
+        $jail = $parsed['jail'];
+
+        $ipCounts[$ip] = ($ipCounts[$ip] ?? 0) + 1;
+        $jailCounts[$jail] = ($jailCounts[$jail] ?? 0) + 1;
+
+        $geo = lookupGeoForIp($pdo, $ip);
+
+        $events[] = [
+            'timestamp' => $entry['timestamp'],
+            'ip' => $ip,
+            'country' => $geo['country_name'],
+            'country_code' => $geo['country_code'],
+            'jail' => $jail,
+        ];
+    }
+
+    return [
+        'totals' => $totals,
+        'topIps' => formatIpCountList($pdo, $ipCounts),
+        'topJails' => array_slice(normalizeCounts($jailCounts), 0, 5),
+        'events' => array_slice($events, 0, 25),
+    ];
+}
+
+function fetchSshMetrics(LokiClient $client, PDO $pdo): array
+{
+    $totals = [
+        'last5m' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [5m]))'),
+        'last1h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [1h]))'),
+    ];
+
+    $logs = $client->queryRangeRaw(
+        '{job="auth"} |= "Failed password"',
+        time() - 3600,
+        time(),
+        '30s',
+        600
+    );
+
+    $userCounts = [];
+    $ipCounts = [];
+    $events = [];
+
+    foreach ($logs as $entry) {
+        $parsed = parseSshFailure($entry['line']);
+        if (!$parsed) {
+            continue;
+        }
+
+        $username = $parsed['username'];
+        $ip = $parsed['ip'];
+
+        $userCounts[$username] = ($userCounts[$username] ?? 0) + 1;
+        $ipCounts[$ip] = ($ipCounts[$ip] ?? 0) + 1;
+
+        $geo = lookupGeoForIp($pdo, $ip);
+
+        $events[] = [
+            'timestamp' => $entry['timestamp'],
+            'username' => $username,
+            'ip' => $ip,
+            'country' => $geo['country_name'],
+            'country_code' => $geo['country_code'],
+            'result' => $parsed['result'],
+        ];
+    }
+
+    return [
+        'totals' => $totals,
+        'topUsers' => array_slice(normalizeCounts($userCounts), 0, 5),
+        'topIps' => formatIpCountList($pdo, $ipCounts),
+        'events' => array_slice($events, 0, 25),
+    ];
+}
+
+function parseFail2BanEvent(string $line): ?array
+{
+    if (!preg_match('/\[(?<jail>[^\]]+)\]\s+(?<action>Ban|Unban)\s+(?<ip>[0-9A-Fa-f:.]+)/', $line, $matches)) {
+        return null;
+    }
+
+    return [
+        'jail' => $matches['jail'],
+        'action' => $matches['action'],
+        'ip' => $matches['ip'],
+    ];
+}
+
+function parseSshFailure(string $line): ?array
+{
+    if (!str_contains($line, 'Failed password')) {
+        return null;
+    }
+
+    if (!preg_match('/Failed password for (invalid user )?(?<user>[\w.@-]+)/', $line, $userMatch)) {
+        return null;
+    }
+
+    if (!preg_match('/from (?<ip>[0-9A-Fa-f:.]+)/', $line, $ipMatch)) {
+        return null;
+    }
+
+    $result = str_contains($userMatch[0], 'invalid user') ? 'Usuario inválido' : 'Usuario existente';
+
+    return [
+        'username' => $userMatch['user'],
+        'ip' => $ipMatch['ip'],
+        'result' => $result,
+    ];
+}
+
+function formatIpCountList(PDO $pdo, array $counts, int $limit = 5): array
+{
+    arsort($counts);
+    $formatted = [];
+    foreach ($counts as $ip => $count) {
+        if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+            continue;
+        }
+        $geo = lookupGeoForIp($pdo, $ip);
+        $formatted[] = [
+            'ip' => $ip,
+            'count' => (int) round((float) $count),
+            'country' => $geo['country_name'],
+            'country_code' => $geo['country_code'],
+        ];
+        if (count($formatted) >= $limit) {
+            break;
+        }
+    }
+
+    return $formatted;
 }
 
 /**
