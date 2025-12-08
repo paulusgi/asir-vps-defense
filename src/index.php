@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/includes/security_metrics.php';
 
 $host = getenv('MYSQL_HOST');
 $db   = getenv('MYSQL_DATABASE');
@@ -18,6 +19,18 @@ try {
     $pdo = new PDO($dsn, $user, $pass, $options);
 } catch (\PDOException $e) {
     die("Error de conexión: " . $e->getMessage());
+}
+
+if (isset($_GET['action']) && $_GET['action'] === 'metrics') {
+    header('Content-Type: application/json');
+    if (!isset($_SESSION['user_id'])) {
+        http_response_code(401);
+        echo json_encode(['error' => 'No autorizado']);
+        exit;
+    }
+
+    echo json_encode(fetchSecurityMetrics($pdo));
+    exit;
 }
 
 // Handle Logout
@@ -100,83 +113,408 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ASIR Defense Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 20px; }
-        h1 { color: #333; margin: 0; }
-        .user-info { text-align: right; }
-        .logout { color: #d32f2f; text-decoration: none; font-weight: bold; }
-        .status { padding: 10px; background: #e8f5e9; color: #2e7d32; border-radius: 4px; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
-        th { background-color: #f8f9fa; }
-        .badge { padding: 3px 8px; border-radius: 12px; font-size: 0.8em; color: white; }
-        .badge-admin { background: #1976d2; }
-        .badge-viewer { background: #757575; }
+        :root {
+            --bg: #04060d;
+            --panel: rgba(12, 14, 25, 0.85);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --accent: #2de0c5;
+            --accent-2: #ff7b72;
+            --text-muted: rgba(255, 255, 255, 0.65);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            background: radial-gradient(circle at 10% 20%, #082032 0%, #04060d 55%) fixed;
+            color: #f5f7ff;
+            padding: 30px 15px;
+        }
+
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .hero {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            backdrop-filter: blur(12px);
+            box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
+        }
+
+        .hero header {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .hero h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .badge-admin { background: rgba(45, 224, 197, 0.2); }
+        .badge-viewer { background: rgba(255, 123, 114, 0.25); }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            color: #0d332d;
+            background: rgba(45, 224, 197, 0.25);
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-height: 120px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+        }
+
+        .card span.label { color: var(--text-muted); font-size: 0.9rem; }
+        .card strong { font-size: 2rem; }
+
+        .panels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            padding: 20px;
+            min-height: 280px;
+        }
+
+        .panel h3 {
+            margin-top: 0;
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        th { text-align: left; color: var(--text-muted); font-weight: 500; }
+
+        tbody tr:last-child td { border-bottom: none; }
+
+        .surface-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .surface-tile {
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            padding: 16px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .surface-tile small { color: var(--text-muted); display: block; margin-bottom: 6px; }
+
+        .alert {
+            padding: 12px;
+            border-radius: 10px;
+            background: rgba(255, 123, 114, 0.1);
+            border: 1px solid rgba(255, 123, 114, 0.35);
+            color: #ffb4ac;
+            display: none;
+        }
+
+        .alert.show { display: block; }
+
+        .table-scroll { overflow-x: auto; }
+
+        @media (max-width: 640px) {
+            body { padding: 18px 12px; }
+            .hero header { flex-direction: column; align-items: flex-start; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🛡️ ASIR VPS Defense</h1>
-            <div class="user-info">
-                Hola, <strong><?= htmlspecialchars($_SESSION['username']) ?></strong> 
-                <span class="badge badge-<?= htmlspecialchars($_SESSION['role']) ?>"><?= htmlspecialchars($_SESSION['role']) ?></span><br>
-                <a href="?logout=1" class="logout">Cerrar Sesión</a>
+    <div class="dashboard">
+        <section class="hero">
+            <header>
+                <div>
+                    <h1>🛡️ ASIR VPS Defense</h1>
+                    <p style="margin:0;color:var(--text-muted);">Centro de mando reforzado para el WAF + Gateway</p>
+                </div>
+                <div style="text-align:right;">
+                    <div>Hola, <strong><?= htmlspecialchars($_SESSION['username']) ?></strong></div>
+                    <span class="badge badge-<?= htmlspecialchars($_SESSION['role']) ?>"><?= htmlspecialchars($_SESSION['role']) ?></span><br>
+                    <a href="?logout=1" style="color: var(--accent); text-decoration: none; font-size: 0.9rem;">Cerrar sesión</a>
+                </div>
+            </header>
+            <div>
+                <span class="status-pill">● Operativo · Modo Fortaleza</span>
             </div>
-        </div>
+            <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
+        </section>
 
-        <div class="status">
-            <strong>Estado del Sistema:</strong> Operativo (Modo Fortaleza)
-        </div>
+        <div id="metricsError" class="alert">No se pudo actualizar la telemetría.</div>
 
-        <!-- Unified Dashboard (Grafana Embedded) -->
-        <div style="margin-bottom: 30px;">
-            <h3 style="color: #0d47a1;">📊 Centro de Monitoreo Unificado</h3>
-            <p>Visualización en tiempo real de la seguridad del VPS (Loki + Grafana).</p>
-            <div style="border: 1px solid #ddd; border-radius: 4px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-                <!-- 
-                    NOTE: For this to work, you must forward port 3000 in your SSH Tunnel command:
-                    ssh -L 8888:127.0.0.1:8080 -L 3000:127.0.0.1:3000 user@host
-                -->
-                <iframe src="http://localhost:3000/d/home/home?orgId=1&refresh=5s&kiosk" width="100%" height="600" frameborder="0"></iframe>
+        <section class="cards-grid">
+            <div class="card">
+                <span class="label">Ataques (últimos 5 min)</span>
+                <strong id="total5m">--</strong>
             </div>
-            <p style="font-size: 0.8em; color: #666; text-align: center; margin-top: 5px;">
-                * Si no ves el gráfico, asegúrate de haber incluido <code>-L 3000:127.0.0.1:3000</code> en tu túnel SSH.
-            </p>
-        </div>
-        
-        <div style="padding: 20px; background: #fff3e0; border-radius: 8px; border-left: 5px solid #ff9800; margin-bottom: 30px;">
-            <h3 style="margin-top: 0; color: #e65100;">🗄️ Estado de Base de Datos (MySQL)</h3>
-            <p>Conexión: <strong>Activa</strong> | Usuarios: <strong>1</strong> | Integridad: <strong>Verificada</strong></p>
-        </div>
-        
-        <h2>Registro de Auditoría Interna (Accesos al Panel)</h2>
-        <p style="color: #666; font-size: 0.9em;">Este registro muestra quién ha accedido a este panel de control (Gateway).</p>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Usuario</th>
-                    <th>Acción</th>
-                    <th>IP Origen</th>
-                    <th>Fecha</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($logs as $log): ?>
-                <tr>
-                    <td><?= htmlspecialchars($log['id']) ?></td>
-                    <td><?= htmlspecialchars($log['username'] ?? 'Anónimo') ?></td>
-                    <td><?= htmlspecialchars($log['action']) ?></td>
-                    <td><?= htmlspecialchars($log['ip_address']) ?></td>
-                    <td><?= htmlspecialchars($log['created_at']) ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+            <div class="card">
+                <span class="label">Ataques (última hora)</span>
+                <strong id="total1h">--</strong>
+            </div>
+            <div class="card">
+                <span class="label">Ataques (24 horas)</span>
+                <strong id="total24h">--</strong>
+            </div>
+        </section>
+
+        <section class="panels-grid">
+            <div class="panel">
+                <h3>Intensidad por minuto</h3>
+                <canvas id="trendChart" height="260"></canvas>
+            </div>
+            <div class="panel">
+                <h3>Tipos de ataque detectados</h3>
+                <canvas id="attackTypesChart" height="260"></canvas>
+            </div>
+        </section>
+
+        <section class="panels-grid">
+            <div class="panel">
+                <h3>Origen geográfico (Top países)</h3>
+                <canvas id="countryChart" height="260"></canvas>
+            </div>
+            <div class="panel">
+                <h3>Superficies más presionadas</h3>
+                <div id="surfaceGrid" class="surface-grid"></div>
+            </div>
+        </section>
+
+        <section class="panels-grid">
+            <div class="panel table-scroll">
+                <h3>Top IP agresoras (última hora)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>País</th>
+                            <th>Intentos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="topIpsBody"></tbody>
+                </table>
+            </div>
+            <div class="panel table-scroll">
+                <h3>Últimos bloqueos del WAF</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>IP</th>
+                            <th>Tipo</th>
+                            <th>Recurso</th>
+                        </tr>
+                    </thead>
+                    <tbody id="eventsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panel table-scroll">
+            <h3>Registro de Auditoría Interna</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Usuario</th>
+                        <th>Acción</th>
+                        <th>IP Origen</th>
+                        <th>Fecha</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($logs as $log): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($log['id']) ?></td>
+                            <td><?= htmlspecialchars($log['username'] ?? 'Anónimo') ?></td>
+                            <td><?= htmlspecialchars($log['action']) ?></td>
+                            <td><?= htmlspecialchars($log['ip_address']) ?></td>
+                            <td><?= htmlspecialchars($log['created_at']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </section>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const charts = {};
+
+        const palette = ['#2de0c5', '#ff7b72', '#ffd166', '#5a6cea', '#9c6bff', '#4ad3ff'];
+
+        const initCharts = () => {
+            const trendCtx = document.getElementById('trendChart').getContext('2d');
+            charts.trend = new Chart(trendCtx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Bloqueos/min', data: [], borderColor: '#2de0c5', backgroundColor: 'rgba(45,224,197,0.2)', tension: 0.35, fill: true }] },
+                options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { color: 'rgba(255,255,255,0.6)' } }, y: { ticks: { color: 'rgba(255,255,255,0.6)' }, beginAtZero: true } } }
+            });
+
+            charts.attackTypes = new Chart(document.getElementById('attackTypesChart'), {
+                type: 'doughnut',
+                data: { labels: [], datasets: [{ data: [], backgroundColor: palette }] },
+                options: { plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.8)' } } } }
+            });
+
+            charts.countries = new Chart(document.getElementById('countryChart'), {
+                type: 'polarArea',
+                data: { labels: [], datasets: [{ data: [], backgroundColor: palette }] },
+                options: { scales: { r: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { display: false } } }, plugins: { legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.8)' } } } }
+            });
+        };
+
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) { el.textContent = value; }
+        };
+
+        const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
+
+        const updateSurfaces = (items) => {
+            const grid = document.getElementById('surfaceGrid');
+            if (!grid) return;
+            grid.innerHTML = '';
+            if (!items || !items.length) {
+                grid.innerHTML = '<div class="surface-tile"><small>Sin datos</small><strong>0</strong></div>';
+                return;
+            }
+            items.forEach((item) => {
+                const tile = document.createElement('div');
+                tile.className = 'surface-tile';
+                tile.innerHTML = `<small>${item.label}</small><strong>${item.count}</strong>`;
+                grid.appendChild(tile);
+            });
+        };
+
+        const updateTable = (tbodyId, rows, columns = 4) => {
+            const tbody = document.getElementById(tbodyId);
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (!rows || !rows.length) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = columns;
+                td.textContent = 'Sin registros';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+            rows.forEach((cols) => {
+                const tr = document.createElement('tr');
+                cols.forEach((value) => {
+                    const td = document.createElement('td');
+                    td.textContent = value;
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+        };
+
+        const refreshMetrics = async () => {
+            try {
+                const res = await fetch('?action=metrics');
+                const data = await res.json();
+                if (!res.ok || data.error) {
+                    document.getElementById('metricsError').classList.add('show');
+                    return;
+                }
+
+                document.getElementById('metricsError').classList.remove('show');
+
+                setText('total5m', data.totals.last5m ?? 0);
+                setText('total1h', data.totals.last1h ?? 0);
+                setText('total24h', data.totals.last24h ?? 0);
+                setText('lastRefresh', new Date((data.generatedAt ?? Date.now()/1000) * 1000).toLocaleTimeString('es-ES'));
+
+                charts.trend.data.labels = data.trend.map((entry) => new Date(entry.ts).toLocaleTimeString('es-ES', { minute: '2-digit', second: '2-digit' }));
+                charts.trend.data.datasets[0].data = data.trend.map((entry) => entry.value);
+                charts.trend.update('none');
+
+                charts.attackTypes.data.labels = data.attackTypes.map((item) => item.label);
+                charts.attackTypes.data.datasets[0].data = data.attackTypes.map((item) => item.count);
+                charts.attackTypes.update('none');
+
+                charts.countries.data.labels = data.countries.map((item) => `${item.label} (${item.count})`);
+                charts.countries.data.datasets[0].data = data.countries.map((item) => item.count);
+                charts.countries.update('none');
+
+                updateSurfaces(data.surfaces);
+
+                updateTable('topIpsBody', (data.topIps || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
+
+                updateTable('eventsBody', (data.events || []).map((row) => [formatTs(row.timestamp), `${row.ip} · ${row.country_code}`, row.attack_type, row.surface]), 4);
+            } catch (error) {
+                document.getElementById('metricsError').classList.add('show');
+            }
+        };
+
+        initCharts();
+        refreshMetrics();
+        setInterval(refreshMetrics, 5000);
+    </script>
 </body>
 </html>
