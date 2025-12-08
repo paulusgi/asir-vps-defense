@@ -354,6 +354,8 @@ function h($value) {
             geo: [],
         };
 
+        let failureCount = 0; // track consecutive failures to avoid flashing the alert
+
         let pages = { ban: 0, ssh: 0 };
         const PAGE_SIZE = 10;
 
@@ -369,10 +371,14 @@ function h($value) {
                 const res = await fetch('?action=metrics');
                 const data = await res.json();
                 if (!res.ok || data.error) {
-                    document.getElementById('metricsError').classList.add('show');
+                    failureCount++;
+                    if (failureCount >= 2) {
+                        document.getElementById('metricsError').classList.add('show');
+                    }
                     return;
                 }
 
+                failureCount = 0;
                 document.getElementById('metricsError').classList.remove('show');
 
                 const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
@@ -421,7 +427,10 @@ function h($value) {
 
                 renderMap(state.geo);
             } catch (e) {
-                document.getElementById('metricsError').classList.add('show');
+                failureCount++;
+                if (failureCount >= 2) {
+                    document.getElementById('metricsError').classList.add('show');
+                }
             }
         };
 
