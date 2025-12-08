@@ -27,3 +27,10 @@ FROM audit_log a
 LEFT JOIN users u ON a.user_id = u.id
 ORDER BY a.created_at DESC;
 
+CREATE TABLE IF NOT EXISTS ip_geo_cache (
+    ip VARCHAR(45) PRIMARY KEY,
+    country_code CHAR(2) DEFAULT '??',
+    country_name VARCHAR(100) DEFAULT 'Desconocido',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+

@@ -23,8 +23,12 @@ scrape_configs:
             request: request
             status: status
             http_user_agent: http_user_agent
+            uri: uri
+            method: method
+            referrer: referrer
       - labels:
           status:
+          client_ip:
 
   - job_name: fail2ban
     static_configs:
