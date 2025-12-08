@@ -3,3 +3,4 @@ Proyecto.md
 .DS_Store
 admin_credentials.txt
 mysql/init/02-seed.sql
+.vscode
