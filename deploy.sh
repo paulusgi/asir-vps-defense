@@ -10,7 +10,7 @@
 #   - Firewall (UFW) hardening
 #   - Secure SSH configuration (Split Auth: Key-only Admin vs Password Honeypot)
 #   - WAF (Nginx + ModSecurity) setup
-#   - Observability Stack (Loki + Promtail + Grafana)
+#   - Observability Stack (Loki + Promtail)
 #
 # Usage:
 #   chmod +x deploy.sh
@@ -405,7 +405,6 @@ generate_env() {
     # Generate random passwords
     MYSQL_ROOT_PASS=$(openssl rand -base64 24)
     MYSQL_APP_PASS=$(openssl rand -base64 24)
-    GRAFANA_PASS=$(openssl rand -base64 12)
     
     cat > .env <<EOF
 # ASIR VPS Defense - Environment Variables
@@ -416,7 +415,6 @@ MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASS
 MYSQL_DATABASE=asir_defense
 MYSQL_USER=app_user
 MYSQL_PASSWORD=$MYSQL_APP_PASS
-GRAFANA_ADMIN_PASSWORD=$GRAFANA_PASS
 
 # Network Configuration
 FRONTEND_SUBNET=172.20.0.0/16
@@ -461,11 +459,6 @@ Generado el: $(date)
 URL: http://localhost:8888 (Requiere Túnel SSH)
 Usuario: admin
 Contraseña: $WEB_ADMIN_PASS
-
-[GRAFANA]
-URL: http://localhost:3000 (Requiere Túnel SSH)
-Usuario: admin
-Contraseña: $GRAFANA_PASS
 
 [BASE DE DATOS]
 Root Password: $MYSQL_ROOT_PASS
@@ -606,26 +599,6 @@ main() {
         log_warn "Revisa los logs con: docker compose logs -f"
     fi
 
-    # 3. Verify Grafana Port (3000)
-    log_info "Verificando disponibilidad real de Grafana..."
-    local grafana_ready=false
-    retries=0
-    while [ $retries -lt 20 ]; do
-        if curl -s -I http://127.0.0.1:3000 >/dev/null; then
-            grafana_ready=true
-            log_success "¡Grafana ONLINE en puerto 3000!"
-            break
-        fi
-        echo -n "."
-        sleep 3
-        ((retries++))
-    done
-    echo ""
-    
-    if [ "$grafana_ready" = false ]; then
-        log_error "El servicio Grafana (3000) no responde aún."
-    fi
-    
     docker compose ps
     
     echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
@@ -649,137 +622,13 @@ main() {
     echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
     echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
     echo -e "2. Ejecuta el siguiente comando para crear el túnel seguro:"
-    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3001:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
-    echo -e "   (Usamos el puerto local 3001 para Grafana para evitar conflictos con tu PC)"
+    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
     echo -e ""
     echo -e "3. Abre tu navegador web y accede a:"
-    echo -e "   - Panel de Administración: ${GREEN}http://localhost:8888${NC}"
-    echo -e "   - Monitorización Grafana:  ${GREEN}http://localhost:3001${NC}"
+    echo -e "   - Panel de Administración + Métricas Loki: ${GREEN}http://localhost:8888${NC}"
     echo -e ""
     echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
     echo -e "${GREEN}==================================================${NC}"
 }
 
-main
-    # Step 4: Application Deployment
-    generate_env
-    generate_db_seed
-    
-    # Fix permissions for generated secrets
-    chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
-    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" mysql/init
-    
-    # Fix permissions for webroot (container user 101/1000 needs access)
-    log_info "Ajustando permisos de archivos web..."
-    # We give ownership to the secure admin, but read/exec to others (containers)
-    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
-    chmod -R 755 src
-
-    log_info "Desplegando contenedores Docker..."
-    docker compose up -d --build
-    
-    # Step 5: Final Cleanup & Deferred Actions
-    finalize_deferred_conversion
-    history -c
-    
-    echo -e "${GREEN}==================================================${NC}"
-    echo -e "${GREEN}   INSTALACIÓN FINALIZADA                         ${NC}"
-    echo -e "${GREEN}==================================================${NC}"
-    
-    echo -e "\n${YELLOW}Por favor, revisa los mensajes anteriores en busca de errores (texto rojo).${NC}"
-    echo -n "Presiona ENTER para continuar con la verificación de estado y credenciales..."
-    read -r _ < /dev/tty
-    
-    echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
-    
-    log_info "Esperando a que la base de datos y los servicios estén listos (puede tardar 30-60s)..."
-    
-    # 1. Wait for MySQL Healthcheck
-    local retries=0
-    while [ $retries -lt 30 ]; do
-        if docker compose ps | grep -q "healthy"; then
-             break
-        fi
-        echo -n "."
-        sleep 2
-        ((retries++))
-    done
-    echo ""
-
-    # 2. Verify Admin Panel Port (8888)
-    log_info "Verificando disponibilidad real del Panel de Administración..."
-    local port_ready=false
-    retries=0
-    while [ $retries -lt 20 ]; do
-        if curl -s -I http://127.0.0.1:8888 >/dev/null; then
-            port_ready=true
-            log_success "¡Panel de Administración ONLINE en puerto 8888!"
-            break
-        fi
-        echo -n "."
-        sleep 3
-        ((retries++))
-    done
-    echo ""
-
-    if [ "$port_ready" = false ]; then
-        log_error "El servicio en el puerto 8888 no responde aún."
-        log_warn "Es posible que los contenedores sigan iniciándose o haya un error."
-        log_warn "Revisa los logs con: docker compose logs -f"
-    fi
-
-    # 3. Verify Grafana Port (3000)
-    log_info "Verificando disponibilidad real de Grafana..."
-    local grafana_ready=false
-    retries=0
-    while [ $retries -lt 20 ]; do
-        if curl -s -I http://127.0.0.1:3000 >/dev/null; then
-            grafana_ready=true
-            log_success "¡Grafana ONLINE en puerto 3000!"
-            break
-        fi
-        echo -n "."
-        sleep 3
-        ((retries++))
-    done
-    echo ""
-    
-    if [ "$grafana_ready" = false ]; then
-        log_error "El servicio Grafana (3000) no responde aún."
-    fi
-    
-    docker compose ps
-    
-    echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
-    echo -e "Por seguridad, las contraseñas NO se muestran en pantalla."
-    echo -e "Se han guardado en un archivo protegido en el home de tu usuario:"
-    echo -e "${BLUE}/home/$SECURE_ADMIN/admin_credentials.txt${NC}"
-    echo -e ""
-    echo -e "Para verlas, conéctate por SSH con tu nuevo usuario y ejecuta:"
-    echo -e "   ${YELLOW}cat ~/admin_credentials.txt${NC}"
-    
-    echo -e "\n--------------------------------------------------"
-    echo -n "¿Deseas ver SOLO la contraseña temporal del Panel Web para acceder ahora? (S/n): "
-    read -r SHOW_WEB_PASS < /dev/tty
-    if [[ "$SHOW_WEB_PASS" =~ ^[Ss]$ ]] || [[ -z "$SHOW_WEB_PASS" ]]; then
-        echo -e "Contraseña Panel Web: ${GREEN}$WEB_ADMIN_PASS${NC}"
-    else
-        echo -e "Entendido. Recuerda consultar el archivo de credenciales."
-    fi
-    echo -e "--------------------------------------------------"
-
-    echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
-    echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
-    echo -e "2. Ejecuta el siguiente comando para crear el túnel seguro:"
-    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3001:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
-    echo -e "   (Usamos el puerto local 3001 para Grafana para evitar conflictos con tu PC)"
-    echo -e ""
-    echo -e "3. Abre tu navegador web y accede a:"
-    echo -e "   - Panel de Administración: ${GREEN}http://localhost:8888${NC}"
-    echo -e "   - Monitorización Grafana:  ${GREEN}http://localhost:3001${NC}"
-    echo -e ""
-    echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
-    echo -e "${GREEN}==================================================${NC}"
-}
-
-main
+main "$@"
