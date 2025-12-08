@@ -25,7 +25,6 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global Variables
-INSTALL_DIR="/opt/asir-vps-defense"
 ENV_FILE=".env"
 
 # Global flag to track if we need to convert the current user later
@@ -469,7 +468,7 @@ EOF
 main() {
     clear
     echo -e "${GREEN}==================================================${NC}"
-    echo -e "${GREEN}   ASIR VPS DEFENSE - INSTALLER v1.0              ${NC}"
+    echo -e "${GREEN}   ASIR VPS DEFENSE - INSTALLER v1.1              ${NC}"
     echo -e "${GREEN}==================================================${NC}"
     
     check_root
@@ -478,53 +477,97 @@ main() {
     
     # Step 1: System Prep
     install_dependencies
-
-    # Ensure we are in the correct directory with all files
-    if [ ! -f "docker-compose.yml" ]; then
-        log_info "Archivos de configuración no encontrados. Clonando repositorio..."
-        # Remove dir if exists to avoid conflicts
-        rm -rf "$INSTALL_DIR"
-        git clone https://github.com/paulusgi/asir-vps-defense.git "$INSTALL_DIR"
-        cd "$INSTALL_DIR" || exit 1
-        log_success "Repositorio clonado en $INSTALL_DIR"
-    else
-        # If files exist, ensure we are in the right place
-        log_info "Archivos de configuración detectados localmente."
-        # Ensure we have the latest version if it's a git repo
-        if [ -d ".git" ]; then
-            log_info "Actualizando repositorio..."
-            git pull || log_warn "No se pudo actualizar el repositorio. Usando versión local."
-        fi
-    fi
-
     setup_firewall
     
     # Step 2: User & Security Config
+    # We do this BEFORE cloning so we can set up the project in the correct home directory
     create_secure_admin
     handle_honeypot_logic
     
     configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
     configure_fail2ban
     
-    # Step 3: Application Deployment
+    # Step 3: Project Setup in Secure User Home
+    local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
+    log_info "Preparando entorno del proyecto en: $PROJECT_DIR"
+
+    # Create directory if not exists
+    if [ ! -d "$PROJECT_DIR" ]; then
+        mkdir -p "$PROJECT_DIR"
+    fi
+
+    # Logic to populate the directory
+main() {
+    clear
+    echo -e "${GREEN}==================================================${NC}"
+    echo -e "${GREEN}   ASIR VPS DEFENSE - INSTALLER v1.1              ${NC}"
+    echo -e "${GREEN}==================================================${NC}"
+    
+    check_root
+    detect_context
+    detect_os
+    
+    # Step 1: System Prep
+    install_dependencies
+    setup_firewall
+    
+    # Step 2: User & Security Config
+    # We create the user FIRST so we can deploy into their home directory
+    create_secure_admin
+    handle_honeypot_logic
+    
+    configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
+    configure_fail2ban
+    
+    # Step 3: Project Setup in Secure User Home
+    local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
+    log_info "Estableciendo directorio del proyecto en: $PROJECT_DIR"
+
+    # Create directory if not exists
+    if [ ! -d "$PROJECT_DIR" ]; then
+        mkdir -p "$PROJECT_DIR"
+    fi
+
+    # Logic to populate the directory
+    if [ -f "docker-compose.yml" ]; then
+        log_info "Copiando archivos de instalación locales (incluyendo parches)..."
+        # Copy content to the new user's home
+        # We exclude the target directory itself to avoid recursion if running from root
+        rsync -av --exclude ".git" --exclude "asir-vps-defense" . "$PROJECT_DIR/" 2>/dev/null || cp -R . "$PROJECT_DIR/"
+    else
+        log_info "Descargando repositorio oficial..."
+        # Clean dir just in case
+        rm -rf "$PROJECT_DIR"
+        git clone https://github.com/paulusgi/asir-vps-defense.git "$PROJECT_DIR"
+    fi
+
+    # Ensure ownership is correct immediately
+    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "$PROJECT_DIR"
+    
+    # Switch context to the new directory
+    cd "$PROJECT_DIR" || exit 1
+    log_success "Directorio de trabajo establecido: $(pwd)"
+
+    # Step 4: Application Deployment
     generate_env
     generate_db_seed
     
-    # Fix permissions for webroot before starting containers
-    # This ensures the container user (1000) can read the files
+    # Fix permissions for generated secrets
+    chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
+    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" mysql/init
+    
+    # Fix permissions for webroot (container user 101/1000 needs access)
     log_info "Ajustando permisos de archivos web..."
-    chown -R 1000:1000 src
+    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
     chmod -R 755 src
 
     log_info "Desplegando contenedores Docker..."
     docker compose up -d --build
     
-    # Step 4: Final Cleanup & Deferred Actions
+    # Step 5: Final Cleanup & Deferred Actions
     finalize_deferred_conversion
     history -c
     
-    # Removed clear to allow user to see previous errors
-    # clear
     echo -e "${GREEN}==================================================${NC}"
     echo -e "${GREEN}   INSTALACIÓN FINALIZADA                         ${NC}"
     echo -e "${GREEN}==================================================${NC}"
@@ -549,12 +592,134 @@ main() {
     done
     echo ""
 
-    # 2. Verify Admin Panel Port (8888) is actually listening and responding
+    # 2. Verify Admin Panel Port (8888)
     log_info "Verificando disponibilidad real del Panel de Administración..."
     local port_ready=false
     retries=0
     while [ $retries -lt 20 ]; do
         # Try to fetch headers from localhost:8888
+        if curl -s -I http://127.0.0.1:8888 >/dev/null; then
+            port_ready=true
+            log_success "¡Panel de Administración ONLINE en puerto 8888!"
+            break
+        fi
+        echo -n "."
+        sleep 3
+        ((retries++))
+    done
+    echo ""
+
+    if [ "$port_ready" = false ]; then
+        log_error "El servicio en el puerto 8888 no responde aún."
+        log_warn "Es posible que los contenedores sigan iniciándose o haya un error."
+        log_warn "Revisa los logs con: docker compose logs -f"
+    fi
+
+    # 3. Verify Grafana Port (3000)
+    log_info "Verificando disponibilidad real de Grafana..."
+    local grafana_ready=false
+    retries=0
+    while [ $retries -lt 20 ]; do
+        if curl -s -I http://127.0.0.1:3000 >/dev/null; then
+            grafana_ready=true
+            log_success "¡Grafana ONLINE en puerto 3000!"
+            break
+        fi
+        echo -n "."
+        sleep 3
+        ((retries++))
+    done
+    echo ""
+    
+    if [ "$grafana_ready" = false ]; then
+        log_error "El servicio Grafana (3000) no responde aún."
+    fi
+    
+    docker compose ps
+    
+    echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
+    echo -e "Por seguridad, las contraseñas NO se muestran en pantalla."
+    echo -e "Se han guardado en un archivo protegido en el home de tu usuario:"
+    echo -e "${BLUE}/home/$SECURE_ADMIN/admin_credentials.txt${NC}"
+    echo -e ""
+    echo -e "Para verlas, conéctate por SSH con tu nuevo usuario y ejecuta:"
+    echo -e "   ${YELLOW}cat ~/admin_credentials.txt${NC}"
+    
+    echo -e "\n--------------------------------------------------"
+    echo -n "¿Deseas ver SOLO la contraseña temporal del Panel Web para acceder ahora? (S/n): "
+    read -r SHOW_WEB_PASS < /dev/tty
+    if [[ "$SHOW_WEB_PASS" =~ ^[Ss]$ ]] || [[ -z "$SHOW_WEB_PASS" ]]; then
+        echo -e "Contraseña Panel Web: ${GREEN}$WEB_ADMIN_PASS${NC}"
+    else
+        echo -e "Entendido. Recuerda consultar el archivo de credenciales."
+    fi
+    echo -e "--------------------------------------------------"
+
+    echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
+    echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
+    echo -e "2. Ejecuta el siguiente comando para crear el túnel seguro:"
+    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 -L 3001:127.0.0.1:3000 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
+    echo -e "   (Usamos el puerto local 3001 para Grafana para evitar conflictos con tu PC)"
+    echo -e ""
+    echo -e "3. Abre tu navegador web y accede a:"
+    echo -e "   - Panel de Administración: ${GREEN}http://localhost:8888${NC}"
+    echo -e "   - Monitorización Grafana:  ${GREEN}http://localhost:3001${NC}"
+    echo -e ""
+    echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
+    echo -e "${GREEN}==================================================${NC}"
+}
+
+main
+    # Step 4: Application Deployment
+    generate_env
+    generate_db_seed
+    
+    # Fix permissions for generated secrets
+    chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
+    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" mysql/init
+    
+    # Fix permissions for webroot (container user 101/1000 needs access)
+    log_info "Ajustando permisos de archivos web..."
+    # We give ownership to the secure admin, but read/exec to others (containers)
+    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
+    chmod -R 755 src
+
+    log_info "Desplegando contenedores Docker..."
+    docker compose up -d --build
+    
+    # Step 5: Final Cleanup & Deferred Actions
+    finalize_deferred_conversion
+    history -c
+    
+    echo -e "${GREEN}==================================================${NC}"
+    echo -e "${GREEN}   INSTALACIÓN FINALIZADA                         ${NC}"
+    echo -e "${GREEN}==================================================${NC}"
+    
+    echo -e "\n${YELLOW}Por favor, revisa los mensajes anteriores en busca de errores (texto rojo).${NC}"
+    echo -n "Presiona ENTER para continuar con la verificación de estado y credenciales..."
+    read -r _ < /dev/tty
+    
+    echo -e "\n${YELLOW}>>> ESTADO DE LOS SERVICIOS <<<${NC}"
+    
+    log_info "Esperando a que la base de datos y los servicios estén listos (puede tardar 30-60s)..."
+    
+    # 1. Wait for MySQL Healthcheck
+    local retries=0
+    while [ $retries -lt 30 ]; do
+        if docker compose ps | grep -q "healthy"; then
+             break
+        fi
+        echo -n "."
+        sleep 2
+        ((retries++))
+    done
+    echo ""
+
+    # 2. Verify Admin Panel Port (8888)
+    log_info "Verificando disponibilidad real del Panel de Administración..."
+    local port_ready=false
+    retries=0
+    while [ $retries -lt 20 ]; do
         if curl -s -I http://127.0.0.1:8888 >/dev/null; then
             port_ready=true
             log_success "¡Panel de Administración ONLINE en puerto 8888!"
