@@ -93,7 +93,7 @@ services:
     volumes:
       - ./promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
-      - ./promtail/positions.yaml:/tmp/positions.yaml
+      - ./promtail/positions:/positions
     command: -config.file=/etc/promtail/config.yml
     networks:
       - backend_net
