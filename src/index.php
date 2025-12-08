@@ -186,7 +186,7 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
             padding: 6px 12px;
             border-radius: 999px;
             font-size: 0.85rem;
-            color: #0d332d;
+            color: #2de0c5;
             background: rgba(45, 224, 197, 0.25);
         }
 
