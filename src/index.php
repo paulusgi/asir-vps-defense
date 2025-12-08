@@ -139,6 +139,10 @@ function h($value) {
         a { color: var(--accent); }
         .dashboard { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
         header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .user-panel { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
+        .user-row { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.3); border-radius: 999px; }
+        .logout-link { color: var(--accent); text-decoration: none; font-size: 0.95rem; }
+        .logout-link:hover { text-decoration: underline; }
         .badge { padding: 6px 12px; border-radius: 999px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.35); color: var(--accent); font-size: 0.9rem; }
         .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
         .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
@@ -172,10 +176,12 @@ function h($value) {
                 <h1 style="margin:0;">🛡️ ASIR VPS Defense</h1>
                 <div style="color:var(--text-muted);">Panel seguro · SSH + Fail2Ban</div>
             </div>
-            <div style="text-align:right;">
-                <div>Hola, <strong><?= h($_SESSION['username']) ?></strong></div>
-                <span class="badge"><?= h($_SESSION['role']) ?></span><br>
-                <a href="?logout=1">Cerrar sesión</a>
+            <div class="user-panel">
+                <div class="user-row">
+                    <span>Hola, <strong><?= h($_SESSION['username']) ?></strong></span>
+                    <span class="badge"><?= h($_SESSION['role']) ?></span>
+                </div>
+                <a class="logout-link" href="?logout=1">Cerrar sesión</a>
             </div>
         </header>
 
@@ -284,7 +290,7 @@ function h($value) {
 
         const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
 
-        const updateTable = (tbodyId, rows, columns = 3) => {
+        const updateTable = (tbodyId, rows, columns = 3, htmlCols = []) => {
             const tbody = document.getElementById(tbodyId);
             if (!tbody) return;
             tbody.innerHTML = '';
@@ -299,9 +305,13 @@ function h($value) {
             }
             rows.forEach((cols) => {
                 const tr = document.createElement('tr');
-                cols.forEach((value) => {
+                cols.forEach((value, idx) => {
                     const td = document.createElement('td');
-                    td.textContent = value;
+                    if (htmlCols.includes(idx)) {
+                        td.innerHTML = value;
+                    } else {
+                        td.textContent = value;
+                    }
                     tr.appendChild(td);
                 });
                 tbody.appendChild(tr);
@@ -418,10 +428,10 @@ function h($value) {
                 updateTable('sshIpsBody', state.sshIps, 3);
                 updateTable('sshUsersBody', state.sshUsers, 2);
                 const sshPageRows = paginate(state.sshEvents, pages.ssh, PAGE_SIZE);
-                updateTable('sshEventsBody', sshPageRows, 4);
+                updateTable('sshEventsBody', sshPageRows, 4, [3]);
                 renderPager('sshPager', state.sshEvents.length, pages.ssh, PAGE_SIZE, (p) => {
                     pages.ssh = p;
-                    updateTable('sshEventsBody', paginate(state.sshEvents, pages.ssh, PAGE_SIZE), 4);
+                    updateTable('sshEventsBody', paginate(state.sshEvents, pages.ssh, PAGE_SIZE), 4, [3]);
                     renderPager('sshPager', state.sshEvents.length, pages.ssh, PAGE_SIZE, () => {});
                 });
 
