@@ -6,16 +6,12 @@ USER root
 # Remove default server template to avoid PROXY_SSL_CONFIG placeholder issues
 RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/templates/conf.d/default.conf.template
 
-# Remove default modsecurity.conf template to avoid doble carga de reglas
-RUN rm -f /etc/nginx/conf.d/modsecurity.conf /etc/nginx/templates/conf.d/modsecurity.conf.template
+# Mantener la plantilla modsecurity.conf original para que envsubst genere la config estándar
 
 # Copy our custom configuration
 COPY conf.d/public.conf /etc/nginx/conf.d/public.conf
 
 # Switch to root to fix permissions (The image runs as nginx user by default)
-
-# Load ModSecurity Module explicitly (Required because the base nginx.conf doesn't load it)
-RUN sed -i '1i load_module /usr/lib/nginx/modules/ngx_http_modsecurity_module.so;' /etc/nginx/nginx.conf
 
 RUN chown root:root /etc/nginx/conf.d/public.conf && \
     chmod 644 /etc/nginx/conf.d/public.conf
