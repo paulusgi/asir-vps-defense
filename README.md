@@ -5,7 +5,7 @@
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
 ![Security](https://img.shields.io/badge/Security-Hardened-green)
 
-**ASIR VPS Defense** es una solución integral de seguridad diseñada para desplegarse en servidores VPS limpios (Debian/Ubuntu). Transforma un servidor básico en una fortaleza monitorizada utilizando estrategias de **Defensa en Profundidad**.
+**ASIR VPS Defense** es una solución integral de seguridad diseñada para desplegarse en servidores VPS limpios (Debian/Ubuntu). Transforma un servidor básico en una fortaleza monitorizada utilizando **Defensa en Profundidad**, con mínima superficie expuesta (solo SSH).
 
 > 🎓 **Proyecto Final de Ciclo (ASIR):** Administración de Sistemas Informáticos en Red.
 
@@ -13,11 +13,11 @@
 
 ## 🚀 Características Principales
 
-*   🧱 **WAF (Web Application Firewall):** Nginx + ModSecurity con reglas OWASP CRS para bloquear ataques web (SQLi, XSS, etc.).
-*   🍯 **SSH Honeypot Inteligente:** Estrategia de "Split Authentication". El administrador usa llaves SSH, mientras que un usuario "cebo" permite contraseñas para atraer y banear bots.
-*   👁️ **Observabilidad Completa:** Promtail + Loki alimentan un panel nativo (Chart.js) que muestra ataques en tiempo real sin depender de Grafana.
-*   🔒 **Acceso Zero-Trust:** El panel de administración no está expuesto a internet. Solo es accesible mediante Túneles SSH.
-*   ⚡ **Despliegue Automatizado:** Un único script en Bash configura el host, Docker, usuarios y firewall en minutos.
+*   🧱 **Firewall de host (UFW) mínimo:** Solo expone SSH (22) con rate-limit; el resto queda cerrado por defecto.
+*   🍯 **SSH Honeypot Inteligente:** "Split Authentication". Admin por llave pública; usuario cebo con password controlada para disparar bans.
+*   👁️ **Observabilidad de acceso:** Promtail + Loki alimentan un panel nativo que muestra actividad SSH y Fail2Ban en tiempo real.
+*   🔒 **Acceso Zero-Trust:** El panel de administración no está expuesto a internet; solo vía túnel SSH a `127.0.0.1:8888`.
+*   ⚡ **Despliegue Automatizado:** Un único script en Bash configura host, Docker, usuarios y firewall en minutos.
 
 ## 🛠️ Arquitectura Técnica
 
@@ -25,11 +25,12 @@ El sistema utiliza **Docker Compose** para orquestar servicios aislados en redes
 
 | Servicio | Tecnología | Función | Puerto (Host) |
 |----------|------------|---------|---------------|
-| **WAF** | Nginx + ModSec | Filtrado de tráfico HTTP/S | `8000` / `8443` |
-| **Panel** | PHP 8.2 + Nginx | Dashboard de Gestión Unificado | `8888` (Localhost) |
-| **DB** | MySQL 8.0 | Gestión de Usuarios y Auditoría | *Aislado* |
-| **Logs** | Loki + Promtail | Ingesta y almacenamiento de logs | *Aislado* |
-| **Monitor**| Panel PHP + Chart.js (Loki) | Visualización de amenazas | `8888` (via túnel) |
+| **Panel** | PHP 8.2 + Nginx | Dashboard de gestión y métricas SSH/Fail2Ban | `127.0.0.1:8888` (solo túnel SSH) |
+| **DB** | MySQL 8.0 | Gestión de usuarios y auditoría | No expuesto (red interna) |
+| **Logs** | Loki + Promtail | Ingesta y almacenamiento de logs de SSH y Fail2Ban | No expuesto (red interna) |
+| **SSH** | OpenSSH + Fail2Ban | Acceso de administración y honeypot | `22/tcp` |
+
+> Nota: El WAF queda deshabilitado/no publicado por defecto. Si en el futuro se expone una aplicación web, se puede reactivar y publicar un servicio detrás de él.
 
 ## 📦 Instalación Rápida
 
@@ -54,16 +55,16 @@ El asistente interactivo te guiará para:
 
 ## 🖥️ Acceso al Panel de Control
 
-Por seguridad, el panel de control **no es accesible desde internet**. Debes usar un Túnel SSH.
+Por seguridad, el panel **no es accesible desde internet**. Solo vía túnel SSH:
 
-1.  **Establece el túnel desde tu PC:**
+1.  **Túnel desde tu PC:**
     ```bash
     ssh -L 8888:127.0.0.1:8888 tu_usuario@tu_vps_ip
     ```
 
-2.  **Accede en tu navegador:**
+2.  **Navegador:**
     *   Abre `http://localhost:8888`
-    *   Inicia sesión con las credenciales generadas en la instalación (`admin_credentials.txt`).
+    *   Credenciales en `~/admin_credentials.txt` (usuario admin, password generada).
 
 ## 🛡️ Estrategia de Seguridad (Honeypot)
 

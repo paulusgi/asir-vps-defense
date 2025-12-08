@@ -1,27 +1,5 @@
 services:
   # ============================================================================
-  # PUBLIC WAF (Web Application Firewall)
-  # Moved to 8000/8443 to avoid conflict with host web servers (Port 80/443)
-  # ============================================================================
-  waf:
-    build: ./nginx
-    container_name: asir_waf
-    restart: always
-    ports:
-      - "8000:80"
-      - "8443:443"
-    environment:
-      - PARANOIA=1
-      - ANOMALY_INBOUND=5
-      - ANOMALY_OUTBOUND=4
-    volumes:
-      - waf_logs:/var/log/nginx
-    networks:
-      - frontend_net
-    depends_on:
-      - php-app
-
-  # ============================================================================
   # PRIVATE ADMIN PANEL (Accessible only via SSH Tunnel)
   # ============================================================================
   admin-nginx:
@@ -47,7 +25,7 @@ services:
     restart: always
     user: "1000:1000" # Run as non-root user
     volumes:
-      - ./src:/var/www/html
+      - ./src:/var/www/html:ro
       - ./php/conf.d/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
     environment:
       - MYSQL_HOST=mysql
@@ -55,6 +33,15 @@ services:
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - LOKI_URL=http://loki:3100
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: "512m"
     networks:
       - frontend_net
       - backend_net
@@ -105,8 +92,8 @@ services:
     restart: always
     volumes:
       - ./promtail/config.yml:/etc/promtail/config.yml:ro
-      - waf_logs:/var/log/nginx:ro
       - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
+      - ./promtail/positions:/tmp/positions.yaml
     command: -config.file=/etc/promtail/config.yml
     networks:
       - backend_net
@@ -119,9 +106,8 @@ networks:
   backend_net:
     # Internal set to false to allow Grafana port binding to host
     # Security is maintained by not exposing ports for MySQL/Loki
-    internal: false
+    internal: true
 
 volumes:
   mysql_data:
   loki_data:
-  waf_logs:
