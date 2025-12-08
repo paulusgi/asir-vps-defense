@@ -116,11 +116,11 @@ install_dependencies() {
     fi
 
     # Install with retry and verification
-    log_info "Instalando paquetes (curl, git, ufw, fail2ban)..."
-    if ! apt-get install -y psmisc curl git ufw fail2ban; then
+    log_info "Instalando paquetes (curl, git, ufw, fail2ban, rsyslog)..."
+    if ! apt-get install -y psmisc curl git ufw fail2ban rsyslog; then
         log_warn "Fallo en la instalación de paquetes. Reintentando tras espera..."
         wait_for_apt_locks
-        apt-get install -y psmisc curl git ufw fail2ban
+        apt-get install -y psmisc curl git ufw fail2ban rsyslog
     fi
 
     # Critical check: Fail2Ban must be present
@@ -128,6 +128,11 @@ install_dependencies() {
         log_error "CRÍTICO: Fail2Ban no se instaló correctamente. Abortando para seguridad."
         log_info "Intenta ejecutar manualmente: apt-get install -y fail2ban"
         exit 1
+    fi
+
+    # Ensure rsyslog is running so /var/log/auth.log is generated
+    if systemctl list-unit-files | grep -q rsyslog.service; then
+        systemctl enable --now rsyslog >/dev/null 2>&1 || log_warn "No se pudo iniciar rsyslog automáticamente."
     fi
 
     # Install Docker if not present
@@ -197,6 +202,13 @@ configure_fail2ban() {
 
     systemctl stop fail2ban 2>/dev/null || true
 
+    # Ensure auth log exists so Fail2Ban can read it
+    if [ ! -f /var/log/auth.log ]; then
+        touch /var/log/auth.log
+        chown syslog:adm /var/log/auth.log 2>/dev/null || true
+        chmod 640 /var/log/auth.log
+    fi
+
     # Create custom jail configuration
     cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
@@ -222,7 +234,7 @@ EOF
 
     systemctl restart fail2ban
     systemctl enable fail2ban
-    log_success "Fail2Ban configurado con política estricta (Bantime: 1h, MaxRetry: 3)."
+    log_success "Fail2Ban configurado con política estricta (Bantime: 1h, MaxRetry: 1)."
 }
 
 create_secure_admin() {
