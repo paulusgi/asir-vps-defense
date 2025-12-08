@@ -1,5 +1,5 @@
 <?php
-// Secure session settings; secure flag will activate when served over HTTPS
+// Hardened session cookies; secure flag active when served over HTTPS
 $cookieSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
 session_set_cookie_params([
     'lifetime' => 0,
@@ -26,8 +26,8 @@ $options = [
 
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
-} catch (\PDOException $e) {
-    die("Error de conexión: " . $e->getMessage());
+} catch (PDOException $e) {
+    die('Error de conexión: ' . $e->getMessage());
 }
 
 if (isset($_GET['action']) && $_GET['action'] === 'metrics') {
@@ -42,235 +42,139 @@ if (isset($_GET['action']) && $_GET['action'] === 'metrics') {
     exit;
 }
 
-// Handle Logout
 if (isset($_GET['logout'])) {
     session_destroy();
-    header("Location: index.php");
+    header('Location: index.php');
     exit;
 }
 
-// Handle Login
+// Handle login
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
-    $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = :username");
+    $stmt = $pdo->prepare('SELECT id, username, password_hash, role FROM users WHERE username = :username');
     $stmt->execute(['username' => $_POST['username']]);
-    $user = $stmt->fetch();
+    $userRow = $stmt->fetch();
 
-    if ($user && password_verify($_POST['password'], $user['password_hash'])) {
+    if ($userRow && password_verify($_POST['password'], $userRow['password_hash'])) {
         session_regenerate_id(true);
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['role'] = $user['role'];
-        
-        // Log Login Success
-        $stmt = $pdo->prepare("INSERT INTO audit_log (user_id, action, ip_address) VALUES (:uid, 'LOGIN_SUCCESS', :ip)");
-        $stmt->execute(['uid' => $user['id'], 'ip' => $_SERVER['REMOTE_ADDR']]);
-        
-        header("Location: index.php");
+        $_SESSION['user_id'] = $userRow['id'];
+        $_SESSION['username'] = $userRow['username'];
+        $_SESSION['role'] = $userRow['role'];
+
+        $stmt = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (:uid, "LOGIN_SUCCESS", :ip)');
+        $stmt->execute(['uid' => $userRow['id'], 'ip' => $_SERVER['REMOTE_ADDR']]);
+
+        header('Location: index.php');
         exit;
-    } else {
-        $error = "Credenciales inválidas.";
-        // Log Login Failure
-        $stmt = $pdo->prepare("INSERT INTO audit_log (user_id, action, ip_address) VALUES (NULL, 'LOGIN_FAILED', :ip)");
-        $stmt->execute(['ip' => $_SERVER['REMOTE_ADDR']]);
     }
+
+    $error = 'Credenciales inválidas.';
+    $stmt = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (NULL, "LOGIN_FAILED", :ip)');
+    $stmt->execute(['ip' => $_SERVER['REMOTE_ADDR']]);
 }
 
-// Require Login
 if (!isset($_SESSION['user_id'])) {
-?>
+    ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <title>Login - ASIR Defense</title>
     <style>
-        body { font-family: sans-serif; background: #f4f4f4; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-box { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); width: 300px; }
-        h2 { text-align: center; color: #333; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #2e7d32; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        button:hover { background: #1b5e20; }
-        .error { color: red; text-align: center; margin-bottom: 10px; }
-        <section class="cards-grid">
-            <div class="card">
-                <span class="label">Baneos Fail2Ban (24h)</span>
-                <strong id="fail2ban24h">--</strong>
-                <small>Última hora: <span id="fail2ban1h">--</span></small>
-            </div>
-            <div class="card">
-                <span class="label">Intentos SSH fallidos (1h)</span>
-                <strong id="ssh1h">--</strong>
-                <small>Últimos 5 min: <span id="ssh5m">--</span></small>
-            </div>
-        </section>
+        body { font-family: sans-serif; background: #0b1220; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; color: #e8eef9; }
+        .login-box { background: #0f172a; padding: 28px; border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,0.35); width: 320px; border: 1px solid rgba(255,255,255,0.05); }
+        h2 { text-align: center; color: #e8eef9; margin-top: 0; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #1f2937; border-radius: 6px; background: #111827; color: #e8eef9; }
+        button { width: 100%; padding: 12px; background: #10b981; color: #0b1220; border: none; border-radius: 6px; cursor: pointer; font-weight: 700; }
+        button:hover { background: #0ea371; }
+        .error { color: #f87171; text-align: center; margin-bottom: 10px; }
+        small { display: block; text-align: center; color: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <h2>ASIR VPS Defense</h2>
+        <?php if (!empty($error)): ?>
+            <div class="error"><?= htmlspecialchars($error) ?></div>
+        <?php endif; ?>
+        <form method="POST" action="">
+            <input type="text" name="username" placeholder="Usuario" required autofocus>
+            <input type="password" name="password" placeholder="Contraseña" required>
+            <button type="submit">Entrar</button>
+        </form>
+        <small>Panel accesible solo vía túnel SSH</small>
+    </div>
+</body>
+</html>
+<?php
+    exit;
+}
 
-        <section class="panels-grid">
-            <div class="panel table-scroll">
-                <h3>Top IP baneadas (Fail2Ban)</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>IP</th>
-                            <th>País</th>
-                            <th>Eventos</th>
-                        </tr>
-                    </thead>
-                    <tbody id="banIpsBody"></tbody>
-                </table>
-            </div>
-            <div class="panel table-scroll">
-                <h3>Baneos recientes (Fail2Ban)</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Jail</th>
-                            <th>Origen</th>
-                        </tr>
-                    </thead>
-                    <tbody id="banEventsBody"></tbody>
-                </table>
-            </div>
-        </section>
-            flex-wrap: wrap;
-            gap: 16px;
+// Logged-in dashboard
+$logsStmt = $pdo->query('SELECT audit_log.id, users.username, audit_log.action, audit_log.ip_address, audit_log.created_at FROM audit_log LEFT JOIN users ON audit_log.user_id = users.id ORDER BY audit_log.created_at DESC LIMIT 50');
+$logs = $logsStmt->fetchAll();
+
+function h($value) {
+    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>ASIR VPS Defense</title>
+    <style>
+        :root {
+            --bg: #0b1220;
+            --panel: #0f172a;
+            --panel-border: rgba(255,255,255,0.07);
+            --text: #e8eef9;
+            --text-muted: #94a3b8;
+            --accent: #10b981;
         }
-                <h3>Top IP ofensivas (SSH)</h3>
-
-        .badge-admin { background: rgba(45, 224, 197, 0.2); }
-        .badge-viewer { background: rgba(255, 123, 114, 0.25); }
-                            <th>IP</th>
-                            <th>País</th>
-                            <th>Intentos</th>
-            align-items: center;
-            gap: 6px;
-                    <tbody id="sshIpsBody"></tbody>
-            border-radius: 999px;
-            font-size: 0.85rem;
-            gap: 16px;
-        }
-
-        .card {
-            background: var(--panel);
-            border: 1px solid var(--panel-border);
-            border-radius: 16px;
-            padding: 18px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            min-height: 120px;
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
-        }
-
-        .card span.label { color: var(--text-muted); font-size: 0.9rem; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background: radial-gradient(circle at 15% 20%, rgba(16,185,129,0.12), transparent 32%), radial-gradient(circle at 80% 0%, rgba(59,130,246,0.12), transparent 30%), var(--bg); color: var(--text); padding: 24px; }
+        a { color: var(--accent); }
+        .dashboard { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+        header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .badge { padding: 6px 12px; border-radius: 999px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.35); color: var(--accent); font-size: 0.9rem; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+        .card .label { color: var(--text-muted); font-size: 0.95rem; }
         .card strong { font-size: 2rem; }
-        .card small { color: var(--text-muted); font-size: 0.8rem; }
-
-        .panels-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 18px;
-        }
-
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--panel-border);
-            border-radius: 18px;
-            padding: 20px;
-            min-height: 280px;
-        }
-
-        .panel h3 {
-            margin-top: 0;
-            margin-bottom: 12px;
-            font-size: 1.1rem;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-        }
-
-        th, td {
-            padding: 10px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        th { text-align: left; color: var(--text-muted); font-weight: 500; }
-
-        tbody tr:last-child td { border-bottom: none; }
-
-        .surface-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-        }
-
-        .surface-tile {
-            border: 1px solid var(--panel-border);
-            border-radius: 14px;
-            padding: 16px;
-            background: rgba(255, 255, 255, 0.02);
-        }
-
-        .surface-tile small { color: var(--text-muted); display: block; margin-bottom: 6px; }
-
-        .alert {
-            padding: 12px;
-            border-radius: 10px;
-            background: rgba(255, 123, 114, 0.1);
-            border: 1px solid rgba(255, 123, 114, 0.35);
-            color: #ffb4ac;
-            display: none;
-        }
-
-        .alert.show { display: block; }
-
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+        .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px; }
+        .panel h3 { margin: 0 0 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.06); text-align: left; }
+        th { color: var(--text-muted); font-weight: 500; }
         .table-scroll { overflow-x: auto; }
-
-        @media (max-width: 640px) {
-            body { padding: 18px 12px; }
-            .hero header { flex-direction: column; align-items: flex-start; }
-        }
+        .alert { display: none; margin: 0 0 8px; padding: 10px; border-radius: 10px; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.35); color: #fca5a5; }
+        .alert.show { display: block; }
+        .status-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.15); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); padding: 8px 12px; border-radius: 999px; font-size: 0.95rem; }
+        @media (max-width: 720px) { header { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
     </style>
 </head>
 <body>
     <div class="dashboard">
-        <section class="hero">
-            <header>
-                <div>
-                    <h1>🛡️ ASIR VPS Defense</h1>
-                    <p style="margin:0;color:var(--text-muted);">Centro de mando reforzado para el WAF + Gateway</p>
-                </div>
-                <div style="text-align:right;">
-                    <div>Hola, <strong><?= htmlspecialchars($_SESSION['username']) ?></strong></div>
-                    <span class="badge badge-<?= htmlspecialchars($_SESSION['role']) ?>"><?= htmlspecialchars($_SESSION['role']) ?></span><br>
-                    <a href="?logout=1" style="color: var(--accent); text-decoration: none; font-size: 0.9rem;">Cerrar sesión</a>
-                </div>
-            </header>
+        <header>
             <div>
-                <span class="status-pill">● Operativo · Modo Fortaleza</span>
+                <h1 style="margin:0;">🛡️ ASIR VPS Defense</h1>
+                <div style="color:var(--text-muted);">Panel seguro · SSH + Fail2Ban</div>
             </div>
-            <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
-        </section>
+            <div style="text-align:right;">
+                <div>Hola, <strong><?= h($_SESSION['username']) ?></strong></div>
+                <span class="badge"><?= h($_SESSION['role']) ?></span><br>
+                <a href="?logout=1">Cerrar sesión</a>
+            </div>
+        </header>
+
+        <div class="status-pill">● Operativo · Solo túnel SSH</div>
+        <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
 
         <div id="metricsError" class="alert">No se pudo actualizar la telemetría.</div>
 
-        <section class="cards-grid">
-            <div class="card">
-                <span class="label">Ataques (últimos 5 min)</span>
-                <strong id="total5m">--</strong>
-            </div>
-            <div class="card">
-                <span class="label">Ataques (última hora)</span>
-                <strong id="total1h">--</strong>
-            </div>
-            <div class="card">
-                <span class="label">Ataques (24 horas)</span>
-                <strong id="total24h">--</strong>
-            </div>
+        <section class="cards">
             <div class="card">
                 <span class="label">Baneos Fail2Ban (24h)</span>
                 <strong id="fail2ban24h">--</strong>
@@ -283,143 +187,60 @@ if (!isset($_SESSION['user_id'])) {
             </div>
         </section>
 
-        <section class="panels-grid">
-            <div class="panel">
-                <h3>Intensidad por minuto</h3>
-                <canvas id="trendChart" height="260"></canvas>
-            </div>
-            <div class="panel">
-                <h3>Tipos de ataque detectados</h3>
-                <canvas id="attackTypesChart" height="260"></canvas>
-            </div>
-        </section>
-
-        <section class="panels-grid">
-            <div class="panel">
-                <h3>Origen geográfico (Top países)</h3>
-                <canvas id="countryChart" height="260"></canvas>
-            </div>
-            <div class="panel">
-                <h3>Superficies más presionadas</h3>
-                <div id="surfaceGrid" class="surface-grid"></div>
-            </div>
-        </section>
-
-        <section class="panels-grid">
-            <div class="panel table-scroll">
-                <h3>Top IP agresoras (última hora)</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>IP</th>
-                            <th>País</th>
-                            <th>Intentos</th>
-                        </tr>
-                    </thead>
-                    <tbody id="topIpsBody"></tbody>
-                </table>
-            </div>
-            <div class="panel table-scroll">
-                <h3>Últimos bloqueos del WAF</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>IP</th>
-                            <th>Tipo</th>
-                            <th>Recurso</th>
-                        </tr>
-                    </thead>
-                    <tbody id="eventsBody"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="panels-grid">
+        <section class="grid">
             <div class="panel table-scroll">
                 <h3>Top IP baneadas (Fail2Ban)</h3>
                 <table>
-                    <thead>
-                        <tr>
-                            <th>IP</th>
-                            <th>País</th>
-                            <th>Eventos</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>IP</th><th>País</th><th>Eventos</th></tr></thead>
                     <tbody id="banIpsBody"></tbody>
                 </table>
             </div>
             <div class="panel table-scroll">
                 <h3>Baneos recientes (Fail2Ban)</h3>
                 <table>
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Jail</th>
-                            <th>Origen</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
                     <tbody id="banEventsBody"></tbody>
                 </table>
             </div>
         </section>
 
-        <section class="panels-grid">
-            <div class="panel">
-                <h3>Jails más activas</h3>
-                <div id="jailGrid" class="surface-grid"></div>
+        <section class="grid">
+            <div class="panel table-scroll">
+                <h3>Top IP ofensivas (SSH)</h3>
+                <table>
+                    <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
+                    <tbody id="sshIpsBody"></tbody>
+                </table>
             </div>
             <div class="panel table-scroll">
                 <h3>Usuarios más atacados (SSH)</h3>
                 <table>
-                    <thead>
-                        <tr>
-                            <th>Usuario</th>
-                            <th>Intentos</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
                     <tbody id="sshUsersBody"></tbody>
                 </table>
             </div>
         </section>
 
-        <section class="panels-grid">
-            <div class="panel table-scroll">
-                <h3>Intentos SSH recientes</h3>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Usuario</th>
-                            <th>Origen</th>
-                            <th>Resultado</th>
-                        </tr>
-                    </thead>
-                    <tbody id="sshEventsBody"></tbody>
-                </table>
-            </div>
+        <section class="panel table-scroll">
+            <h3>Intentos SSH recientes</h3>
+            <table>
+                <thead><tr><th>Fecha</th><th>Usuario</th><th>Origen</th><th>Resultado</th></tr></thead>
+                <tbody id="sshEventsBody"></tbody>
+            </table>
         </section>
 
         <section class="panel table-scroll">
             <h3>Registro de Auditoría Interna</h3>
             <table>
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Usuario</th>
-                        <th>Acción</th>
-                        <th>IP Origen</th>
-                        <th>Fecha</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>ID</th><th>Usuario</th><th>Acción</th><th>IP Origen</th><th>Fecha</th></tr></thead>
                 <tbody>
                     <?php foreach ($logs as $log): ?>
                         <tr>
-                            <td><?= htmlspecialchars($log['id']) ?></td>
-                            <td><?= htmlspecialchars($log['username'] ?? 'Anónimo') ?></td>
-                            <td><?= htmlspecialchars($log['action']) ?></td>
-                            <td><?= htmlspecialchars($log['ip_address']) ?></td>
-                            <td><?= htmlspecialchars($log['created_at']) ?></td>
+                            <td><?= h($log['id']) ?></td>
+                            <td><?= h($log['username'] ?: 'Anónimo') ?></td>
+                            <td><?= h($log['action']) ?></td>
+                            <td><?= h($log['ip_address']) ?></td>
+                            <td><?= h($log['created_at']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -430,12 +251,12 @@ if (!isset($_SESSION['user_id'])) {
     <script>
         const setText = (id, value) => {
             const el = document.getElementById(id);
-            if (el) { el.textContent = value; }
+            if (el) el.textContent = value;
         };
 
         const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
 
-        const updateTable = (tbodyId, rows, columns = 4) => {
+        const updateTable = (tbodyId, rows, columns = 3) => {
             const tbody = document.getElementById(tbodyId);
             if (!tbody) return;
             tbody.innerHTML = '';
@@ -478,18 +299,15 @@ if (!isset($_SESSION['user_id'])) {
                 setText('ssh1h', sshTotals.last1h ?? 0);
                 setText('ssh5m', sshTotals.last5m ?? 0);
 
-                setText('lastRefresh', new Date((data.generatedAt ?? Date.now()/1000) * 1000).toLocaleTimeString('es-ES'));
+                const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
+                setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
-                updateTable('banIpsBody', ((data.fail2ban && data.fail2ban.topIps) || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
-
-                updateTable('banEventsBody', ((data.fail2ban && data.fail2ban.events) || []).map((row) => [formatTs(row.timestamp), row.jail, `${row.ip} · ${row.country_code}`]), 3);
-
-                updateTable('sshUsersBody', ((data.ssh && data.ssh.topUsers) || []).map((row) => [row.label, row.count]), 2);
-
-                updateTable('sshIpsBody', ((data.ssh && data.ssh.topIps) || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
-
-                updateTable('sshEventsBody', ((data.ssh && data.ssh.events) || []).map((row) => [formatTs(row.timestamp), row.username, `${row.ip} · ${row.country_code}`, row.result]), 4);
-            } catch (error) {
+                updateTable('banIpsBody', ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, `${r.country} (${r.country_code})`, r.count]), 3);
+                updateTable('banEventsBody', ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, `${r.ip} · ${r.country_code}`]), 3);
+                updateTable('sshIpsBody', ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${r.country} (${r.country_code})`, r.count]), 3);
+                updateTable('sshUsersBody', ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]), 2);
+                updateTable('sshEventsBody', ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${r.ip} · ${r.country_code}`, r.result]), 4);
+            } catch (e) {
                 document.getElementById('metricsError').classList.add('show');
             }
         };
