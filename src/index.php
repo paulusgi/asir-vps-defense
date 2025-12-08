@@ -102,10 +102,6 @@ if (!isset($_SESSION['user_id'])) {
 
 // --- AUTHENTICATED AREA ---
 
-// Log Page View
-$stmt = $pdo->prepare("INSERT INTO audit_log (user_id, action, ip_address) VALUES (:uid, 'PAGE_VIEW', :ip)");
-$stmt->execute(['uid' => $_SESSION['user_id'], 'ip' => $_SERVER['REMOTE_ADDR']]);
-
 // Fetch Audit Logs
 $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
 ?>
