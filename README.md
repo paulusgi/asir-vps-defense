@@ -15,7 +15,7 @@
 
 *   🧱 **WAF (Web Application Firewall):** Nginx + ModSecurity con reglas OWASP CRS para bloquear ataques web (SQLi, XSS, etc.).
 *   🍯 **SSH Honeypot Inteligente:** Estrategia de "Split Authentication". El administrador usa llaves SSH, mientras que un usuario "cebo" permite contraseñas para atraer y banear bots.
-*   👁️ **Observabilidad Completa:** Stack PLG (Promtail, Loki, Grafana) preconfigurado para visualizar ataques en tiempo real.
+*   👁️ **Observabilidad Completa:** Promtail + Loki alimentan un panel nativo (Chart.js) que muestra ataques en tiempo real sin depender de Grafana.
 *   🔒 **Acceso Zero-Trust:** El panel de administración no está expuesto a internet. Solo es accesible mediante Túneles SSH.
 *   ⚡ **Despliegue Automatizado:** Un único script en Bash configura el host, Docker, usuarios y firewall en minutos.
 
@@ -29,7 +29,7 @@ El sistema utiliza **Docker Compose** para orquestar servicios aislados en redes
 | **Panel** | PHP 8.2 + Nginx | Dashboard de Gestión Unificado | `8888` (Localhost) |
 | **DB** | MySQL 8.0 | Gestión de Usuarios y Auditoría | *Aislado* |
 | **Logs** | Loki + Promtail | Ingesta y almacenamiento de logs | *Aislado* |
-| **Monitor**| Grafana | Visualización de amenazas | `3000` (Localhost) |
+| **Monitor**| Panel PHP + Chart.js (Loki) | Visualización de amenazas | `8888` (via túnel) |
 
 ## 📦 Instalación Rápida
 
@@ -58,7 +58,7 @@ Por seguridad, el panel de control **no es accesible desde internet**. Debes usa
 
 1.  **Establece el túnel desde tu PC:**
     ```bash
-    ssh -L 8888:127.0.0.1:8888 -L 3000:127.0.0.1:3000 tu_usuario@tu_vps_ip
+    ssh -L 8888:127.0.0.1:8888 tu_usuario@tu_vps_ip
     ```
 
 2.  **Accede en tu navegador:**
@@ -71,7 +71,7 @@ El sistema configura SSH (`/etc/ssh/sshd_config`) para permitir autenticación p
 *   Los bots atacan al usuario cebo.
 *   **Fail2Ban** detecta los fallos y banea la IP.
 *   **Promtail** envía el log a **Loki**.
-*   Tú ves el ataque en tiempo real en **Grafana**.
+*   Tú ves el ataque en tiempo real en el **panel nativo**.
 
 ## 📄 Licencia
 
