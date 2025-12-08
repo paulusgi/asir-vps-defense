@@ -24,5 +24,8 @@ RUN mkdir -p /etc/modsecurity.d && \
 # We will rely on default config or mount our own if needed
 RUN mv /docker-entrypoint.d/90-copy-modsecurity-config.sh /docker-entrypoint.d/90-copy-modsecurity-config.sh.disabled
 
+# Disable other scripts that try to modify non-existent files
+RUN mv /docker-entrypoint.d/92-update-real_ip.sh /docker-entrypoint.d/92-update-real_ip.sh.disabled
+
 # Switch back to the default user (usually nginx or 101)
 USER 101
