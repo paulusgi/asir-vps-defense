@@ -14,5 +14,10 @@ USER root
 RUN chown root:root /etc/nginx/conf.d/public.conf && \
     chmod 644 /etc/nginx/conf.d/public.conf
 
+# Create the directory where ModSecurity tries to copy files and give it permissions
+# This fixes: "90-copy-modsecurity-config.sh: error: cannot copy config files to /etc/modsecurity.d"
+RUN mkdir -p /etc/modsecurity.d && \
+    chown -R nginx:nginx /etc/modsecurity.d
+
 # Switch back to the default user (usually nginx or 101)
 USER nginx
