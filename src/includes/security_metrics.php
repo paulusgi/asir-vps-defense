@@ -229,6 +229,38 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         'lat' => null,
         'lon' => null,
     ];
+    $countryFallback = static function (string $code) use ($default): array {
+        $centroids = [
+            'US' => [38.0, -97.0],
+            'GB' => [54.0, -2.0],
+            'NL' => [52.1, 5.3],
+            'FR' => [46.2, 2.2],
+            'DE' => [51.2, 10.4],
+            'ES' => [40.4, -3.7],
+            'IT' => [42.8, 12.5],
+            'PT' => [39.4, -8.2],
+            'RU' => [60.0, 90.0],
+            'CN' => [35.8, 104.1],
+            'JP' => [36.2, 138.3],
+            'IN' => [21.7, 78.9],
+            'SG' => [1.35, 103.82],
+            'HK' => [22.3, 114.2],
+            'ZA' => [-29.0, 24.0],
+            'BR' => [-10.8, -52.9],
+            'CA' => [61.1, -113.7],
+            'AU' => [-25.3, 133.8],
+        ];
+        $cc = strtoupper($code);
+        if (isset($centroids[$cc])) {
+            return [
+                'country_code' => $cc,
+                'country_name' => $default['country_name'],
+                'lat' => $centroids[$cc][0],
+                'lon' => $centroids[$cc][1],
+            ];
+        }
+        return $default;
+    };
 
     static $tableEnsured = false;
     if (!$tableEnsured) {
@@ -264,17 +296,24 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
 
     if ($row && isset($row['updated_at'])) {
         $freshThreshold = time() - (7 * 24 * 60 * 60);
-        if (strtotime((string) $row['updated_at']) > $freshThreshold) {
+        $stale = strtotime((string) $row['updated_at']) <= $freshThreshold;
+        $hasCoords = $row['lat'] !== null && $row['lon'] !== null;
+        if (!$stale && $hasCoords) {
             return [
                 'country_code' => $row['country_code'] ?? '??',
                 'country_name' => $row['country_name'] ?? 'Desconocido',
-                'lat' => $row['lat'] !== null ? (float) $row['lat'] : null,
-                'lon' => $row['lon'] !== null ? (float) $row['lon'] : null,
+                'lat' => (float) $row['lat'],
+                'lon' => (float) $row['lon'],
             ];
         }
     }
 
     $geo = fetchGeoFromApi($ip) ?: $default;
+    if (($geo['lat'] === null || $geo['lon'] === null) && ($geo['country_code'] ?? '??') !== '??') {
+        $geoFallback = $countryFallback($geo['country_code']);
+        $geo['lat'] = $geo['lat'] ?? $geoFallback['lat'];
+        $geo['lon'] = $geo['lon'] ?? $geoFallback['lon'];
+    }
 
     $stmt = $pdo->prepare('REPLACE INTO ip_geo_cache (ip, country_code, country_name, lat, lon) VALUES (:ip, :code, :name, :lat, :lon)');
     $stmt->execute([
