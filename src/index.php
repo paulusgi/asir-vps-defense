@@ -123,6 +123,7 @@ function h($value) {
 <head>
     <meta charset="UTF-8">
     <title>ASIR VPS Defense</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
     <style>
         :root {
             --bg: #0b1220;
@@ -131,6 +132,7 @@ function h($value) {
             --text: #e8eef9;
             --text-muted: #94a3b8;
             --accent: #10b981;
+            --accent-warm: #f59e0b;
         }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: radial-gradient(circle at 15% 20%, rgba(16,185,129,0.12), transparent 32%), radial-gradient(circle at 80% 0%, rgba(59,130,246,0.12), transparent 30%), var(--bg); color: var(--text); padding: 24px; }
@@ -152,6 +154,14 @@ function h($value) {
         .alert { display: none; margin: 0 0 8px; padding: 10px; border-radius: 10px; background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.35); color: #fca5a5; }
         .alert.show { display: block; }
         .status-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.15); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); padding: 8px 12px; border-radius: 999px; font-size: 0.95rem; }
+        .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); }
+        .controls select, .controls button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+        .pager { display: flex; gap: 8px; align-items: center; margin-top: 8px; color: var(--text-muted); font-size: 0.9rem; }
+        .pager button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+        .badge-result { padding: 4px 8px; border-radius: 10px; font-size: 0.85rem; }
+        .badge-result.ok { background: rgba(16,185,129,0.18); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); }
+        .badge-result.warn { background: rgba(245,158,11,0.18); color: var(--accent-warm); border: 1px solid rgba(245,158,11,0.35); }
+        #geoMap { height: 280px; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
         @media (max-width: 720px) { header { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
     </style>
 </head>
@@ -171,6 +181,16 @@ function h($value) {
 
         <div class="status-pill">● Operativo · Solo túnel SSH</div>
         <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
+
+        <div class="controls">
+            <span>Auto-refresco:</span>
+            <select id="refreshSelect">
+                <option value="5000" selected>5s</option>
+                <option value="15000">15s</option>
+                <option value="60000">1m</option>
+            </select>
+            <button id="toggleRefresh">Pausar</button>
+        </div>
 
         <div id="metricsError" class="alert">No se pudo actualizar la telemetría.</div>
 
@@ -201,6 +221,7 @@ function h($value) {
                     <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
                     <tbody id="banEventsBody"></tbody>
                 </table>
+                <div class="pager" id="banPager"></div>
             </div>
         </section>
 
@@ -227,6 +248,12 @@ function h($value) {
                 <thead><tr><th>Fecha</th><th>Usuario</th><th>Origen</th><th>Resultado</th></tr></thead>
                 <tbody id="sshEventsBody"></tbody>
             </table>
+            <div class="pager" id="sshPager"></div>
+        </section>
+
+        <section class="panel">
+            <h3>Mapa de actividad (últimos eventos)</h3>
+            <div id="geoMap"></div>
         </section>
 
         <section class="panel table-scroll">
@@ -248,6 +275,7 @@ function h($value) {
         </section>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         const setText = (id, value) => {
             const el = document.getElementById(id);
@@ -280,6 +308,62 @@ function h($value) {
             });
         };
 
+        const paginate = (rows, page, size) => {
+            const start = page * size;
+            return rows.slice(start, start + size);
+        };
+
+        const renderPager = (pagerId, total, page, size, onChange) => {
+            const pager = document.getElementById(pagerId);
+            if (!pager) return;
+            const pages = Math.max(1, Math.ceil(total / size));
+            pager.innerHTML = '';
+            const info = document.createElement('span');
+            info.textContent = `Página ${page + 1}/${pages}`;
+            const prev = document.createElement('button');
+            prev.textContent = '◀';
+            prev.disabled = page === 0;
+            prev.onclick = () => onChange(Math.max(0, page - 1));
+            const next = document.createElement('button');
+            next.textContent = '▶';
+            next.disabled = page >= pages - 1;
+            next.onclick = () => onChange(Math.min(pages - 1, page + 1));
+            pager.append(prev, info, next);
+        };
+
+        const flagFromCode = (code) => {
+            if (!code || code === '??') return '🏳️';
+            const cc = code.toUpperCase();
+            if (cc.length !== 2) return '🏳️';
+            return String.fromCodePoint(...[...cc].map(c => 127397 + c.charCodeAt(0)));
+        };
+
+        const badgeResult = (result) => {
+            const span = document.createElement('span');
+            span.className = 'badge-result ' + (result === 'Usuario existente' ? 'ok' : 'warn');
+            span.textContent = result;
+            return span.outerHTML;
+        };
+
+        let state = {
+            banEvents: [],
+            sshEvents: [],
+            banIps: [],
+            sshIps: [],
+            sshUsers: [],
+            geo: [],
+        };
+
+        let pages = { ban: 0, ssh: 0 };
+        const PAGE_SIZE = 10;
+
+        let refreshMs = 5000;
+        let refreshTimer = null;
+        const startRefresh = () => {
+            if (refreshTimer) clearInterval(refreshTimer);
+            refreshTimer = setInterval(refreshMetrics, refreshMs);
+        };
+
         const refreshMetrics = async () => {
             try {
                 const res = await fetch('?action=metrics');
@@ -302,18 +386,91 @@ function h($value) {
                 const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
                 setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
-                updateTable('banIpsBody', ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, `${r.country} (${r.country_code})`, r.count]), 3);
-                updateTable('banEventsBody', ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, `${r.ip} · ${r.country_code}`]), 3);
-                updateTable('sshIpsBody', ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${r.country} (${r.country_code})`, r.count]), 3);
-                updateTable('sshUsersBody', ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]), 2);
-                updateTable('sshEventsBody', ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${r.ip} · ${r.country_code}`, r.result]), 4);
+                state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
+                state.banEvents = ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, `${flagFromCode(r.country_code)} ${r.ip}`]);
+                state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
+                state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
+                state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${flagFromCode(r.country_code)} ${r.ip}`, badgeResult(r.result)]);
+                state.geo = (data.geo || []).map((p) => ({
+                    lat: p.lat,
+                    lon: p.lon,
+                    ip: p.ip,
+                    country: p.country,
+                    code: p.country_code,
+                    type: p.type,
+                }));
+
+                updateTable('banIpsBody', state.banIps, 3);
+                const banPageRows = paginate(state.banEvents, pages.ban, PAGE_SIZE);
+                updateTable('banEventsBody', banPageRows, 3);
+                renderPager('banPager', state.banEvents.length, pages.ban, PAGE_SIZE, (p) => {
+                    pages.ban = p;
+                    updateTable('banEventsBody', paginate(state.banEvents, pages.ban, PAGE_SIZE), 3);
+                    renderPager('banPager', state.banEvents.length, pages.ban, PAGE_SIZE, () => {});
+                });
+
+                updateTable('sshIpsBody', state.sshIps, 3);
+                updateTable('sshUsersBody', state.sshUsers, 2);
+                const sshPageRows = paginate(state.sshEvents, pages.ssh, PAGE_SIZE);
+                updateTable('sshEventsBody', sshPageRows, 4);
+                renderPager('sshPager', state.sshEvents.length, pages.ssh, PAGE_SIZE, (p) => {
+                    pages.ssh = p;
+                    updateTable('sshEventsBody', paginate(state.sshEvents, pages.ssh, PAGE_SIZE), 4);
+                    renderPager('sshPager', state.sshEvents.length, pages.ssh, PAGE_SIZE, () => {});
+                });
+
+                renderMap(state.geo);
             } catch (e) {
                 document.getElementById('metricsError').classList.add('show');
             }
         };
 
+        // Leaflet map
+        const map = L.map('geoMap', { worldCopyJump: true, zoomControl: false });
+        const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap, © Carto',
+            maxZoom: 6,
+            minZoom: 1,
+        }).addTo(map);
+        const geoLayer = L.layerGroup().addTo(map);
+        map.setView([20, 0], 2);
+
+        const renderMap = (points) => {
+            geoLayer.clearLayers();
+            const valid = points.filter(p => p.lat !== null && p.lon !== null);
+            valid.forEach((p) => {
+                const color = p.type === 'fail2ban' ? '#10b981' : '#f59e0b';
+                L.circleMarker([p.lat, p.lon], {
+                    radius: 5,
+                    color,
+                    weight: 1,
+                    fillColor: color,
+                    fillOpacity: 0.7,
+                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}`);
+            });
+            if (valid.length) {
+                map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
+            }
+        };
+
+        document.getElementById('refreshSelect').addEventListener('change', (e) => {
+            refreshMs = Number(e.target.value) || 5000;
+            startRefresh();
+        });
+
+        document.getElementById('toggleRefresh').addEventListener('click', (e) => {
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+                refreshTimer = null;
+                e.target.textContent = 'Reanudar';
+            } else {
+                e.target.textContent = 'Pausar';
+                startRefresh();
+            }
+        });
+
         refreshMetrics();
-        setInterval(refreshMetrics, 5000);
+        startRefresh();
     </script>
 </body>
 </html>
