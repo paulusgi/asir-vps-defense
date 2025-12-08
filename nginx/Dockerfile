@@ -1,5 +1,8 @@
 FROM owasp/modsecurity-crs:nginx
 
+# Switch to root early so we can modify packaged files
+USER root
+
 # Remove default server template to avoid PROXY_SSL_CONFIG placeholder issues
 RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/templates/conf.d/default.conf.template
 
@@ -7,7 +10,6 @@ RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/templates/conf.d/default.con
 COPY conf.d/public.conf /etc/nginx/conf.d/public.conf
 
 # Switch to root to fix permissions (The image runs as nginx user by default)
-USER root
 
 # Load ModSecurity Module explicitly (Required because the base nginx.conf doesn't load it)
 RUN sed -i '1i load_module /usr/lib/nginx/modules/ngx_http_modsecurity_module.so;' /etc/nginx/nginx.conf
