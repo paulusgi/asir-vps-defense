@@ -12,10 +12,18 @@ function fetchSecurityMetrics(PDO $pdo): array
         $fail2ban = fetchFail2BanMetrics($client, $pdo);
         $ssh = fetchSshMetrics($client, $pdo);
 
+        $geoPoints = array_values(array_filter(array_merge(
+            $fail2ban['events'] ?? [],
+            $ssh['events'] ?? []
+        ), static function (array $row): bool {
+            return isset($row['lat'], $row['lon']);
+        }));
+
         return [
             'generatedAt' => time(),
             'fail2ban' => $fail2ban,
             'ssh' => $ssh,
+            'geo' => array_slice($geoPoints, 0, 100),
         ];
     } catch (Throwable $exception) {
         return [
@@ -62,7 +70,10 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
             'ip' => $ip,
             'country' => $geo['country_name'],
             'country_code' => $geo['country_code'],
+            'lat' => $geo['lat'],
+            'lon' => $geo['lon'],
             'jail' => $jail,
+            'type' => 'fail2ban',
         ];
     }
 
@@ -113,7 +124,10 @@ function fetchSshMetrics(LokiClient $client, PDO $pdo): array
             'ip' => $ip,
             'country' => $geo['country_name'],
             'country_code' => $geo['country_code'],
+            'lat' => $geo['lat'],
+            'lon' => $geo['lon'],
             'result' => $parsed['result'],
+            'type' => 'ssh',
         ];
     }
 
@@ -175,6 +189,8 @@ function formatIpCountList(PDO $pdo, array $counts, int $limit = 5): array
             'count' => (int) round((float) $count),
             'country' => $geo['country_name'],
             'country_code' => $geo['country_code'],
+            'lat' => $geo['lat'],
+            'lon' => $geo['lon'],
         ];
         if (count($formatted) >= $limit) {
             break;
@@ -210,6 +226,8 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
     $default = [
         'country_code' => '??',
         'country_name' => 'Desconocido',
+        'lat' => null,
+        'lon' => null,
     ];
 
     static $tableEnsured = false;
@@ -219,9 +237,20 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
                 ip VARCHAR(45) PRIMARY KEY,
                 country_code CHAR(2) DEFAULT '??',
                 country_name VARCHAR(100) DEFAULT 'Desconocido',
+                lat DECIMAL(10,6) NULL,
+                lon DECIMAL(10,6) NULL,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB"
         );
+        // Si la tabla ya existe pero sin lat/lon, intentamos añadirlas sin romper
+        try {
+            $pdo->exec("ALTER TABLE ip_geo_cache ADD COLUMN lat DECIMAL(10,6) NULL");
+        } catch (Throwable $ignored) {
+        }
+        try {
+            $pdo->exec("ALTER TABLE ip_geo_cache ADD COLUMN lon DECIMAL(10,6) NULL");
+        } catch (Throwable $ignored) {
+        }
         $tableEnsured = true;
     }
 
@@ -229,7 +258,7 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         return $default;
     }
 
-    $stmt = $pdo->prepare('SELECT country_code, country_name, updated_at FROM ip_geo_cache WHERE ip = :ip');
+    $stmt = $pdo->prepare('SELECT country_code, country_name, lat, lon, updated_at FROM ip_geo_cache WHERE ip = :ip');
     $stmt->execute(['ip' => $ip]);
     $row = $stmt->fetch();
 
@@ -239,17 +268,21 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
             return [
                 'country_code' => $row['country_code'] ?? '??',
                 'country_name' => $row['country_name'] ?? 'Desconocido',
+                'lat' => $row['lat'] !== null ? (float) $row['lat'] : null,
+                'lon' => $row['lon'] !== null ? (float) $row['lon'] : null,
             ];
         }
     }
 
     $geo = fetchGeoFromApi($ip) ?: $default;
 
-    $stmt = $pdo->prepare('REPLACE INTO ip_geo_cache (ip, country_code, country_name) VALUES (:ip, :code, :name)');
+    $stmt = $pdo->prepare('REPLACE INTO ip_geo_cache (ip, country_code, country_name, lat, lon) VALUES (:ip, :code, :name, :lat, :lon)');
     $stmt->execute([
         'ip' => $ip,
         'code' => $geo['country_code'],
         'name' => $geo['country_name'],
+        'lat' => $geo['lat'],
+        'lon' => $geo['lon'],
     ]);
 
     return $geo;
@@ -285,9 +318,13 @@ function fetchGeoFromApi(string $ip): ?array
 
     $code = strtoupper((string) ($data['country_code'] ?? '??'));
     $name = (string) ($data['country_name'] ?? ($data['country'] ?? 'Desconocido'));
+    $lat = isset($data['latitude']) ? (float) $data['latitude'] : null;
+    $lon = isset($data['longitude']) ? (float) $data['longitude'] : null;
 
     return [
         'country_code' => $code ?: '??',
         'country_name' => $name ?: 'Desconocido',
+        'lat' => $lat,
+        'lon' => $lon,
     ];
 }
