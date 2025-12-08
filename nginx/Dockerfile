@@ -30,12 +30,25 @@ RUN mv /docker-entrypoint.d/93-update-proxy-ssl-config.sh /docker-entrypoint.d/9
 RUN mv /docker-entrypoint.d/94-activate-plugins.sh /docker-entrypoint.d/94-activate-plugins.sh.disabled
 
 # MANUALLY SETUP MODSECURITY (Since we disabled the auto-scripts)
-# 1. Copy the recommended configuration
-RUN cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity.d/modsecurity.conf && \
-    sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity.d/modsecurity.conf
+# 1. Copy the recommended configuration (from template) and replace variables
+RUN cp /etc/nginx/templates/modsecurity.d/modsecurity.conf.template /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_RULE_ENGINE}/On/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_REQ_BODY_ACCESS}/On/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_REQ_BODY_LIMIT}/13107200/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_REQ_BODY_NOFILES_LIMIT}/131072/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_RESP_BODY_ACCESS}/On/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_RESP_BODY_LIMIT}/1048576/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_PCRE_MATCH_LIMIT}/100000/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_PCRE_MATCH_LIMIT_RECURSION}/100000/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_TAG}/modsecurity/g' /etc/modsecurity.d/modsecurity.conf
 
 # 2. Copy CRS Setup and Rules
-RUN cp /opt/owasp-crs/crs-setup.conf.example /etc/modsecurity.d/crs-setup.conf && \
+# Try both locations for crs-setup.conf to be safe
+RUN if [ -f /opt/owasp-crs/crs-setup.conf ]; then \
+        cp /opt/owasp-crs/crs-setup.conf /etc/modsecurity.d/crs-setup.conf; \
+    else \
+        cp /opt/owasp-crs/crs-setup.conf.example /etc/modsecurity.d/crs-setup.conf; \
+    fi && \
     cp -r /opt/owasp-crs/rules /etc/modsecurity.d/rules
 
 # 3. Create a main include file
