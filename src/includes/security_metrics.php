@@ -9,25 +9,40 @@ function fetchSecurityMetrics(PDO $pdo): array
     $client = new LokiClient(getenv('LOKI_URL') ?: 'http://loki:3100');
 
     try {
-        /**
-         * @param array<string, array{label:string,count:int|float}> $counts
-         * @return array<int, array{code:string,label:string,count:int}>
-         */
-        function normalizeCountryCounts(array $counts): array
-        {
-            uasort($counts, static fn($a, $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0));
-            $normalized = [];
+        $totals = [
+            'last5m' => $client->queryScalar('sum(count_over_time({job="nginx_waf",status="403"}[5m]))'),
+            'last1h' => $client->queryScalar('sum(count_over_time({job="nginx_waf",status="403"}[1h]))'),
+            'last24h' => $client->queryScalar('sum(count_over_time({job="nginx_waf",status="403"}[24h]))'),
+        ];
 
-            foreach ($counts as $code => $data) {
-                $normalized[] = [
-                    'code' => (string) $code,
-                    'label' => (string) ($data['label'] ?? $code),
-                    'count' => (int) round((float) ($data['count'] ?? 0)),
-                ];
-            }
+        $trend = $client->queryRangeSeries(
+            'sum(count_over_time({job="nginx_waf",status="403"}[1m]))',
+            60,
+            '60s'
+        );
 
-            return $normalized;
-        }
+        $topIps = formatTopIps($pdo, $client->queryVector(
+            'topk(5, sum by (client_ip) (count_over_time({job="nginx_waf",status="403"}[1h])))'
+        ));
+
+        $recentLogs = $client->queryRangeRaw(
+            '{job="nginx_waf",status="403"}',
+            time() - 3600,
+            time(),
+            '30s',
+            500
+        );
+
+        $recentEvents = [];
+        $attackTypeCounts = [];
+        $surfaceCounts = [];
+        $countryCounts = [];
+        $geoCache = [];
+
+        foreach ($recentLogs as $entry) {
+            $payload = json_decode($entry['line'], true);
+            if (!is_array($payload)) {
+                continue;
             }
 
             $ip = $payload['remote_addr'] ?? ($payload['client_ip'] ?? ($entry['labels']['client_ip'] ?? null));
@@ -45,6 +60,7 @@ function fetchSecurityMetrics(PDO $pdo): array
 
             $attackTypeCounts[$attackType] = ($attackTypeCounts[$attackType] ?? 0) + 1;
             $surfaceCounts[$surface] = ($surfaceCounts[$surface] ?? 0) + 1;
+
             if (!isset($countryCounts[$geo['country_code']])) {
                 $countryCounts[$geo['country_code']] = [
                     'label' => $geo['country_name'],
@@ -174,18 +190,19 @@ function normalizeCounts(array $counts): array
 }
 
 /**
- * @param array<string, int|float> $counts
+ * @param array<string, array{label:string,count:int|float}> $counts
  * @return array<int, array{code:string,label:string,count:int}>
  */
 function normalizeCountryCounts(array $counts): array
 {
-    arsort($counts);
+    uasort($counts, static fn($a, $b) => ($b['count'] ?? 0) <=> ($a['count'] ?? 0));
     $normalized = [];
-    foreach ($counts as $code => $count) {
+
+    foreach ($counts as $code => $data) {
         $normalized[] = [
             'code' => (string) $code,
-            'label' => countryNameFromCode($code),
-            'count' => (int) round((float) $count),
+            'label' => (string) ($data['label'] ?? $code),
+            'count' => (int) round((float) ($data['count'] ?? 0)),
         ];
     }
 
@@ -201,25 +218,6 @@ function normalizeTotals(array $totals): array
     ];
 }
 
-function countryNameFromCode(string $code): string
-{
-    $map = [
-        'ES' => 'España',
-        'US' => 'Estados Unidos',
-        'FR' => 'Francia',
-        'BR' => 'Brasil',
-        'DE' => 'Alemania',
-        'MX' => 'México',
-        '??' => 'Desconocido',
-    ];
-
-    $code = strtoupper($code);
-    return $map[$code] ?? $code;
-}
-
-/**
- * Returns ['country_code' => 'ES', 'country_name' => 'España']
- */
 function lookupGeoForIp(PDO $pdo, string $ip): array
 {
     $default = [
