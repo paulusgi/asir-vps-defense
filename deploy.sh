@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 # ==============================================================================
 # ASIR VPS Defense - Automated Deployment Script
@@ -151,8 +150,10 @@ setup_firewall() {
     ufw default deny incoming
     ufw default allow outgoing
     
-    # Allow only SSH; rate-limit to mitigate brute force
-    ufw limit 22/tcp comment 'SSH (rate limited)'
+    # Allow critical ports
+    ufw allow 22/tcp comment 'SSH'
+    ufw allow 80/tcp comment 'HTTP'
+    ufw allow 443/tcp comment 'HTTPS'
     
     # Enable UFW without prompt
     echo "y" | ufw enable
@@ -169,42 +170,40 @@ configure_ssh() {
     cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 
     # Base configuration (Secure by default)
-    cat > /etc/ssh/sshd_config <<EOF
-# ASIR VPS Defense - Hardened SSH Config
-Port 22
-Protocol 2
-PermitRootLogin no
-PasswordAuthentication no
-PubkeyAuthentication yes
-ChallengeResponseAuthentication no
-UsePAM yes
-X11Forwarding no
-AllowTcpForwarding yes
-PrintMotd no
-AcceptEnv LANG LC_*
-Subsystem sftp /usr/lib/openssh/sftp-server
-
-# Hardening extra
-AllowUsers $REAL_USER $HONEYPOT_USER
-MaxAuthTries 3
-MaxStartups 5:30:10
-LoginGraceTime 20
-ClientAliveInterval 300
-ClientAliveCountMax 2
-KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
-MACs hmac-sha2-512,hmac-sha2-256
-Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes256-ctr
-
-# Honeypot User Configuration (Allow Password)
-Match User $HONEYPOT_USER
+        cat > /etc/ssh/sshd_config <<EOF
+    # ASIR VPS Defense - SSH Config
+    Port 22
+    Protocol 2
+    PermitRootLogin no
     PasswordAuthentication yes
-    PermitEmptyPasswords no
-    MaxAuthTries 5
-    AllowTcpForwarding no
-EOF
+    PubkeyAuthentication yes
+    ChallengeResponseAuthentication no
+    UsePAM yes
+    X11Forwarding no
+    AllowTcpForwarding yes
+    PrintMotd no
+    AcceptEnv LANG LC_*
+    Subsystem sftp /usr/lib/openssh/sftp-server
+
+    # Hardening extra
+    MaxAuthTries 3
+    MaxStartups 5:30:10
+    LoginGraceTime 20
+    ClientAliveInterval 300
+    ClientAliveCountMax 2
+    KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+    MACs hmac-sha2-512,hmac-sha2-256
+    Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes256-ctr
+    LogLevel VERBOSE
+
+    # Admin real: solo clave pública (sin password)
+    Match User $REAL_USER
+        PasswordAuthentication no
+        AuthenticationMethods publickey
+    EOF
 
     systemctl restart sshd
-    log_success "SSH configurado. Admin: Key-only | Honeypot: Password-allowed."
+        log_success "SSH configurado. Admin real solo clave pública; resto acepta contraseña."
 }
 
 configure_fail2ban() {
