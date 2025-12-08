@@ -44,7 +44,8 @@ RUN cp /etc/nginx/templates/modsecurity.d/modsecurity.conf.template /etc/modsecu
     sed -i 's/${MODSEC_RESP_BODY_LIMIT}/1048576/g' /etc/modsecurity.d/modsecurity.conf && \
     sed -i 's/${MODSEC_PCRE_MATCH_LIMIT}/100000/g' /etc/modsecurity.d/modsecurity.conf && \
     sed -i 's/${MODSEC_PCRE_MATCH_LIMIT_RECURSION}/100000/g' /etc/modsecurity.d/modsecurity.conf && \
-    sed -i 's/${MODSEC_TAG}/modsecurity/g' /etc/modsecurity.d/modsecurity.conf
+    sed -i 's/${MODSEC_TAG}/modsecurity/g' /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/${MODSEC_REQ_BODY_LIMIT_ACTION}/Reject/g' /etc/modsecurity.d/modsecurity.conf
 
 # 2. Copy CRS Setup and Rules
 # Try both locations for crs-setup.conf to be safe
