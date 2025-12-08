@@ -29,5 +29,23 @@ RUN mv /docker-entrypoint.d/92-update-real_ip.sh /docker-entrypoint.d/92-update-
 RUN mv /docker-entrypoint.d/93-update-proxy-ssl-config.sh /docker-entrypoint.d/93-update-proxy-ssl-config.sh.disabled
 RUN mv /docker-entrypoint.d/94-activate-plugins.sh /docker-entrypoint.d/94-activate-plugins.sh.disabled
 
+# MANUALLY SETUP MODSECURITY (Since we disabled the auto-scripts)
+# 1. Copy the recommended configuration
+RUN cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity.d/modsecurity.conf && \
+    sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity.d/modsecurity.conf
+
+# 2. Copy CRS Setup and Rules
+RUN cp /opt/owasp-crs/crs-setup.conf.example /etc/modsecurity.d/crs-setup.conf && \
+    cp -r /opt/owasp-crs/rules /etc/modsecurity.d/rules
+
+# 3. Create a main include file
+RUN echo "include /etc/modsecurity.d/modsecurity.conf" > /etc/modsecurity.d/main.conf && \
+    echo "include /etc/modsecurity.d/crs-setup.conf" >> /etc/modsecurity.d/main.conf && \
+    echo "include /etc/modsecurity.d/rules/*.conf" >> /etc/modsecurity.d/main.conf
+
+# Fix permissions for our manual setup
+RUN chown -R 101:101 /etc/modsecurity.d && \
+    chmod -R 755 /etc/modsecurity.d
+
 # Switch back to the default user (usually nginx or 101)
 USER 101
