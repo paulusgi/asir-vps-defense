@@ -161,7 +161,7 @@ function h($value) {
         .badge-result { padding: 4px 8px; border-radius: 10px; font-size: 0.85rem; }
         .badge-result.ok { background: rgba(16,185,129,0.18); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); }
         .badge-result.warn { background: rgba(245,158,11,0.18); color: var(--accent-warm); border: 1px solid rgba(245,158,11,0.35); }
-        #geoMap { height: 280px; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
+        #geoMap { height: 340px; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
         @media (max-width: 720px) { header { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
     </style>
 </head>
