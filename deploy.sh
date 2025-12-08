@@ -243,6 +243,28 @@ create_secure_admin() {
         log_success "Usuario $SECURE_ADMIN creado."
     fi
 
+    # Set password for sudo usage
+    echo -e "${YELLOW}>>> Configuración de contraseña para SUDO${NC}"
+    echo -e "Aunque el acceso SSH sea por clave, necesitas una contraseña para elevar privilegios (sudo)."
+    echo -e "Por favor, establece una contraseña segura para el usuario '$SECURE_ADMIN'."
+    
+    while true; do
+        echo -n "Contraseña sudo: "
+        read -r -s ADMIN_PASS < /dev/tty
+        echo ""
+        echo -n "Confirmar contraseña: "
+        read -r -s ADMIN_PASS_CONFIRM < /dev/tty
+        echo ""
+        
+        if [ -n "$ADMIN_PASS" ] && [ "$ADMIN_PASS" == "$ADMIN_PASS_CONFIRM" ]; then
+            echo "$SECURE_ADMIN:$ADMIN_PASS" | chpasswd
+            log_success "Contraseña establecida para $SECURE_ADMIN."
+            break
+        else
+            log_error "Las contraseñas no coinciden o están vacías. Inténtalo de nuevo."
+        fi
+    done
+
     # Setup SSH Key for Real Admin
     local ASK_FOR_KEY=true
     
@@ -465,38 +487,7 @@ EOF
 # Main Execution
 # ==============================================================================
 
-main() {
-    clear
-    echo -e "${GREEN}==================================================${NC}"
-    echo -e "${GREEN}   ASIR VPS DEFENSE - INSTALLER v1.1              ${NC}"
-    echo -e "${GREEN}==================================================${NC}"
-    
-    check_root
-    detect_context
-    detect_os
-    
-    # Step 1: System Prep
-    install_dependencies
-    setup_firewall
-    
-    # Step 2: User & Security Config
-    # We do this BEFORE cloning so we can set up the project in the correct home directory
-    create_secure_admin
-    handle_honeypot_logic
-    
-    configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
-    configure_fail2ban
-    
-    # Step 3: Project Setup in Secure User Home
-    local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
-    log_info "Preparando entorno del proyecto en: $PROJECT_DIR"
 
-    # Create directory if not exists
-    if [ ! -d "$PROJECT_DIR" ]; then
-        mkdir -p "$PROJECT_DIR"
-    fi
-
-    # Logic to populate the directory
 main() {
     clear
     echo -e "${GREEN}==================================================${NC}"
