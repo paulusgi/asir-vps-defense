@@ -26,6 +26,7 @@ RUN mv /docker-entrypoint.d/90-copy-modsecurity-config.sh /docker-entrypoint.d/9
 
 # Disable other scripts that try to modify non-existent files
 RUN mv /docker-entrypoint.d/92-update-real_ip.sh /docker-entrypoint.d/92-update-real_ip.sh.disabled
+RUN mv /docker-entrypoint.d/93-update-proxy-ssl-config.sh /docker-entrypoint.d/93-update-proxy-ssl-config.sh.disabled
 
 # Switch back to the default user (usually nginx or 101)
 USER 101
