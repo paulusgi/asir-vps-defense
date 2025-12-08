@@ -195,6 +195,8 @@ EOF
 configure_fail2ban() {
     log_info "Configurando Fail2Ban (Protección Activa)..."
 
+    systemctl stop fail2ban 2>/dev/null || true
+
     # Create custom jail configuration
     cat > /etc/fail2ban/jail.local <<EOF
 [DEFAULT]
@@ -204,8 +206,8 @@ bantime = 1h
 # An ip is banned if it has generated "maxretry" during the last "findtime"
 findtime = 10m
 
-# "maxretry" is the number of failures before a ban is imposed
-maxretry = 5
+# "maxretry" es el numero de fallos permitidos antes del ban global
+maxretry = 1
 
 # Ignore localhost
 ignoreip = 127.0.0.1/8 ::1
@@ -215,7 +217,7 @@ enabled = true
 port    = ssh
 logpath = %(sshd_log)s
 backend = %(sshd_backend)s
-maxretry = 3
+maxretry = 1
 EOF
 
     systemctl restart fail2ban
