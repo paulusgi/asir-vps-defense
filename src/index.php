@@ -141,8 +141,8 @@ function h($value) {
         header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
         .user-panel { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
         .user-row { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.3); border-radius: 999px; }
-        .logout-link { color: var(--accent); text-decoration: none; font-size: 0.95rem; }
-        .logout-link:hover { text-decoration: underline; }
+        .logout-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 0.95rem; padding: 6px 10px; border: 1px solid rgba(16,185,129,0.35); border-radius: 999px; background: rgba(16,185,129,0.12); }
+        .logout-link:hover { background: rgba(16,185,129,0.18); text-decoration: none; }
         .badge { padding: 6px 12px; border-radius: 999px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.35); color: var(--accent); font-size: 0.9rem; }
         .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
         .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px; }
@@ -179,9 +179,9 @@ function h($value) {
             <div class="user-panel">
                 <div class="user-row">
                     <span>Hola, <strong><?= h($_SESSION['username']) ?></strong></span>
+                    <a class="logout-link" href="?logout=1">Cerrar sesión</a>
                     <span class="badge"><?= h($_SESSION['role']) ?></span>
                 </div>
-                <a class="logout-link" href="?logout=1">Cerrar sesión</a>
             </div>
         </header>
 
