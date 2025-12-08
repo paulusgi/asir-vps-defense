@@ -1,5 +1,8 @@
 # 🛡️ ASIR VPS Defense - Automated Security Appliance
 
+# ATENCIÓN ESTE README.md ES SOLO UNA PRUEBA.
+## No esta actualizado y tiene errores.
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
