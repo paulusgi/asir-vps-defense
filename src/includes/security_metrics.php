@@ -203,6 +203,8 @@ function normalizeCounts(array $counts): array
 }
 
 /**
+ * Resolución geográfica de IP con caché local en MySQL.
+ */
 function lookupGeoForIp(PDO $pdo, string $ip): array
 {
     $default = [
