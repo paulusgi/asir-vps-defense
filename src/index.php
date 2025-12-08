@@ -214,6 +214,7 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
 
         .card span.label { color: var(--text-muted); font-size: 0.9rem; }
         .card strong { font-size: 2rem; }
+        .card small { color: var(--text-muted); font-size: 0.8rem; }
 
         .panels-grid {
             display: grid;
@@ -319,6 +320,16 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
                 <span class="label">Ataques (24 horas)</span>
                 <strong id="total24h">--</strong>
             </div>
+            <div class="card">
+                <span class="label">Baneos Fail2Ban (24h)</span>
+                <strong id="fail2ban24h">--</strong>
+                <small>Última hora: <span id="fail2ban1h">--</span></small>
+            </div>
+            <div class="card">
+                <span class="label">Intentos SSH fallidos (1h)</span>
+                <strong id="ssh1h">--</strong>
+                <small>Últimos 5 min: <span id="ssh5m">--</span></small>
+            </div>
         </section>
 
         <section class="panels-grid">
@@ -369,6 +380,84 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
                         </tr>
                     </thead>
                     <tbody id="eventsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panels-grid">
+            <div class="panel table-scroll">
+                <h3>Top IP baneadas (Fail2Ban)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>País</th>
+                            <th>Eventos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="banIpsBody"></tbody>
+                </table>
+            </div>
+            <div class="panel table-scroll">
+                <h3>Baneos recientes (Fail2Ban)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Jail</th>
+                            <th>Origen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="banEventsBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panels-grid">
+            <div class="panel">
+                <h3>Jails más activas</h3>
+                <div id="jailGrid" class="surface-grid"></div>
+            </div>
+            <div class="panel table-scroll">
+                <h3>Usuarios más atacados (SSH)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Usuario</th>
+                            <th>Intentos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sshUsersBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="panels-grid">
+            <div class="panel table-scroll">
+                <h3>Top IP ofensivas (SSH)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP</th>
+                            <th>País</th>
+                            <th>Intentos</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sshIpsBody"></tbody>
+                </table>
+            </div>
+            <div class="panel table-scroll">
+                <h3>Intentos SSH recientes</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Usuario</th>
+                            <th>Origen</th>
+                            <th>Resultado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sshEventsBody"></tbody>
                 </table>
             </div>
         </section>
@@ -434,8 +523,8 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
 
         const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
 
-        const updateSurfaces = (items) => {
-            const grid = document.getElementById('surfaceGrid');
+        const updateTiles = (containerId, items) => {
+            const grid = document.getElementById(containerId);
             if (!grid) return;
             grid.innerHTML = '';
             if (!items || !items.length) {
@@ -488,6 +577,15 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
                 setText('total5m', data.totals.last5m ?? 0);
                 setText('total1h', data.totals.last1h ?? 0);
                 setText('total24h', data.totals.last24h ?? 0);
+
+                const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
+                setText('fail2ban24h', fail2banTotals.last24h ?? 0);
+                setText('fail2ban1h', fail2banTotals.last1h ?? 0);
+
+                const sshTotals = (data.ssh && data.ssh.totals) || {};
+                setText('ssh1h', sshTotals.last1h ?? 0);
+                setText('ssh5m', sshTotals.last5m ?? 0);
+
                 setText('lastRefresh', new Date((data.generatedAt ?? Date.now()/1000) * 1000).toLocaleTimeString('es-ES'));
 
                 charts.trend.data.labels = data.trend.map((entry) => new Date(entry.ts).toLocaleTimeString('es-ES', { minute: '2-digit', second: '2-digit' }));
@@ -502,11 +600,22 @@ $logs = $pdo->query("SELECT * FROM view_audit_summary LIMIT 20")->fetchAll();
                 charts.countries.data.datasets[0].data = data.countries.map((item) => item.count);
                 charts.countries.update('none');
 
-                updateSurfaces(data.surfaces);
+                updateTiles('surfaceGrid', data.surfaces);
+                updateTiles('jailGrid', (data.fail2ban && data.fail2ban.topJails) || []);
 
                 updateTable('topIpsBody', (data.topIps || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
 
                 updateTable('eventsBody', (data.events || []).map((row) => [formatTs(row.timestamp), `${row.ip} · ${row.country_code}`, row.attack_type, row.surface]), 4);
+
+                updateTable('banIpsBody', ((data.fail2ban && data.fail2ban.topIps) || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
+
+                updateTable('banEventsBody', ((data.fail2ban && data.fail2ban.events) || []).map((row) => [formatTs(row.timestamp), row.jail, `${row.ip} · ${row.country_code}`]), 3);
+
+                updateTable('sshUsersBody', ((data.ssh && data.ssh.topUsers) || []).map((row) => [row.label, row.count]), 2);
+
+                updateTable('sshIpsBody', ((data.ssh && data.ssh.topIps) || []).map((row) => [row.ip, `${row.country} (${row.country_code})`, row.count]), 3);
+
+                updateTable('sshEventsBody', ((data.ssh && data.ssh.events) || []).map((row) => [formatTs(row.timestamp), row.username, `${row.ip} · ${row.country_code}`, row.result]), 4);
             } catch (error) {
                 document.getElementById('metricsError').classList.add('show');
             }
