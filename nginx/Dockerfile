@@ -6,6 +6,9 @@ USER root
 # Remove default server template to avoid PROXY_SSL_CONFIG placeholder issues
 RUN rm -f /etc/nginx/conf.d/default.conf /etc/nginx/templates/conf.d/default.conf.template
 
+# Remove default modsecurity.conf template to avoid doble carga de reglas
+RUN rm -f /etc/nginx/conf.d/modsecurity.conf /etc/nginx/templates/conf.d/modsecurity.conf.template
+
 # Copy our custom configuration
 COPY conf.d/public.conf /etc/nginx/conf.d/public.conf
 
@@ -36,11 +39,6 @@ RUN mv /docker-entrypoint.d/94-activate-plugins.sh /docker-entrypoint.d/94-activ
 RUN cp /opt/owasp-crs/crs-setup.conf /etc/modsecurity.d/crs-setup.conf || \
     cp /opt/owasp-crs/crs-setup.conf.example /etc/modsecurity.d/crs-setup.conf
 RUN cp -r /opt/owasp-crs/rules /etc/modsecurity.d/rules
-
-# 3. Create a main include file
-RUN echo "include /etc/modsecurity.d/modsecurity.conf" > /etc/modsecurity.d/main.conf && \
-    echo "include /etc/modsecurity.d/crs-setup.conf" >> /etc/modsecurity.d/main.conf && \
-    echo "include /etc/modsecurity.d/rules/*.conf" >> /etc/modsecurity.d/main.conf
 
 # Fix permissions for our manual setup
 RUN chown -R 101:101 /etc/modsecurity.d && \
