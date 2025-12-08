@@ -17,7 +17,11 @@ COPY html/ /usr/share/nginx/html/
 RUN chown root:root /etc/nginx/conf.d/public.conf && \
     chmod 644 /etc/nginx/conf.d/public.conf && \
     chown -R root:root /usr/share/nginx/html && \
-    chmod -R 755 /usr/share/nginx/html
+    chmod -R 755 /usr/share/nginx/html && \
+    rm -f /var/log/nginx/access.log /var/log/nginx/error.log && \
+    touch /var/log/nginx/access.log /var/log/nginx/error.log && \
+    chown 101:101 /var/log/nginx/access.log /var/log/nginx/error.log && \
+    chmod 664 /var/log/nginx/access.log /var/log/nginx/error.log
 
 # Create the directory where ModSecurity tries to copy files and give it permissions
 # We use UID 101 (nginx) to be precise and avoid name resolution issues
