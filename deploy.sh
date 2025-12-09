@@ -675,6 +675,9 @@ main() {
     # Corregir permisos para secretos generados
     chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" mysql/init
+    # Asegurar permisos legibles por el contenedor MySQL (umask 027 deja 750/640 y falla)
+    find mysql/init -type d -exec chmod 755 {} \;
+    find mysql/init -type f -exec chmod 644 {} \;
     
     # Corregir permisos para webroot (usuario contenedor 101/1000 necesita acceso)
     log_info "Ajustando permisos de archivos web..."
