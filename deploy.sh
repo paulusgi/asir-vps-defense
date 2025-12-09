@@ -69,13 +69,24 @@ run_quiet() {
     "$@" >>"$LOG_FILE" 2>&1 &
     local pid=$!
 
+    # Si el comando no pudo lanzarse, marcamos fallo temprano
+    if [ -z "$pid" ]; then
+        printf "\r%-55s [FAIL]\n" "$msg"
+        log_error "No se pudo lanzar el comando: $*"
+        return 1
+    fi
+
     while kill -0 "$pid" 2>/dev/null; do
         printf "\r%-55s [%c]" "$msg" "${frames:i++%4:1}"
         sleep 0.2
     done
 
+    # Capturar el status aunque falle sin que errexit aborte antes de imprimir el log
+    set +e
     wait "$pid"
     local status=$?
+    set -e
+
     if [ $status -eq 0 ]; then
         printf "\r%-55s [OK ]\n" "$msg"
     else
@@ -518,7 +529,15 @@ generate_db_seed() {
     # Usar un contenedor PHP temporal para generar el hash Bcrypt
     # Usamos la imagen php:8.2-cli que es pequeña y estándar
     log_info "Calculando hash de contraseña seguro..."
-    WEB_ADMIN_HASH=$(docker run --rm php:8.2-cli php -r "echo password_hash('$WEB_ADMIN_PASS', PASSWORD_DEFAULT);")
+    set +e
+    WEB_ADMIN_HASH=$(docker run --rm php:8.2-cli php -r "echo password_hash('$WEB_ADMIN_PASS', PASSWORD_DEFAULT);" 2>>"$LOG_FILE" | tee -a "$LOG_FILE")
+    local hash_status=$?
+    set -e
+    if [ $hash_status -ne 0 ] || [ -z "$WEB_ADMIN_HASH" ]; then
+        log_error "No se pudo generar el hash de la contraseña (docker run). Revisa $LOG_FILE."
+        tail -n 25 "$LOG_FILE" >&2
+        exit 1
+    fi
     
     cat > mysql/init/02-seed.sql <<EOF
 -- Archivo semilla auto-generado
