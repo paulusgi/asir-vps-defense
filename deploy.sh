@@ -681,7 +681,21 @@ main() {
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
     chmod -R 755 src
 
+    set +e
     run_quiet "Desplegando contenedores Docker" docker compose up -d --build
+    local up_status=$?
+    set -e
+
+    if [ $up_status -ne 0 ]; then
+        log_error "docker compose up falló. Mostrando logs breves para diagnóstico..."
+        # Mostrar los últimos logs de MySQL, que suele ser el culpable cuando hay volumen previo con otra contraseña
+        docker compose logs --tail=60 mysql || true
+        log_warn "Si ves errores de autenticación/root password, borra el volumen persistente y reintenta:"
+        log_warn "   docker compose down -v"
+        log_warn "   sudo rm -f $STATE_DIR/env_done $STATE_DIR/seed_done  # si necesitas regenerar .env/seed"
+        log_warn "   ./deploy.sh"
+        exit 1
+    fi
     
     # Paso 5: Limpieza Final y Acciones Diferidas
     print_section "AJUSTES FINALES"
