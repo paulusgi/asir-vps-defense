@@ -61,29 +61,25 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-spinner() {
-    local pid=$1
-    local frames='|/-\\'
-    local i=0
-    while kill -0 "$pid" 2>/dev/null; do
-        printf "\r[%c]" "${frames:i++%4:1}"
-        sleep 0.2
-    done
-    printf "\r"
-}
-
 run_quiet() {
     local msg="$1"; shift
-    printf "%-60s" "$msg"
+    local frames='|/-\\'
+    local i=0
+
     "$@" >>"$LOG_FILE" 2>&1 &
     local pid=$!
-    spinner "$pid"
+
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r%-55s [%c]" "$msg" "${frames:i++%4:1}"
+        sleep 0.2
+    done
+
     wait "$pid"
     local status=$?
     if [ $status -eq 0 ]; then
-        echo "[OK]"
+        printf "\r%-55s [OK ]\n" "$msg"
     else
-        echo "[FAIL]"
+        printf "\r%-55s [FAIL]\n" "$msg"
         tail -n 25 "$LOG_FILE" >&2
         return $status
     fi
@@ -388,6 +384,8 @@ create_secure_admin() {
     # Permitir al nuevo admin iniciar sesión vía SSH inmediatamente (incluso antes del hardening completo)
     # Esta es una medida de seguridad en caso de que el script falle más tarde
     log_success "Configuración SSH y permisos verificados para $SECURE_ADMIN."
+
+    echo "$SECURE_ADMIN" > "$STATE_DIR/secure_admin"
 }
 
 handle_honeypot_logic() {
@@ -573,6 +571,11 @@ main() {
     check_root
     detect_context
     detect_os
+
+    # Recuperar usuario admin seguro de ejecuciones previas (si existe)
+    if [ -z "$SECURE_ADMIN" ] && [ -f "$STATE_DIR/secure_admin" ]; then
+        SECURE_ADMIN=$(cat "$STATE_DIR/secure_admin")
+    fi
     
     # Paso 1: Preparación del Sistema
     print_section "PREPARACIÓN DEL SISTEMA"
@@ -589,6 +592,10 @@ main() {
     # Creamos el usuario PRIMERO para poder desplegar en su directorio home
     if is_step_done "users_done"; then
         log_info "Usuarios y seguridad ya configurados previamente; saltando creación y hardening."
+        if [ -z "$SECURE_ADMIN" ]; then
+            log_error "No se pudo recuperar SECURE_ADMIN de estado previo. Elimina $STATE_DIR/users_done para rehacer este paso."
+            exit 1
+        fi
     else
         create_secure_admin
         handle_honeypot_logic
