@@ -153,6 +153,15 @@ audit_permissions() {
     return $issues
 }
 
+load_env_if_present() {
+    # Carga las variables de .env en el entorno actual
+    if [ -f .env ]; then
+        set -a
+        . ./.env
+        set +a
+    fi
+}
+
 mark_step_done() {
     local step="$1"
     touch "$STATE_DIR/$step"
@@ -659,6 +668,7 @@ main() {
         local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
         if [ -d "$PROJECT_DIR" ]; then
             cd "$PROJECT_DIR" || exit 1
+            load_env_if_present
             print_section "AUDITORÍA DE PERMISOS"
             audit_permissions "$PROJECT_DIR"
             exit 0
@@ -729,8 +739,10 @@ main() {
     print_section "DESPLIEGUE DE LA APLICACIÓN"
     if is_step_done "env_done"; then
         log_info "Archivo .env ya existe; no se regenera para evitar cambiar credenciales."
+        load_env_if_present
     else
         generate_env
+        load_env_if_present
         mark_step_done "env_done"
     fi
 
