@@ -95,6 +95,64 @@ run_quiet() {
     fi
 }
 
+check_mode() {
+    # $1 path, $2 expected mode
+    local path="$1"; local expected="$2"; local label="$3"
+    if [ -e "$path" ]; then
+        local mode
+        mode=$(stat -c "%a" "$path")
+        if [ "$mode" != "$expected" ]; then
+            log_warn "Permisos inesperados en ${label:-$path} (modo $mode, esperado $expected)."
+            return 1
+        fi
+    fi
+    return 0
+}
+
+audit_permissions() {
+    local base="$1"
+    local issues=0
+
+    log_info "Auditando permisos en $base"
+
+    # Ficheros de secretos
+    check_mode "$base/.env" 600 ".env" || issues=1
+    check_mode "$base/mysql/init" 755 "mysql/init (directorio)" || issues=1
+    if find "$base/mysql/init" -type d ! -perm 755 -print -quit | grep -q .; then issues=1; log_warn "Directorio(s) en mysql/init sin modo 755"; fi
+    if find "$base/mysql/init" -type f ! -perm 644 -print -quit | grep -q .; then issues=1; log_warn "Ficheros en mysql/init sin modo 644"; fi
+
+    # Configs PHP y Loki
+    check_mode "$base/php/conf.d/custom.ini" 644 "php/conf.d/custom.ini" || issues=1
+    check_mode "$base/php/pool.d/www.conf" 644 "php/pool.d/www.conf" || issues=1
+    check_mode "$base/loki/config.yml" 644 "loki/config.yml" || issues=1
+
+    # Webroot
+    if find "$base/src" -type d ! -perm 755 -print -quit | grep -q .; then issues=1; log_warn "Directorios en src sin modo 755"; fi
+    if find "$base/src" -type f ! -perm 644 -print -quit | grep -q .; then issues=1; log_warn "Ficheros en src sin modo 644"; fi
+
+    # Credenciales del admin
+    if [ -f "/home/$SECURE_ADMIN/admin_credentials.txt" ]; then
+        check_mode "/home/$SECURE_ADMIN/admin_credentials.txt" 600 "admin_credentials.txt" || issues=1
+        log_warn "admin_credentials.txt presente; guarda su contenido en un lugar seguro y bórralo del servidor si ya no lo necesitas."
+    else
+        log_info "admin_credentials.txt no encontrado (posiblemente ya retirado)."
+    fi
+
+    # SSH del admin
+    if [ -d "/home/$SECURE_ADMIN/.ssh" ]; then
+        check_mode "/home/$SECURE_ADMIN/.ssh" 700 ".ssh" || issues=1
+        check_mode "/home/$SECURE_ADMIN/.ssh/authorized_keys" 600 "authorized_keys" || issues=1
+    fi
+
+    if [ $issues -eq 0 ]; then
+        log_success "Permisos verificados: OK."
+    else
+        log_warn "Se detectaron permisos distintos a lo esperado; revisa y corrige según corresponda."
+    fi
+
+    return $issues
+}
+
 mark_step_done() {
     local step="$1"
     touch "$STATE_DIR/$step"
@@ -593,6 +651,18 @@ main() {
     # Recuperar usuario admin seguro de ejecuciones previas (si existe)
     if [ -z "$SECURE_ADMIN" ] && [ -f "$STATE_DIR/secure_admin" ]; then
         SECURE_ADMIN=$(cat "$STATE_DIR/secure_admin")
+    fi
+
+    # Si todo ya estuvo completado, permitir una ejecución de auditoría rápida y salir
+    if is_step_done "prep_done" && is_step_done "users_done" && is_step_done "project_done" \
+       && is_step_done "env_done" && is_step_done "seed_done" && is_step_done "final_done"; then
+        local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
+        if [ -d "$PROJECT_DIR" ]; then
+            cd "$PROJECT_DIR" || exit 1
+            print_section "AUDITORÍA DE PERMISOS"
+            audit_permissions "$PROJECT_DIR"
+            exit 0
+        fi
     fi
     
     # Paso 1: Preparación del Sistema
