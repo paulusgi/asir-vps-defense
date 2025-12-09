@@ -2,9 +2,7 @@
 set -euo pipefail
 IFS=$'\n\t'
 umask 027
-trap 'echo "[ERROR] Fallo en línea $LINENO" >&2' ERR
-
-# ==============================================================================
+# ============================================================================== 
 # ASIR VPS Defense - Script de Despliegue Automatizado
 # ==============================================================================
 # Autor: Equipo ASIR
@@ -21,6 +19,12 @@ trap 'echo "[ERROR] Fallo en línea $LINENO" >&2' ERR
 #   sudo ./deploy.sh
 # ==============================================================================
 
+ENV_FILE=".env"
+STATE_DIR="/var/lib/asir-vps-defense"
+LOG_FILE="/var/log/asir-vps-defense/install.log"
+mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
+>"$LOG_FILE"
+
 # Colores para la salida
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -28,10 +32,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # Sin Color
 
-# Variables Globales
-ENV_FILE=".env"
-STATE_DIR="/var/lib/asir-vps-defense"
-mkdir -p "$STATE_DIR"
+trap 'echo "[ERROR] Fallo en línea $LINENO" >&2; tail -n 25 "$LOG_FILE" >&2' ERR
 
 # Bandera global para rastrear si necesitamos convertir el usuario actual más tarde
 CONVERT_CURRENT_USER_TO_HONEYPOT=false
@@ -58,6 +59,34 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+spinner() {
+    local pid=$1
+    local frames='|/-\\'
+    local i=0
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r[%c]" "${frames:i++%4:1}"
+        sleep 0.2
+    done
+    printf "\r"
+}
+
+run_quiet() {
+    local msg="$1"; shift
+    printf "%-60s" "$msg"
+    "$@" >>"$LOG_FILE" 2>&1 &
+    local pid=$!
+    spinner "$pid"
+    wait "$pid"
+    local status=$?
+    if [ $status -eq 0 ]; then
+        echo "[OK]"
+    else
+        echo "[FAIL]"
+        tail -n 25 "$LOG_FILE" >&2
+        return $status
+    fi
 }
 
 mark_step_done() {
@@ -130,21 +159,13 @@ wait_for_apt_locks() {
 
 install_dependencies() {
     wait_for_apt_locks
-    log_info "Actualizando repositorios e instalando dependencias base..."
-    
-    # Actualizar con lógica de reintento
-    if ! apt-get update; then
-        log_warn "Fallo al actualizar repositorios. Reintentando en 5s..."
-        sleep 5
-        apt-get update || log_error "No se pudieron actualizar los repositorios. Continuando bajo riesgo..."
-    fi
+    run_quiet "Actualizando repositorios" apt-get update -y
 
     # Instalar con reintento y verificación
-    log_info "Instalando paquetes (curl, git, ufw, fail2ban, rsyslog)..."
-    if ! apt-get install -y psmisc curl git ufw fail2ban rsyslog; then
+    if ! run_quiet "Instalando paquetes base" apt-get install -y psmisc curl git ufw fail2ban rsyslog; then
         log_warn "Fallo en la instalación de paquetes. Reintentando tras espera..."
         wait_for_apt_locks
-        apt-get install -y psmisc curl git ufw fail2ban rsyslog
+        run_quiet "Instalando paquetes base (reintento)" apt-get install -y psmisc curl git ufw fail2ban rsyslog
     fi
 
     # Comprobación crítica: Fail2Ban debe estar presente
@@ -161,8 +182,7 @@ install_dependencies() {
 
     # Instalar Docker si no está presente
     if ! command -v docker &> /dev/null; then
-        log_info "Instalando Docker..."
-        curl -fsSL https://get.docker.com | sh
+        run_quiet "Instalando Docker" bash -c 'curl -fsSL https://get.docker.com | sh'
         log_success "Docker instalado correctamente."
     else
         log_info "Docker ya está instalado."
@@ -500,8 +520,6 @@ generate_db_seed() {
     # Usar un contenedor PHP temporal para generar el hash Bcrypt
     # Usamos la imagen php:8.2-cli que es pequeña y estándar
     log_info "Calculando hash de contraseña seguro..."
-    # ¿Asegurar que docker está corriendo o esperar? Debería estar instalado.
-    # Podríamos necesitar hacer pull de la imagen primero para evitar timeout en el comando run, pero run hace pull.
     WEB_ADMIN_HASH=$(docker run --rm php:8.2-cli php -r "echo password_hash('$WEB_ADMIN_PASS', PASSWORD_DEFAULT);")
     
     cat > mysql/init/02-seed.sql <<EOF
@@ -637,8 +655,7 @@ main() {
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
     chmod -R 755 src
 
-    log_info "Desplegando contenedores Docker..."
-    docker compose up -d --build
+    run_quiet "Desplegando contenedores Docker" docker compose up -d --build
     
     # Paso 5: Limpieza Final y Acciones Diferidas
     print_section "AJUSTES FINALES"
@@ -724,6 +741,15 @@ main() {
     echo -e "   - Panel de Administración + Métricas Loki: ${GREEN}http://localhost:8888${NC}"
     echo -e ""
     echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
+    echo -e "\n${YELLOW}Log detallado: ${LOG_FILE}${NC}"
+    echo -n "Pulsa ENTER para borrar el log y salir (escribe 'No' para conservarlo): "
+    read -r CLEAN_LOG < /dev/tty
+    if [[ "$CLEAN_LOG" =~ ^[Nn][Oo]$ ]]; then
+        log_info "Log conservado en $LOG_FILE"
+    else
+        rm -f "$LOG_FILE" && log_info "Log eliminado."
+    fi
+
     echo -e "${GREEN}==================================================${NC}"
 }
 
