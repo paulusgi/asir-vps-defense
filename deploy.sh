@@ -1,4 +1,8 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
+umask 027
+trap 'echo "[ERROR] Fallo en línea $LINENO" >&2' ERR
 
 # ==============================================================================
 # ASIR VPS Defense - Script de Despliegue Automatizado
@@ -155,9 +159,13 @@ setup_firewall() {
     ufw allow 80/tcp comment 'HTTP'
     ufw allow 443/tcp comment 'HTTPS'
     
-    # Habilitar UFW sin preguntar
-    echo "y" | ufw enable
-    log_success "Firewall configurado y activo."
+    # Habilitar UFW de forma no interactiva y verificar
+    ufw --force enable
+    if ufw status | grep -q "Status: active"; then
+        log_success "Firewall configurado y activo."
+    else
+        log_warn "UFW no quedó activo; revisa configuración."
+    fi
 }
 
 configure_ssh() {
@@ -204,8 +212,11 @@ Match User $REAL_USER
     AuthenticationMethods publickey
 EOF
 
+    # Validar sintaxis y reiniciar de forma comprobada
+    sshd -t
     systemctl restart sshd
-        log_success "SSH configurado. Admin real solo clave pública; resto acepta contraseña."
+    systemctl is-active --quiet sshd
+    log_success "SSH configurado. Admin real solo clave pública; resto acepta contraseña."
 }
 
 configure_fail2ban() {
@@ -245,6 +256,7 @@ maxretry = 1
 EOF
 
     systemctl restart fail2ban
+    systemctl is-active --quiet fail2ban
     systemctl enable fail2ban
     log_success "Fail2Ban configurado con política estricta (Bantime: 35d, MaxRetry: 1)."
 }
@@ -427,6 +439,15 @@ generate_env() {
     
     echo -n "Introduce el DOMINIO del VPS (o la IP Pública si no tienes dominio): "
     read -r DOMAIN_NAME < /dev/tty
+
+    if [ -z "${DOMAIN_NAME}" ]; then
+        log_error "El dominio/IP no puede estar vacío."
+        exit 1
+    fi
+    if echo "${DOMAIN_NAME}" | grep -q ' '; then
+        log_error "El dominio/IP no debe contener espacios."
+        exit 1
+    fi
     
     # Generar contraseñas aleatorias
     MYSQL_ROOT_PASS=$(openssl rand -base64 24)
