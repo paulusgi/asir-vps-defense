@@ -30,6 +30,8 @@ NC='\033[0m' # Sin Color
 
 # Variables Globales
 ENV_FILE=".env"
+STATE_DIR="/var/lib/asir-vps-defense"
+mkdir -p "$STATE_DIR"
 
 # Bandera global para rastrear si necesitamos convertir el usuario actual más tarde
 CONVERT_CURRENT_USER_TO_HONEYPOT=false
@@ -56,6 +58,24 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+mark_step_done() {
+    local step="$1"
+    touch "$STATE_DIR/$step"
+}
+
+is_step_done() {
+    local step="$1"
+    [ -f "$STATE_DIR/$step" ]
+}
+
+print_section() {
+    local title="$1"
+    local line="=================================================="
+    echo -e "${GREEN}${line}${NC}"
+    printf "${GREEN}   %-46s${NC}\n" "$title"
+    echo -e "${GREEN}${line}${NC}"
 }
 
 detect_context() {
@@ -530,58 +550,83 @@ EOF
 
 main() {
     clear
-    echo -e "${GREEN}==================================================${NC}"
-    echo -e "${GREEN}   ASIR VPS DEFENSE - INSTALADOR v1.1             ${NC}"
-    echo -e "${GREEN}==================================================${NC}"
+    print_section "ASIR VPS DEFENSE - INSTALADOR v1.1"
     
     check_root
     detect_context
     detect_os
     
     # Paso 1: Preparación del Sistema
-    install_dependencies
-    setup_firewall
+    print_section "PREPARACIÓN DEL SISTEMA"
+    if is_step_done "prep_done"; then
+        log_info "Preparación previa detectada; saltando reinstalación de dependencias y firewall."
+    else
+        install_dependencies
+        setup_firewall
+        mark_step_done "prep_done"
+    fi
     
     # Paso 2: Configuración de Usuario y Seguridad
+    print_section "USUARIOS Y SEGURIDAD"
     # Creamos el usuario PRIMERO para poder desplegar en su directorio home
-    create_secure_admin
-    handle_honeypot_logic
-    
-    configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
-    configure_fail2ban
+    if is_step_done "users_done"; then
+        log_info "Usuarios y seguridad ya configurados previamente; saltando creación y hardening."
+    else
+        create_secure_admin
+        handle_honeypot_logic
+        configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
+        configure_fail2ban
+        mark_step_done "users_done"
+    fi
     
     # Paso 3: Configuración del Proyecto en el Home del Usuario Seguro
+    print_section "PROVISIONADO DEL PROYECTO"
     local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
     log_info "Estableciendo directorio del proyecto en: $PROJECT_DIR"
 
-    # Crear directorio si no existe
-    if [ ! -d "$PROJECT_DIR" ]; then
-        mkdir -p "$PROJECT_DIR"
-    fi
-
-    # Lógica para poblar el directorio
-    if [ -f "docker-compose.yml" ]; then
-        log_info "Copiando archivos de instalación locales (incluyendo parches)..."
-        # Copiar contenido al home del nuevo usuario
-        # Excluimos el directorio destino en sí mismo para evitar recursión si se ejecuta desde root
-        rsync -av --exclude ".git" --exclude "asir-vps-defense" . "$PROJECT_DIR/" 2>/dev/null || cp -R . "$PROJECT_DIR/"
+    if is_step_done "project_done"; then
+        log_info "Proyecto ya presente; reutilizando $PROJECT_DIR"
+        cd "$PROJECT_DIR" || exit 1
     else
-        log_info "Descargando repositorio oficial..."
-        # Limpiar dir por si acaso
-        rm -rf "$PROJECT_DIR"
-        git clone https://github.com/paulusgi/asir-vps-defense.git "$PROJECT_DIR"
-    fi
+        # Crear directorio si no existe
+        if [ ! -d "$PROJECT_DIR" ]; then
+            mkdir -p "$PROJECT_DIR"
+        fi
 
-    # Asegurar que la propiedad es correcta inmediatamente
-    chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "$PROJECT_DIR"
-    
-    # Cambiar contexto al nuevo directorio
-    cd "$PROJECT_DIR" || exit 1
-    log_success "Directorio de trabajo establecido: $(pwd)"
+        # Lógica para poblar el directorio
+        if [ -f "docker-compose.yml" ]; then
+            log_info "Copiando archivos de instalación locales (incluyendo parches)..."
+            # Copiar contenido al home del nuevo usuario
+            rsync -av --exclude ".git" --exclude "asir-vps-defense" . "$PROJECT_DIR/" 2>/dev/null || cp -R . "$PROJECT_DIR/"
+        else
+            log_info "Descargando repositorio oficial..."
+            # Limpiar dir por si acaso
+            rm -rf "$PROJECT_DIR"
+            git clone https://github.com/paulusgi/asir-vps-defense.git "$PROJECT_DIR"
+        fi
+
+        # Asegurar que la propiedad es correcta inmediatamente
+        chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "$PROJECT_DIR"
+        cd "$PROJECT_DIR" || exit 1
+        mark_step_done "project_done"
+        log_success "Directorio de trabajo establecido: $(pwd)"
+    fi
 
     # Paso 4: Despliegue de la Aplicación
-    generate_env
-    generate_db_seed
+    print_section "DESPLIEGUE DE LA APLICACIÓN"
+    if is_step_done "env_done"; then
+        log_info "Archivo .env ya existe; no se regenera para evitar cambiar credenciales."
+    else
+        generate_env
+        mark_step_done "env_done"
+    fi
+
+    if is_step_done "seed_done"; then
+        log_info "Semilla de base de datos ya generada; saltando."
+    else
+        generate_db_seed
+        mark_step_done "seed_done"
+    fi
     
     # Corregir permisos para secretos generados
     chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
@@ -596,12 +641,16 @@ main() {
     docker compose up -d --build
     
     # Paso 5: Limpieza Final y Acciones Diferidas
-    finalize_deferred_conversion
+    print_section "AJUSTES FINALES"
+    if is_step_done "final_done"; then
+        log_info "Acciones finales ya aplicadas anteriormente."
+    else
+        finalize_deferred_conversion
+        mark_step_done "final_done"
+    fi
     history -c
     
-    echo -e "${GREEN}==================================================${NC}"
-    echo -e "${GREEN}   INSTALACIÓN FINALIZADA                         ${NC}"
-    echo -e "${GREEN}==================================================${NC}"
+    print_section "INSTALACIÓN FINALIZADA"
     
     echo -e "\n${YELLOW}Por favor, revisa los mensajes anteriores en busca de errores (texto rojo).${NC}"
     echo -n "Presiona ENTER para continuar con la verificación de estado y credenciales..."
