@@ -24,5 +24,9 @@ WORKDIR /var/www/html
 # Copy tuned PHP-FPM pool configuration
 COPY pool.d/www.conf /usr/local/etc/php-fpm.d/zz-custom.conf
 
+# Ensure configs are world-readable for the non-root runtime user
+RUN chmod 644 /usr/local/etc/php-fpm.d/zz-custom.conf && \
+    find /usr/local/etc/php/conf.d -type f -name '*.ini' -exec chmod 644 {} \;
+
 # Switch to non-root user
 USER www-data

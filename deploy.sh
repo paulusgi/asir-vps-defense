@@ -1,7 +1,6 @@
 #!/bin/bash
 set -euo pipefail
 IFS=$'\n\t'
-umask 027
 # ============================================================================== 
 # ASIR VPS Defense - Script de Despliegue Automatizado
 # ==============================================================================
@@ -675,14 +674,10 @@ main() {
     # Corregir permisos para secretos generados
     chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" mysql/init
-    # Asegurar permisos legibles por el contenedor MySQL (umask 027 deja 750/640 y falla)
-    find mysql/init -type d -exec chmod 755 {} \;
-    find mysql/init -type f -exec chmod 644 {} \;
-    
+
     # Corregir permisos para webroot (usuario contenedor 101/1000 necesita acceso)
     log_info "Ajustando permisos de archivos web..."
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
-    chmod -R 755 src
 
     set +e
     run_quiet "Desplegando contenedores Docker" docker compose up -d --build
