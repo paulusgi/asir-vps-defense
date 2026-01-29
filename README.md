@@ -69,7 +69,8 @@ Por seguridad, el panel **no es accesible desde internet**. Solo vía túnel SSH
 ## 🛡️ Estrategia (demo)
 
 - `PasswordAuthentication yes` global para ver usuarios/contraseñas atacados; el admin real exige clave pública.
-- Fail2Ban bantime 35d, maxretry 1 (actual). Eventos vistos en panel vía Loki.
+- Fail2Ban bantime 35d, maxretry 2. Eventos vistos en panel vía Loki.
+- GeoIP local opcional: si no hay GEOIP_LICENSE_KEY se usa fallback por país (sin llamadas externas).
 
 ## 📄 Licencia
 
