@@ -541,20 +541,44 @@ create_secure_admin() {
         fi
     done
 
-    # Configurar Clave SSH para Admin Real (detección automática + manual opcional)
+    # Configurar Clave SSH para Admin Real (obligatorio). Admin queda con PasswordAuthentication no (Match User), resto de usuarios sí permiten password para capturar ataques.
     local SSH_KEY=""
-    SSH_KEY=$(choose_public_key_for_user "$SECURE_ADMIN" "acceso SSH") || SSH_KEY=""
+    while true; do
+        echo -e "${YELLOW}Selecciona cómo añadir la clave pública SSH del admin (obligatorio):${NC}"
+        echo "  [1] Detectar claves existentes y elegir"
+        echo "  [2] Introducir clave pública manualmente"
+        echo "  [3] Reintentar más tarde (no permitido: requiere clave)"
+        echo -n "Opción: "
+        read -r key_opt < /dev/tty
 
-    if [ -n "$SSH_KEY" ]; then
-        mkdir -p "/home/$SECURE_ADMIN/.ssh"
-        if grep -qF "$SSH_KEY" "/home/$SECURE_ADMIN/.ssh/authorized_keys" 2>/dev/null; then
-            log_info "La clave SSH ya estaba autorizada."
+        if [ "$key_opt" = "1" ]; then
+            SSH_KEY=$(choose_public_key_for_user "$SECURE_ADMIN" "acceso SSH") || SSH_KEY=""
+            if [ -n "$SSH_KEY" ]; then
+                log_info "Clave seleccionada por detección automática."
+                break
+            else
+                log_warn "No se detectaron claves o no se eligió ninguna."
+            fi
+        elif [ "$key_opt" = "2" ]; then
+            echo -n "Pega tu clave pública (ssh-ed25519/ssh-rsa): "
+            read -r manual_key < /dev/tty
+            if [[ "$manual_key" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
+                SSH_KEY="$manual_key"
+                break
+            else
+                log_warn "Formato no válido. Intenta de nuevo."
+            fi
         else
-            echo "$SSH_KEY" >> "/home/$SECURE_ADMIN/.ssh/authorized_keys"
-            log_success "Clave SSH añadida correctamente."
+            log_warn "Debes proporcionar una clave para el admin."
         fi
+    done
+
+    mkdir -p "/home/$SECURE_ADMIN/.ssh"
+    if grep -qF "$SSH_KEY" "/home/$SECURE_ADMIN/.ssh/authorized_keys" 2>/dev/null; then
+        log_info "La clave SSH ya estaba autorizada."
     else
-        log_warn "No se añadió ninguna clave SSH nueva. Si ya existía una en authorized_keys, se mantiene; de lo contrario, añade una manualmente."
+        echo "$SSH_KEY" >> "/home/$SECURE_ADMIN/.ssh/authorized_keys"
+        log_success "Clave SSH añadida correctamente."
     fi
 
     # Asegurar que los permisos son correctos (Paso crítico)
