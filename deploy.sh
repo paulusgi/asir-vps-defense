@@ -12,9 +12,6 @@ IFS=$'\n\t'
 #   - Configuración SSH segura (Split Auth: Admin solo clave vs Honeypot contraseña)
 #   - Configuración WAF (Nginx + ModSecurity)
 #   - Pila de Observabilidad (Loki + Promtail)
-#
-# Uso:
-#   chmod +x deploy.sh
 #   sudo ./deploy.sh
 # ==============================================================================
 
@@ -125,7 +122,6 @@ collect_public_keys_for_user() {
         done
     fi
 
-' "${keys[@]}"
     printf '%s\n' "${keys[@]}"
 }
 
