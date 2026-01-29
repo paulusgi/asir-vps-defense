@@ -45,7 +45,7 @@ Para garantizar un despliegue limpio y seguro, se recomienda:
 Conéctate a tu VPS y ejecuta:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/main/deploy.sh | sudo bash
+curl -sL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/mainv2/deploy.sh | sudo bash
 ```
 
 El asistente interactivo te guiará para:
