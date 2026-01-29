@@ -95,6 +95,98 @@ run_quiet() {
     fi
 }
 
+collect_public_keys_for_user() {
+    local user="$1"
+    declare -A seen
+    local keys=()
+
+    # authorized_keys entries
+    if [ -s "/home/$user/.ssh/authorized_keys" ]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
+            if [ -z "${seen[$line]:-}" ]; then
+                keys+=("$line")
+                seen[$line]=1
+            fi
+        done < "/home/$user/.ssh/authorized_keys"
+    fi
+
+    # Local .pub files
+    if [ -d "/home/$user/.ssh" ]; then
+        for pub in /home/$user/.ssh/*.pub; do
+            [ -f "$pub" ] || continue
+            local content
+            content=$(cat "$pub")
+            [[ "$content" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
+            if [ -z "${seen[$content]:-}" ]; then
+                keys+=("$content")
+                seen[$content]=1
+            fi
+        done
+    fi
+
+' "${keys[@]}"
+    printf '%s\n' "${keys[@]}"
+}
+
+choose_public_key_for_user() {
+    local user="$1"
+    local purpose="$2"
+    local candidates
+    mapfile -t candidates < <(collect_public_keys_for_user "$user")
+
+    if [ ${#candidates[@]} -eq 1 ]; then
+        echo -n "Se detectó una clave pública para $user. ¿Usarla para $purpose? (S/n): "
+        read -r ans < /dev/tty
+        if [[ "$ans" =~ ^[Nn]$ ]]; then
+            candidates=()
+        else
+            printf '%s' "${candidates[0]}"
+            return 0
+        fi
+    elif [ ${#candidates[@]} -gt 1 ]; then
+        echo "Se detectaron varias claves públicas para $user. Elige una o introduce otra:" >&2
+        local i=1
+        for key in "${candidates[@]}"; do
+            echo "  [$i] ${key:0:60}..." >&2
+            ((i++))
+        done
+        echo "  [M] Introducir manualmente" >&2
+        echo "  [S] Saltar" >&2
+        echo -n "Selecciona opción: " >&2
+        read -r choice < /dev/tty
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#candidates[@]} ]; then
+            printf '%s' "${candidates[$((choice-1))]}"
+            return 0
+        elif [[ "$choice" =~ ^[Mm]$ ]]; then
+            candidates=()
+        else
+            return 1
+        fi
+    fi
+
+    # Manual entry
+    echo -n "Pega una clave pública SSH (ssh-rsa/ssh-ed25519) o deja vacío para omitir: " >&2
+    read -r manual < /dev/tty
+    if [[ "$manual" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
+        printf '%s' "$manual"
+        return 0
+    fi
+    return 1
+}
+
+install_age_if_missing() {
+    if command -v age >/dev/null 2>&1; then
+        return 0
+    fi
+    log_info "Instalando age para cifrar credenciales..."
+    if ! run_quiet "Instalando age" apt-get install -y age; then
+        log_warn "No se pudo instalar age. Se omite el cifrado y se mostrarán credenciales para que las guardes manualmente."
+        return 1
+    fi
+    return 0
+}
+
 check_mode() {
     # $1 path, $2 expected mode
     local path="$1"; local expected="$2"; local label="$3"
@@ -262,6 +354,43 @@ install_dependencies() {
     fi
 }
 
+encrypt_credentials_file() {
+    local cred_file="$1"
+
+    if [ ! -f "$cred_file" ]; then
+        log_warn "Archivo de credenciales no encontrado para cifrar ($cred_file)."
+        return 0
+    fi
+
+    local selected_key=""
+    selected_key=$(choose_public_key_for_user "$SECURE_ADMIN" "cifrar credenciales") || selected_key=""
+
+    if [ -z "$selected_key" ]; then
+        log_warn "No se seleccionó clave SSH para cifrado. Se mostrarán las credenciales y se borrará el archivo plano."
+        cat "$cred_file"
+        shred -u "$cred_file"
+        return 0
+    fi
+
+    if ! install_age_if_missing; then
+        log_warn "Sin age disponible. Se mostrarán las credenciales y se borrará el archivo plano."
+        cat "$cred_file"
+        shred -u "$cred_file"
+        return 0
+    fi
+
+    if age -r "$selected_key" -o "${cred_file}.age" "$cred_file"; then
+        chmod 600 "${cred_file}.age"
+        chown "$SECURE_ADMIN:$SECURE_ADMIN" "${cred_file}.age"
+        shred -u "$cred_file"
+        log_success "Credenciales cifradas en ${cred_file}.age. Sólo la clave privada asociada puede descifrarlas."
+    else
+        log_warn "Falló el cifrado con age. Se mostrarán las credenciales y se borrará el archivo plano."
+        cat "$cred_file"
+        shred -u "$cred_file"
+    fi
+}
+
 setup_firewall() {
     log_info "Configurando Firewall (UFW)..."
     ufw default deny incoming
@@ -371,7 +500,7 @@ EOF
     systemctl restart fail2ban
     systemctl is-active --quiet fail2ban
     systemctl enable fail2ban
-    log_success "Fail2Ban configurado con política estricta (Bantime: 35d, MaxRetry: 1)."
+    log_success "Fail2Ban configurado con política estricta (Bantime: 35d, MaxRetry: 2)."
 }
 
 create_secure_admin() {
@@ -416,38 +545,20 @@ create_secure_admin() {
         fi
     done
 
-    # Configurar Clave SSH para Admin Real
-    local ASK_FOR_KEY=true
-    
-    # Comprobar si el usuario ya tiene claves (ej. desde Cloud-Init)
-    if [ -s "/home/$SECURE_ADMIN/.ssh/authorized_keys" ]; then
-        echo -e "${YELLOW}¡Atención! Se han detectado claves SSH existentes para el usuario $SECURE_ADMIN.${NC}"
-        echo -n "¿Quieres usar las claves existentes y saltar el paso de añadir una nueva? (S/n): "
-        read -r USE_EXISTING < /dev/tty
-        # Por defecto Sí
-        if [[ "$USE_EXISTING" =~ ^[Ss]$ ]] || [[ -z "$USE_EXISTING" ]]; then
-            ASK_FOR_KEY=false
-            log_info "Manteniendo claves existentes..."
-        fi
-    fi
+    # Configurar Clave SSH para Admin Real (detección automática + manual opcional)
+    local SSH_KEY=""
+    SSH_KEY=$(choose_public_key_for_user "$SECURE_ADMIN" "acceso SSH") || SSH_KEY=""
 
-    if [ "$ASK_FOR_KEY" = true ]; then
-        echo -e "Pega tu CLAVE PÚBLICA SSH (comienza por ssh-rsa o ssh-ed25519):"
-        read -r SSH_KEY < /dev/tty
-        
-        if [ -n "$SSH_KEY" ]; then
-            mkdir -p "/home/$SECURE_ADMIN/.ssh"
-            
-            # Añadir clave en lugar de sobrescribir
-            if grep -qF "$SSH_KEY" "/home/$SECURE_ADMIN/.ssh/authorized_keys" 2>/dev/null; then
-                log_info "La clave SSH ya estaba autorizada."
-            else
-                echo "$SSH_KEY" >> "/home/$SECURE_ADMIN/.ssh/authorized_keys"
-                log_success "Clave SSH añadida correctamente."
-            fi
+    if [ -n "$SSH_KEY" ]; then
+        mkdir -p "/home/$SECURE_ADMIN/.ssh"
+        if grep -qF "$SSH_KEY" "/home/$SECURE_ADMIN/.ssh/authorized_keys" 2>/dev/null; then
+            log_info "La clave SSH ya estaba autorizada."
         else
-            log_warn "No has introducido ninguna clave. Asegúrate de poder acceder."
+            echo "$SSH_KEY" >> "/home/$SECURE_ADMIN/.ssh/authorized_keys"
+            log_success "Clave SSH añadida correctamente."
         fi
+    else
+        log_warn "No se añadió ninguna clave SSH nueva. Si ya existía una en authorized_keys, se mantiene; de lo contrario, añade una manualmente."
     fi
 
     # Asegurar que los permisos son correctos (Paso crítico)
@@ -680,7 +791,10 @@ EOF
     chmod 600 "$CRED_FILE"
 
     log_success "Semilla de base de datos generada (mysql/init/02-seed.sql)."
-    log_success "Credenciales guardadas de forma segura en '$CRED_FILE'."
+    log_success "Credenciales guardadas temporalmente en '$CRED_FILE'."
+    echo -e "${YELLOW}Credenciales generadas (se cifrarán o se borrarán del servidor tras este paso). Anótalas si las necesitas:${NC}"
+    cat "$CRED_FILE"
+    encrypt_credentials_file "$CRED_FILE"
     export WEB_ADMIN_PASS
 }
 
@@ -894,12 +1008,21 @@ main() {
     docker compose ps
     
     echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
-    echo -e "Por seguridad, las contraseñas NO se muestran en pantalla."
-    echo -e "Se han guardado en un archivo protegido en el home de tu usuario:"
-    echo -e "${BLUE}/home/$SECURE_ADMIN/admin_credentials.txt${NC}"
-    echo -e ""
-    echo -e "Para verlas, conéctate por SSH con tu nuevo usuario y ejecuta:"
-    echo -e "   ${YELLOW}cat ~/admin_credentials.txt${NC}"
+    local CRED_PLAIN="/home/$SECURE_ADMIN/admin_credentials.txt"
+    local CRED_ENC="${CRED_PLAIN}.age"
+
+    if [ -f "$CRED_ENC" ]; then
+        echo -e "Archivo cifrado con tu clave pública SSH: ${BLUE}$CRED_ENC${NC}"
+        echo -e "Para descifrar en tu máquina con la clave privada:"
+        echo -e "   ${YELLOW}age -d -i ~/.ssh/<tu_clave> -o ~/admin_credentials.txt $CRED_ENC${NC}"
+    elif [ -f "$CRED_PLAIN" ]; then
+        echo -e "Archivo en texto plano (no se pudo cifrar): ${BLUE}$CRED_PLAIN${NC}"
+        echo -e "Cópialo y bórralo en cuanto puedas:"
+        echo -e "   ${YELLOW}cat ~/admin_credentials.txt && shred -u ~/admin_credentials.txt${NC}"
+    else
+        echo -e "El archivo de credenciales fue eliminado tras mostrarse en consola." 
+        echo -e "Asegúrate de haberlas anotado."
+    fi
     
     echo -e "\n--------------------------------------------------"
     echo -n "¿Deseas ver SOLO la contraseña temporal del Panel Web para acceder ahora? (S/n): "
