@@ -27,12 +27,14 @@ services:
     volumes:
       - ./src:/var/www/html:ro
       - ./php/conf.d/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+      - ./geoip/GeoLite2-City.mmdb:/usr/share/GeoIP/GeoLite2-City.mmdb:ro
     environment:
       - MYSQL_HOST=mysql
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - LOKI_URL=http://loki:3100
+      - GEOIP_MMDB_PATH=/usr/share/GeoIP/GeoLite2-City.mmdb
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m

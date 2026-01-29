@@ -1,26 +1,25 @@
 # 🛡️ ASIR VPS Defense - Automated Security Appliance
 
-# ATENCIÓN ESTE README.md ES SOLO UNA PRUEBA.
-## No esta actualizado y tiene errores.
+# Estado actual (modo demo)
+## Panel por túnel SSH centrado en SSH/Fail2Ban.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
 ![Security](https://img.shields.io/badge/Security-Hardened-green)
 
-**ASIR VPS Defense** es una solución integral de seguridad diseñada para desplegarse en servidores VPS limpios (Debian/Ubuntu). Transforma un servidor básico en una fortaleza monitorizada utilizando **Defensa en Profundidad**, con mínima superficie expuesta (solo SSH).
+**ASIR VPS Defense** despliega en un VPS Debian/Ubuntu un panel PHP (sólo accesible por túnel SSH) para ver intentos SSH y bans de Fail2Ban, apoyado en MySQL y Loki/Promtail. No expone HTTP.
 
 > 🎓 **Proyecto Final de Ciclo (ASIR):** Administración de Sistemas Informáticos en Red.
 
----
 
 ## 🚀 Características Principales
 
-*   🧱 **Firewall de host (UFW) mínimo:** Solo expone SSH (22) con rate-limit; el resto queda cerrado por defecto.
-*   🍯 **SSH Honeypot Inteligente:** "Split Authentication". Admin por llave pública; usuario cebo con password controlada para disparar bans.
-*   👁️ **Observabilidad de acceso:** Promtail + Loki alimentan un panel nativo que muestra actividad SSH y Fail2Ban en tiempo real.
-*   🔒 **Acceso Zero-Trust:** El panel de administración no está expuesto a internet; solo vía túnel SSH a `127.0.0.1:8888`.
-*   ⚡ **Despliegue Automatizado:** Un único script en Bash configura host, Docker, usuarios y firewall en minutos.
+*   🧱 **UFW básico:** Abre 22/tcp; panel solo en loopback:8888 (túnel SSH).
+*   🍯 **SSH Honeypot (demo):** PasswordAuthentication ON para registrar intentos; admin real solo por clave pública.
+*   👁️ **Observabilidad:** Promtail + Loki almacenan auth/fail2ban; panel muestra contadores y tablas.
+*   🔒 **Panel no expuesto:** Solo túnel SSH a `127.0.0.1:8888`.
+*   ⚡ **Deploy automático:** `deploy.sh` instala dependencias, crea usuarios, genera `.env` y levanta Docker Compose.
 
 ## 🛠️ Arquitectura Técnica
 
@@ -28,12 +27,10 @@ El sistema utiliza **Docker Compose** para orquestar servicios aislados en redes
 
 | Servicio | Tecnología | Función | Puerto (Host) |
 |----------|------------|---------|---------------|
-| **Panel** | PHP 8.2 + Nginx | Dashboard de gestión y métricas SSH/Fail2Ban | `127.0.0.1:8888` (solo túnel SSH) |
-| **DB** | MySQL 8.0 | Gestión de usuarios y auditoría | No expuesto (red interna) |
-| **Logs** | Loki + Promtail | Ingesta y almacenamiento de logs de SSH y Fail2Ban | No expuesto (red interna) |
-| **SSH** | OpenSSH + Fail2Ban | Acceso de administración y honeypot | `22/tcp` |
-
-> Nota: El WAF queda deshabilitado/no publicado por defecto. Si en el futuro se expone una aplicación web, se puede reactivar y publicar un servicio detrás de él.
+| **Panel** | PHP 8.2 + Nginx | Dashboard SSH/Fail2Ban | `127.0.0.1:8888` (túnel) |
+| **DB** | MySQL 8.0 | Usuarios, auditoría, cache GeoIP | No expuesto |
+| **Logs** | Loki + Promtail | auth.log y fail2ban.log del host | No expuesto |
+| **SSH** | OpenSSH + Fail2Ban | Admin clave; honeypot password | `22/tcp` |
 
 ## 📦 Instalación Rápida
 
@@ -69,14 +66,11 @@ Por seguridad, el panel **no es accesible desde internet**. Solo vía túnel SSH
     *   Abre `http://localhost:8888`
     *   Credenciales en `~/admin_credentials.txt` (usuario admin, password generada).
 
-## 🛡️ Estrategia de Seguridad (Honeypot)
+## 🛡️ Estrategia (demo)
 
-El sistema configura SSH (`/etc/ssh/sshd_config`) para permitir autenticación por contraseña **solo** para un usuario cebo.
-*   Los bots atacan al usuario cebo.
-*   **Fail2Ban** detecta los fallos y banea la IP.
-*   **Promtail** envía el log a **Loki**.
-*   Tú ves el ataque en tiempo real en el **panel nativo**.
+- `PasswordAuthentication yes` global para ver usuarios/contraseñas atacados; el admin real exige clave pública.
+- Fail2Ban bantime 35d, maxretry 1 (actual). Eventos vistos en panel vía Loki.
 
 ## 📄 Licencia
 
-Este proyecto es de código abierto bajo la licencia MIT. Diseñado con fines educativos y de demostración de competencias en administración de sistemas.
+MIT. Proyecto educativo/demostrativo.
