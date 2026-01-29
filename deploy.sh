@@ -354,7 +354,7 @@ bantime = 35d
 findtime = 10m
 
 # "maxretry" es el numero de fallos permitidos antes del ban global
-maxretry = 1
+maxretry = 2
 
 # Ignorar localhost
 ignoreip = 127.0.0.1/8 ::1
@@ -365,7 +365,7 @@ port    = ssh
 logpath = %(sshd_log)s
 backend = %(sshd_backend)s
 filter  = sshd
-maxretry = 1
+maxretry = 2
 EOF
 
     systemctl restart fail2ban
@@ -581,10 +581,50 @@ MYSQL_PASSWORD=$MYSQL_APP_PASS
 # Configuración de Red
 FRONTEND_SUBNET=172.20.0.0/16
 BACKEND_SUBNET=172.21.0.0/16
+GEOIP_LICENSE_KEY=
 EOF
 
     chmod 600 .env
     log_success "Archivo .env generado con credenciales seguras."
+}
+
+download_geolite_mmdb() {
+    # Requiere GEOIP_LICENSE_KEY en entorno; descarga la base local GeoLite2-City
+    if [ -z "${GEOIP_LICENSE_KEY:-}" ]; then
+        log_info "GeoLite2: No se proporcionó License Key. Se usará fallback de país sin precisión de ciudad."
+        return 0
+    fi
+
+    local url="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${GEOIP_LICENSE_KEY}&suffix=tar.gz"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    mkdir -p geoip
+
+    log_info "Descargando base GeoLite2-City..."
+    if ! curl -fsSL "$url" -o "$tmpdir/geolite.tar.gz"; then
+        log_warn "No se pudo descargar GeoLite2 (comprueba la license key o conectividad). Se usará fallback de país."
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    tar -xzf "$tmpdir/geolite.tar.gz" -C "$tmpdir" || {
+        log_warn "No se pudo extraer GeoLite2. Se usará fallback de país."
+        rm -rf "$tmpdir"
+        return 0
+    }
+
+    local mmdb
+    mmdb=$(find "$tmpdir" -name "GeoLite2-City.mmdb" | head -n1)
+    if [ -z "$mmdb" ]; then
+        log_warn "GeoLite2-City.mmdb no encontrada en el paquete. Se usará fallback de país."
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    cp "$mmdb" geoip/GeoLite2-City.mmdb
+    chmod 644 geoip/GeoLite2-City.mmdb
+    log_success "Base GeoLite2-City descargada localmente (geoip/GeoLite2-City.mmdb)."
+    rm -rf "$tmpdir"
 }
 
 generate_db_seed() {
@@ -745,6 +785,25 @@ main() {
         load_env_if_present
         mark_step_done "env_done"
     fi
+
+    # Descarga opcional de GeoLite2 si se aporta GEOIP_LICENSE_KEY en .env o vía entorno
+    if [ -z "${GEOIP_LICENSE_KEY:-}" ]; then
+        echo -n "¿Tienes License Key de MaxMind GeoLite2 para geolocalización local? (S/n): "
+        read -r HAS_KEY < /dev/tty
+        if [[ "$HAS_KEY" =~ ^[Ss]$ ]] || [[ -z "$HAS_KEY" ]]; then
+            echo -n "Introduce GEOIP_LICENSE_KEY (MaxMind): "
+            read -r GEOIP_LICENSE_KEY < /dev/tty
+            export GEOIP_LICENSE_KEY
+            # Persistir en .env si se desea reutilizar
+            if [ -n "$GEOIP_LICENSE_KEY" ]; then
+                echo "GEOIP_LICENSE_KEY=$GEOIP_LICENSE_KEY" >> .env
+            fi
+        else
+            log_info "Omitiendo descarga GeoLite2. Se usará fallback de país sin consulta externa."
+        fi
+    fi
+
+    download_geolite_mmdb
 
     if is_step_done "seed_done"; then
         log_info "Semilla de base de datos ya generada; saltando."

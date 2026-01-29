@@ -224,13 +224,13 @@ function normalizeCounts(array $counts): array
 function lookupGeoForIp(PDO $pdo, string $ip): array
 {
     static $memo = [];
-    static $lookupBudget = 25; // Limit external lookups per request to avoid timeouts
     $default = [
         'country_code' => '??',
         'country_name' => 'Desconocido',
         'lat' => null,
         'lon' => null,
     ];
+
     $countryFallback = static function (string $code) use ($default): array {
         $centroids = [
             'US' => [38.0, -97.0],
@@ -276,7 +276,6 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB"
         );
-        // Si la tabla ya existe pero sin lat/lon, intentamos añadirlas sin romper
         try {
             $pdo->exec("ALTER TABLE ip_geo_cache ADD COLUMN lat DECIMAL(10,6) NULL");
         } catch (Throwable $ignored) {
@@ -320,18 +319,7 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         $fallback['country_name'] = $row['country_name'] ?? $fallback['country_name'];
     }
 
-    if ($lookupBudget <= 0) {
-        return $memo[$ip] = $fallback;
-    }
-
-    $lookupBudget--;
-
-    $geo = fetchGeoFromApi($ip) ?: $fallback;
-    if (($geo['lat'] === null || $geo['lon'] === null) && ($geo['country_code'] ?? '??') !== '??') {
-        $geoFallback = $countryFallback($geo['country_code']);
-        $geo['lat'] = $geo['lat'] ?? $geoFallback['lat'];
-        $geo['lon'] = $geo['lon'] ?? $geoFallback['lon'];
-    }
+    $geo = lookupGeoFromMmdb($ip, $fallback);
 
     $stmt = $pdo->prepare('REPLACE INTO ip_geo_cache (ip, country_code, country_name, lat, lon) VALUES (:ip, :code, :name, :lat, :lon)');
     $stmt->execute([
@@ -345,43 +333,27 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
     return $memo[$ip] = $geo;
 }
 
-function fetchGeoFromApi(string $ip): ?array
+function lookupGeoFromMmdb(string $ip, array $fallback): array
 {
-    $url = sprintf('https://ipapi.co/%s/json/', urlencode($ip));
-    $ch = curl_init($url);
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 2,
-        CURLOPT_USERAGENT => 'asir-vps-defense-panel/1.0',
-    ]);
-
-    $response = curl_exec($ch);
-    if ($response === false) {
-        curl_close($ch);
-        return null;
+    $path = getenv('GEOIP_MMDB_PATH') ?: '/usr/share/GeoIP/GeoLite2-City.mmdb';
+    if (!is_readable($path) || !function_exists('maxminddb_fetch_assoc')) {
+        return $fallback;
     }
 
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-
-    if ($status >= 400) {
-        return null;
+    $record = maxminddb_fetch_assoc($path, $ip);
+    if (!is_array($record)) {
+        return $fallback;
     }
 
-    $data = json_decode($response, true);
-    if (!is_array($data)) {
-        return null;
-    }
-
-    $code = strtoupper((string) ($data['country_code'] ?? '??'));
-    $name = (string) ($data['country_name'] ?? ($data['country'] ?? 'Desconocido'));
-    $lat = isset($data['latitude']) ? (float) $data['latitude'] : null;
-    $lon = isset($data['longitude']) ? (float) $data['longitude'] : null;
+    $code = strtoupper((string) ($record['country']['iso_code'] ?? $fallback['country_code'] ?? '??'));
+    $name = (string) ($record['country']['names']['en'] ?? $fallback['country_name'] ?? 'Desconocido');
+    $lat = $record['location']['latitude'] ?? null;
+    $lon = $record['location']['longitude'] ?? null;
 
     return [
-        'country_code' => $code ?: '??',
-        'country_name' => $name ?: 'Desconocido',
-        'lat' => $lat,
-        'lon' => $lon,
+        'country_code' => $code ?: ($fallback['country_code'] ?? '??'),
+        'country_name' => $name ?: ($fallback['country_name'] ?? 'Desconocido'),
+        'lat' => $lat !== null ? (float) $lat : ($fallback['lat'] ?? null),
+        'lon' => $lon !== null ? (float) $lon : ($fallback['lon'] ?? null),
     ];
 }

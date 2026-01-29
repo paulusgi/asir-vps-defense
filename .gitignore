@@ -1,6 +1,9 @@
 Proyecto.md
+MEJORAS.md
+V2.md
 .env
 .DS_Store
 admin_credentials.txt
 mysql/init/02-seed.sql
+geoip/
 .vscode

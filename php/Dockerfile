@@ -6,10 +6,16 @@ RUN apk add --no-cache \
     curl-dev \
     libzip-dev \
     zip \
-    unzip
+    unzip \
+    libmaxminddb-dev \
+    autoconf \
+    make \
+    g++
 
 # Install PHP extensions
-RUN docker-php-ext-install curl pdo pdo_mysql
+RUN docker-php-ext-install curl pdo pdo_mysql \
+    && pecl install maxminddb \
+    && docker-php-ext-enable maxminddb
 
 # Create non-root user (matches user: 1000:1000 in docker-compose)
 # Alpine already has 'www-data' (82), but we want 1000.
