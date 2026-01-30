@@ -835,7 +835,7 @@ EOF
 
 main() {
     clear
-    print_section "ASIR VPS DEFENSE - INSTALADOR v1.1"
+    print_section "ASIR VPS DEFENSE - INSTALADOR v2.0"
     
     check_root
     detect_context
@@ -1027,31 +1027,37 @@ main() {
     local HOST_HINT="${DOMAIN_NAME:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 
     if [ -f "$CRED_ENC" ]; then
-        echo -e "Archivo cifrado con tu clave pública SSH: ${BLUE}$CRED_ENC${NC}"
-        echo -e "Elige una opción:"
-        echo "  [1] Mostrar credenciales en pantalla (texto plano temporal)"
-        echo "  [2] Ver comando para descargar el archivo cifrado en tu máquina local"
-        echo "  [3] No hacer nada"
-        echo -n "Opción (1/2/3): "
-        read -r CRED_CHOICE < /dev/tty
+        while true; do
+            echo -e "Archivo cifrado con tu clave pública SSH: ${BLUE}$CRED_ENC${NC}"
+            echo -e "Elige una opción:"
+            echo "  [1] Mostrar credenciales en pantalla (texto plano temporal)"
+            echo "  [2] Ver comando para descargar el archivo cifrado en tu máquina local"
+            echo "  [3] No hacer nada y continuar"
+            echo -n "Opción (1/2/3): "
+            read -r CRED_CHOICE < /dev/tty
 
-        case "$CRED_CHOICE" in
-            1)
-                echo -e "${YELLOW}Credenciales (no se guardan en disco):${NC}"
-                echo "- Panel Web -> usuario: admin | contraseña: $WEB_ADMIN_PASS"
-                echo "- DB root   -> $MYSQL_ROOT_PASS"
-                echo "- DB app    -> $MYSQL_APP_PASS"
-                ;;
-            2)
-                echo -e "Ejecuta en tu máquina local para descargar el archivo cifrado:"
-                echo -e "   scp $SECURE_ADMIN@${HOST_HINT:-<dominio_o_ip>}:$CRED_ENC ./admin_credentials.txt.age"
-                echo -e "Luego descifra con tu clave privada:"
-                echo -e "   age -d -i ~/.ssh/<tu_clave> -o admin_credentials.txt ./admin_credentials.txt.age"
-                ;;
-            *)
-                log_info "Continuando sin mostrar ni descargar credenciales."
-                ;;
-        esac
+            case "$CRED_CHOICE" in
+                1)
+                    echo -e "${YELLOW}Credenciales (no se guardan en disco):${NC}"
+                    echo "- Panel Web -> usuario: admin | contraseña: $WEB_ADMIN_PASS"
+                    echo "- DB root   -> $MYSQL_ROOT_PASS"
+                    echo "- DB app    -> $MYSQL_APP_PASS"
+                    ;;
+                2)
+                    echo -e "Ejecuta en tu máquina local para descargar el archivo cifrado:"
+                    echo -e "   scp $SECURE_ADMIN@${HOST_HINT:-<dominio_o_ip>}:$CRED_ENC ./admin_credentials.txt.age"
+                    echo -e "Luego descifra con tu clave privada:"
+                    echo -e "   age -d -i ~/.ssh/<tu_clave> -o admin_credentials.txt ./admin_credentials.txt.age"
+                    ;;
+                3)
+                    log_info "Continuando sin mostrar ni descargar credenciales."
+                    break
+                    ;;
+                *)
+                    log_warn "Opción no válida. Elige 1, 2 o 3."
+                    ;;
+            esac
+        done
     elif [ -f "$CRED_PLAIN" ]; then
         echo -e "${RED}ATENCIÓN: Credenciales sin cifrar. Se mostrarán UNA sola vez y el archivo se borrará ahora.${NC}"
         cat "$CRED_PLAIN"
