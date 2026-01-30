@@ -635,11 +635,11 @@ function h($value) {
 
         const renderTables = () => {
             updateTable('banIpsBody', state.banIps, 3);
-            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3);
+            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [2]);
             const banBtn = document.getElementById('banLoadMore');
             if (banBtn) banBtn.disabled = banVisible >= state.banEvents.length;
 
-            updateTable('sshIpsBody', state.sshIps, 3);
+            updateTable('sshIpsBody', state.sshIps, 3, [1]);
             updateTable('sshUsersBody', state.sshUsers, 2);
             updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [3]);
             const sshBtn = document.getElementById('sshLoadMore');
@@ -725,7 +725,7 @@ function h($value) {
             minZoom: 1,
         }).addTo(map);
         const geoLayer = L.featureGroup().addTo(map);
-        map.setView([20, 0], 2);
+        map.setView([20, 0], 1.5);
 
         document.getElementById('refreshSelect').addEventListener('change', (e) => {
             refreshMs = Number(e.target.value) || 15000;
