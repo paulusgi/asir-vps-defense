@@ -1,4 +1,4 @@
-p#!/bin/bash
+#!/bin/bash
 set -euo pipefail
 IFS=$'\n\t'
 # ============================================================================== 
@@ -92,65 +92,18 @@ run_quiet() {
     fi
 }
 
-collect_public_keys_for_user() {
-    local user="$1"
-    declare -A seen
-    declare -A file_seen
-    local keys=()
-    local files=()
-
-    # Preferir find para cubrir claves inyectadas por el proveedor; fallback a rutas conocidas si falta find
-    if command -v find >/dev/null 2>&1; then
-        while IFS= read -r f; do
-            files+=("$f")
-        done < <(find /root /home -maxdepth 4 -type f \( -name "authorized_keys" -o -name "*.pub" -o -name "id_*" \) 2>/dev/null)
-    else
-        files+=(
-            "/home/$user/.ssh/authorized_keys"
-            "/home/$CURRENT_REAL_USER/.ssh/authorized_keys"
-            "/root/.ssh/authorized_keys"
-        )
-        for ak in /home/*/.ssh/authorized_keys; do
-            [ -f "$ak" ] && files+=("$ak")
-        done
-        for base in "/home/$user/.ssh" "/home/$CURRENT_REAL_USER/.ssh" "/root/.ssh" /home/*/.ssh; do
-            [ -d "$base" ] || continue
-            for pub in "$base"/*.pub; do
-                [ -f "$pub" ] && files+=("$pub")
-            done
-        done
-    fi
-
-    # Rutas explícitas clave para asegurar cobertura aunque find estuviera filtrado
-    files+=(
-        "/home/$user/.ssh/authorized_keys"
-        "/home/$CURRENT_REAL_USER/.ssh/authorized_keys"
-        "/root/.ssh/authorized_keys"
-    )
-
-    # Deduplicar lista de ficheros
-    local unique_files=()
-    for f in "${files[@]}"; do
-        [ -n "$f" ] || continue
-        if [ -z "${file_seen[$f]:-}" ]; then
-            unique_files+=("$f")
-            file_seen[$f]=1
+check_mode() {
+    # $1 path, $2 expected mode
+    local path="$1"; local expected="$2"; local label="$3"
+    if [ -e "$path" ]; then
+        local mode
+        mode=$(stat -c "%a" "$path")
+        if [ "$mode" != "$expected" ]; then
+            log_warn "Permisos inesperados en ${label:-$path} (modo $mode, esperado $expected)."
+            return 1
         fi
-    done
-
-    # Extraer claves de cada fichero candidato (authorized_keys o *.pub)
-    for file in "${unique_files[@]}"; do
-        [ -s "$file" ] || continue
-        while IFS= read -r line; do
-            [[ "$line" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
-            if [ -z "${seen[$line]:-}" ]; then
-                keys+=("$line")
-                seen[$line]=1
-            fi
-        done < <(grep -hE '^ssh-(rsa|ed25519|ecdsa)' "$file" 2>/dev/null || cat "$file")
-    done
-
-    printf '%s\n' "${keys[@]}"
+    fi
+    return 0
 }
 
 choose_public_key_for_user() {
@@ -159,57 +112,6 @@ choose_public_key_for_user() {
     local candidates
     mapfile -t candidates < <(collect_public_keys_for_user "$user")
 
-    if [ ${#candidates[@]} -eq 1 ]; then
-        # Auto-seleccionar si solo hay una clave detectada
-        printf '%s' "${candidates[0]}"
-        return 0
-    elif [ ${#candidates[@]} -gt 1 ]; then
-        echo "Se detectaron varias claves públicas para $user. Elige una o introduce otra:" >&2
-        local i=1
-        for key in "${candidates[@]}"; do
-            echo "  [$i] ${key:0:60}..." >&2
-            ((i++))
-        done
-        echo "  [M] Introducir manualmente" >&2
-        echo "  [S] Saltar" >&2
-        echo -n "Selecciona opción: " >&2
-        read -r choice < /dev/tty
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#candidates[@]} ]; then
-            printf '%s' "${candidates[$((choice-1))]}"
-            return 0
-        elif [[ "$choice" =~ ^[Mm]$ ]]; then
-            candidates=()
-        else
-            return 1
-        fi
-    fi
-
-    # Manual entry
-    echo -n "Pega una clave pública SSH (ssh-rsa/ssh-ed25519) o deja vacío para omitir: " >&2
-    read -r manual < /dev/tty
-    if [[ "$manual" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
-        printf '%s' "$manual"
-        return 0
-    fi
-    return 1
-}
-
-install_age_if_missing() {
-    if command -v age >/dev/null 2>&1; then
-        return 0
-    fi
-    log_info "Instalando age para cifrar credenciales..."
-    if ! run_quiet "Instalando age" apt-get install -y age; then
-        log_warn "No se pudo instalar age. Se omite el cifrado y se mostrarán credenciales para que las guardes manualmente."
-        return 1
-    fi
-    return 0
-}
-
-check_mode() {
-    # $1 path, $2 expected mode
-    local path="$1"; local expected="$2"; local label="$3"
-    if [ -e "$path" ]; then
     if [ ${#candidates[@]} -gt 0 ]; then
         echo "Se detectaron ${#candidates[@]} claves públicas para $user ($purpose). Elige una o introduce otra:" >&2
         local i=1
@@ -218,7 +120,7 @@ check_mode() {
             ((i++))
         done
         echo "  [M] Introducir manualmente" >&2
-        echo "  [S] Saltar" >&2
+        echo "  [S] Volver sin elegir" >&2
         echo -n "Selecciona opción: " >&2
         read -r choice < /dev/tty
 
@@ -242,6 +144,47 @@ check_mode() {
         return 0
     fi
     return 1
+}
+
+install_age_if_missing() {
+    if command -v age >/dev/null 2>&1; then
+        return 0
+    fi
+    log_info "Instalando age para cifrar credenciales..."
+    if ! run_quiet "Instalando age" apt-get install -y age; then
+        log_warn "No se pudo instalar age. Se omite el cifrado y se mostrarán credenciales para que las guardes manualmente."
+        return 1
+    fi
+    return 0
+}
+
+audit_permissions() {
+    local base="$1"
+    local issues=0
+
+    log_info "Auditando permisos en $base"
+
+    # Ficheros de secretos
+    check_mode "$base/.env" 600 ".env" || issues=1
+    check_mode "$base/mysql/init" 755 "mysql/init (directorio)" || issues=1
+    if find "$base/mysql/init" -type d ! -perm 755 -print -quit | grep -q .; then issues=1; log_warn "Directorio(s) en mysql/init sin modo 755"; fi
+    if find "$base/mysql/init" -type f ! -perm 644 -print -quit | grep -q .; then issues=1; log_warn "Ficheros en mysql/init sin modo 644"; fi
+
+    # Configs PHP y Loki
+    check_mode "$base/php/conf.d/custom.ini" 644 "php/conf.d/custom.ini" || issues=1
+    check_mode "$base/php/pool.d/www.conf" 644 "php/pool.d/www.conf" || issues=1
+    check_mode "$base/loki/config.yml" 644 "loki/config.yml" || issues=1
+
+    # Webroot
+    if find "$base/src" -type d ! -perm 755 -print -quit | grep -q .; then issues=1; log_warn "Directorios en src sin modo 755"; fi
+    if find "$base/src" -type f ! -perm 644 -print -quit | grep -q .; then issues=1; log_warn "Ficheros en src sin modo 644"; fi
+
+    # Credenciales del admin
+    if [ -f "/home/$SECURE_ADMIN/admin_credentials.txt" ]; then
+        check_mode "/home/$SECURE_ADMIN/admin_credentials.txt" 600 "admin_credentials.txt" || issues=1
+        log_warn "admin_credentials.txt presente; guarda su contenido en un lugar seguro y bórralo del servidor si ya no lo necesitas."
+    else
+        log_info "admin_credentials.txt no encontrado (posiblemente ya retirado)."
     fi
 
     # SSH del admin
