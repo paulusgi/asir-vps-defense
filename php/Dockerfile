@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     libzip-dev \
     zip \
     unzip \
+    libmaxminddb \
     libmaxminddb-dev \
     autoconf \
     make \
