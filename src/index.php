@@ -583,7 +583,7 @@ function h($value) {
             if (valid.length && typeof geoLayer.getBounds === 'function') {
                 map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
             } else {
-                map.setView([20, 0], 0.5);
+                map.setView([20, 0], 0.25);
             }
             const sk = document.getElementById('geoSkeleton');
             const gm = document.getElementById('geoMap');
@@ -720,14 +720,14 @@ function h($value) {
         };
 
         // Leaflet map
-        const map = L.map('geoMap', { worldCopyJump: true, zoomControl: false, zoomSnap: 0.25, minZoom: 0.5 });
+        const map = L.map('geoMap', { worldCopyJump: true, zoomControl: false, zoomSnap: 0.25, minZoom: 0 });
         const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap, © Carto',
             maxZoom: 6,
-            minZoom: 0.5,
+            minZoom: 0,
         }).addTo(map);
         const geoLayer = L.featureGroup().addTo(map);
-        map.setView([20, 0], 0.5);
+        map.setView([20, 0], 0.25);
 
         document.getElementById('refreshSelect').addEventListener('change', (e) => {
             refreshMs = Number(e.target.value) || 15000;
