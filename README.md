@@ -53,6 +53,22 @@ El asistente interactivo te guiará para:
 2.  Configurar el usuario cebo (Honeypot).
 3.  Generar credenciales seguras automáticamente.
 
+### Desencriptar las credenciales (admin_credentials.txt.age)
+
+Durante el deploy, las credenciales del panel y la base de datos se cifran con tu clave pública SSH mediante `age`. El archivo queda en `/home/<tu_admin>/admin_credentials.txt.age`.
+
+1. **Desde tu máquina local (recomendado):**
+     - Copia el archivo cifrado: `scp <tu_admin>@<tu_vps>:/home/<tu_admin>/admin_credentials.txt.age .`
+     - Descifra con tu clave privada (la que usaste en el deploy): `age -d -i ~/.ssh/<tu_clave_privada> -o admin_credentials.txt admin_credentials.txt.age`
+2. **Vía túnel/pipe (sin copiar al disco local):**
+     ```bash
+     ssh <tu_admin>@<tu_vps> "cat /home/<tu_admin>/admin_credentials.txt.age" \
+         | age -d -i ~/.ssh/<tu_clave_privada> -o admin_credentials.txt
+     ```
+3. El archivo plano contiene: URL del panel (localhost:8888), usuario `admin`, contraseña generada, y contraseñas MySQL. Guárdalo en un gestor seguro y bórralo cuando no lo necesites.
+
+Si no se pudo cifrar, el script muestra las credenciales una sola vez en pantalla y luego elimina el archivo plano. Anótalas en ese momento en tu gestor seguro.
+
 ## 🖥️ Acceso al Panel de Control
 
 Por seguridad, el panel **no es accesible desde internet**. Solo vía túnel SSH:
@@ -71,6 +87,10 @@ Por seguridad, el panel **no es accesible desde internet**. Solo vía túnel SSH
 - `PasswordAuthentication yes` global para ver usuarios/contraseñas atacados; el admin real exige clave pública.
 - Fail2Ban bantime 35d, maxretry 2. Eventos vistos en panel vía Loki.
 - GeoIP local opcional: si no hay GEOIP_LICENSE_KEY se usa fallback por país (sin llamadas externas).
+
+## ✅ Post-deploy checks
+
+Consulta los comandos rápidos de verificación en [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md). Incluye estado de contenedores, salud de MySQL, Fail2Ban, UFW y puertos en escucha.
 
 ## 📄 Licencia
 
