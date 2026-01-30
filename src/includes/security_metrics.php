@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/loki_client.php';
 
-function fetchSecurityMetrics(PDO $pdo): array
+function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
 {
     $client = new LokiClient(getenv('LOKI_URL') ?: 'http://loki:3100');
 
@@ -18,6 +18,11 @@ function fetchSecurityMetrics(PDO $pdo): array
         ), static function (array $row): bool {
             return isset($row['lat'], $row['lon']);
         }));
+
+        if ($mode === 'lite') {
+            $fail2ban['events'] = [];
+            $ssh['events'] = [];
+        }
 
         return [
             'generatedAt' => time(),

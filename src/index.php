@@ -9,7 +9,86 @@ session_set_cookie_params([
     'samesite' => 'Strict',
 ]);
 session_start();
+
 require_once __DIR__ . '/includes/security_metrics.php';
+
+function readSystemMetrics(): array
+{
+    try {
+        $cpu1 = file('/proc/stat', FILE_IGNORE_NEW_LINES)[0] ?? '';
+        usleep(200000);
+        $cpu2 = file('/proc/stat', FILE_IGNORE_NEW_LINES)[0] ?? '';
+
+        $parseCpu = static function (string $line): array {
+            $parts = preg_split('/\s+/', trim($line));
+            array_shift($parts);
+            $values = array_map('intval', $parts);
+            $total = array_sum($values);
+            $idle = $values[3] ?? 0;
+            return [$total, $idle];
+        };
+
+        [$total1, $idle1] = $parseCpu($cpu1);
+        [$total2, $idle2] = $parseCpu($cpu2);
+        $totalDelta = max(1, $total2 - $total1);
+        $idleDelta = max(0, $idle2 - $idle1);
+        $cpuUsage = max(0, min(100, round(100 * (1 - ($idleDelta / $totalDelta)), 1)));
+
+        $memInfo = @file('/proc/meminfo', FILE_IGNORE_NEW_LINES) ?: [];
+        $mem = [];
+        foreach ($memInfo as $line) {
+            if (preg_match('/^(\w+):\s+(\d+)/', $line, $m)) {
+                $mem[$m[1]] = (int) $m[2];
+            }
+        }
+        $memTotalKb = $mem['MemTotal'] ?? 0;
+        $memAvailKb = $mem['MemAvailable'] ?? 0;
+        $memUsed = max(0, $memTotalKb - $memAvailKb);
+        $memUsage = $memTotalKb > 0 ? round(($memUsed / $memTotalKb) * 100, 1) : 0;
+
+        $diskTotal = @disk_total_space('/') ?: 0;
+        $diskFree = @disk_free_space('/') ?: 0;
+        $diskUsed = max(0, $diskTotal - $diskFree);
+        $diskUsage = $diskTotal > 0 ? round(($diskUsed / $diskTotal) * 100, 1) : 0;
+
+        $netLines = @file('/proc/net/dev', FILE_IGNORE_NEW_LINES) ?: [];
+        $rx = 0;
+        $tx = 0;
+        foreach ($netLines as $line) {
+            if (!str_contains($line, ':')) {
+                continue;
+            }
+            [$iface, $rest] = array_map('trim', explode(':', $line, 2));
+            if ($iface === 'lo') {
+                continue;
+            }
+            $fields = preg_split('/\s+/', $rest);
+            $rx += (int) ($fields[0] ?? 0);
+            $tx += (int) ($fields[8] ?? 0);
+        }
+
+        return [
+            'ts' => time(),
+            'cpu' => $cpuUsage,
+            'mem' => [
+                'usedPct' => $memUsage,
+                'usedMb' => round($memUsed / 1024, 1),
+                'totalMb' => round($memTotalKb / 1024, 1),
+            ],
+            'disk' => [
+                'usedPct' => $diskUsage,
+                'usedGb' => round($diskUsed / 1024 / 1024 / 1024, 2),
+                'totalGb' => round($diskTotal / 1024 / 1024 / 1024, 2),
+            ],
+            'net' => [
+                'rx' => $rx,
+                'tx' => $tx,
+            ],
+        ];
+    } catch (Throwable $e) {
+        return ['error' => $e->getMessage()];
+    }
+}
 
 $host = getenv('MYSQL_HOST');
 $db   = getenv('MYSQL_DATABASE');
@@ -30,7 +109,7 @@ try {
     die('Error de conexión: ' . $e->getMessage());
 }
 
-if (isset($_GET['action']) && $_GET['action'] === 'metrics') {
+if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     if (!isset($_SESSION['user_id'])) {
         http_response_code(401);
@@ -38,8 +117,16 @@ if (isset($_GET['action']) && $_GET['action'] === 'metrics') {
         exit;
     }
 
-    echo json_encode(fetchSecurityMetrics($pdo));
-    exit;
+    if ($_GET['action'] === 'metrics') {
+        $mode = $_GET['mode'] ?? 'full';
+        echo json_encode(fetchSecurityMetrics($pdo, $mode));
+        exit;
+    }
+
+    if ($_GET['action'] === 'system') {
+        echo json_encode(readSystemMetrics());
+        exit;
+    }
 }
 
 if (isset($_GET['logout'])) {
@@ -103,6 +190,7 @@ if (!isset($_SESSION['user_id'])) {
             <button type="submit">Entrar</button>
         </form>
         <small>Panel accesible solo vía túnel SSH</small>
+        <small style="color:#9ca3af;">Máx 5 req/min por IP (rate-limit)</small>
     </div>
 </body>
 </html>
@@ -128,17 +216,19 @@ function h($value) {
         :root {
             --bg: #0b1220;
             --panel: #0f172a;
-            --panel-border: rgba(255,255,255,0.07);
+            --panel-border: rgba(255,255,255,0.12);
             --text: #e8eef9;
             --text-muted: #94a3b8;
             --accent: #10b981;
             --accent-warm: #f59e0b;
+            --danger: #f87171;
         }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background: radial-gradient(circle at 15% 20%, rgba(16,185,129,0.12), transparent 32%), radial-gradient(circle at 80% 0%, rgba(59,130,246,0.12), transparent 30%), var(--bg); color: var(--text); padding: 24px; }
         a { color: var(--accent); }
         .dashboard { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
-        header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .hero { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+        .hero .meta { display: flex; flex-direction: column; gap: 6px; }
         .user-panel { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
         .user-row { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.3); border-radius: 999px; }
         .logout-link { display: inline-flex; align-items: center; gap: 6px; color: var(--accent); text-decoration: none; font-size: 0.95rem; padding: 6px 10px; border: 1px solid rgba(16,185,129,0.35); border-radius: 999px; background: rgba(16,185,129,0.12); }
@@ -160,21 +250,35 @@ function h($value) {
         .status-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.15); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); padding: 8px 12px; border-radius: 999px; font-size: 0.95rem; }
         .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); }
         .controls select, .controls button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
-        .pager { display: flex; gap: 8px; align-items: center; margin-top: 8px; color: var(--text-muted); font-size: 0.9rem; }
-        .pager button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
         .badge-result { padding: 4px 8px; border-radius: 10px; font-size: 0.85rem; }
         .badge-result.ok { background: rgba(16,185,129,0.18); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); }
         .badge-result.warn { background: rgba(245,158,11,0.18); color: var(--accent-warm); border: 1px solid rgba(245,158,11,0.35); }
         #geoMap { height: 340px; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
-        @media (max-width: 720px) { header { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
+        .system-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; width: 100%; }
+        .sys-card { background: #0d1627; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; }
+        .sys-card .label { color: var(--text-muted); font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
+        .sys-card .value { font-size: 1.8rem; font-weight: 700; }
+        .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); font-size: 0.9rem; }
+        .tab-bar { display: flex; gap: 8px; flex-wrap: wrap; }
+        .tab-button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 10px; padding: 8px 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+        .tab-button.active { background: rgba(16,185,129,0.14); border-color: rgba(16,185,129,0.5); color: var(--accent); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .skeleton { position: relative; overflow: hidden; background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.04) 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+        @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+        .toast { position: fixed; top: 16px; right: 16px; background: #1f2937; color: var(--text); padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(248,113,113,0.35); display: none; gap: 8px; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+        .toast.show { display: inline-flex; }
+        .map-skeleton { height: 340px; border-radius: 14px; border: 1px solid var(--panel-border); background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.03) 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+        @media (max-width: 720px) { .hero { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
     </style>
 </head>
 <body>
     <div class="dashboard">
-        <header>
-            <div>
+        <header class="hero">
+            <div class="meta">
                 <h1 style="margin:0;">🛡️ ASIR VPS Defense</h1>
-                <div style="color:var(--text-muted);">Panel seguro · SSH + Fail2Ban</div>
+                <div class="status-pill" aria-live="polite">● Operativo · Solo túnel SSH</div>
+                <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
             </div>
             <div class="user-panel">
                 <div class="user-row">
@@ -187,22 +291,44 @@ function h($value) {
             </div>
         </header>
 
-        <div class="status-pill">● Operativo · Solo túnel SSH</div>
-        <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
-
         <div class="controls">
             <span>Auto-refresco:</span>
-            <select id="refreshSelect">
-                <option value="5000" selected>5s</option>
-                <option value="15000">15s</option>
+            <select id="refreshSelect" aria-label="Frecuencia de refresco">
+                <option value="5000">5s</option>
+                <option value="15000" selected>15s</option>
                 <option value="60000">1m</option>
             </select>
-            <button id="toggleRefresh">Pausar</button>
+            <button id="toggleRefresh" aria-pressed="false">Pausar</button>
+            <span id="netChip" class="chip" aria-live="polite">↕ Red: -- / --</span>
         </div>
 
-        <div id="metricsError" class="alert">No se pudo actualizar la telemetría.</div>
+        <section class="system-cards" aria-label="Recursos del sistema">
+            <div class="sys-card" id="cardCpu">
+                <span class="label">CPU</span>
+                <div class="value" id="cpuValue">--</div>
+                <svg id="cpuSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
+            </div>
+            <div class="sys-card" id="cardMem">
+                <span class="label">RAM</span>
+                <div class="value" id="memValue">--</div>
+                <small id="memDetail" style="color:var(--text-muted);">-- / -- GB</small>
+                <svg id="memSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
+            </div>
+            <div class="sys-card" id="cardDisk">
+                <span class="label">Disco</span>
+                <div class="value" id="diskValue">--</div>
+                <small id="diskDetail" style="color:var(--text-muted);">-- / -- GB</small>
+                <svg id="diskSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
+            </div>
+            <div class="sys-card" id="cardNet">
+                <span class="label">Red (60s)</span>
+                <div class="value" id="netValue">--</div>
+                <small id="netDetail" style="color:var(--text-muted);">↑ -- / ↓ --</small>
+                <svg id="netSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
+            </div>
+        </section>
 
-        <section class="cards">
+        <div class="cards">
             <div class="card">
                 <span class="label">Baneos Fail2Ban (24h)</span>
                 <strong id="fail2ban24h">--</strong>
@@ -213,75 +339,94 @@ function h($value) {
                 <strong id="ssh1h">--</strong>
                 <small>Últimos 5 min: <span id="ssh5m">--</span></small>
             </div>
-        </section>
+        </div>
 
-        <section class="grid">
-            <div class="panel table-scroll">
-                <h3>Top IP baneadas (Fail2Ban)</h3>
+        <div class="tab-bar" role="tablist">
+            <button class="tab-button active" data-tab="ban" aria-selected="true">Baneos</button>
+            <button class="tab-button" data-tab="ssh" aria-selected="false">SSH</button>
+            <button class="tab-button" data-tab="map" aria-selected="false">Mapa</button>
+            <button class="tab-button" data-tab="audit" aria-selected="false">Auditoría</button>
+        </div>
+
+        <div id="metricsError" class="alert" role="alert">No se pudo actualizar la telemetría.</div>
+
+        <div class="tab-content active" data-tab="ban">
+            <section class="grid">
+                <div class="panel table-scroll">
+                    <h3>Top IP baneadas (Fail2Ban)</h3>
+                    <table>
+                        <thead><tr><th>IP</th><th>País</th><th>Eventos</th></tr></thead>
+                        <tbody id="banIpsBody"></tbody>
+                    </table>
+                </div>
+                <div class="panel table-scroll">
+                    <h3>Baneos recientes (Fail2Ban)</h3>
+                    <table>
+                        <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
+                        <tbody id="banEventsBody"></tbody>
+                    </table>
+                    <button id="banLoadMore" aria-label="Cargar más baneos">Cargar más</button>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-content" data-tab="ssh">
+            <section class="grid">
+                <div class="panel table-scroll">
+                    <h3>Top IP ofensivas (SSH)</h3>
+                    <table>
+                        <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
+                        <tbody id="sshIpsBody"></tbody>
+                    </table>
+                </div>
+                <div class="panel table-scroll">
+                    <h3>Usuarios más atacados (SSH)</h3>
+                    <table>
+                        <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
+                        <tbody id="sshUsersBody"></tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="panel table-scroll">
+                <h3>Intentos SSH recientes</h3>
                 <table>
-                    <thead><tr><th>IP</th><th>País</th><th>Eventos</th></tr></thead>
-                    <tbody id="banIpsBody"></tbody>
+                    <thead><tr><th>Fecha</th><th>Usuario</th><th>Origen</th><th>Resultado</th></tr></thead>
+                    <tbody id="sshEventsBody"></tbody>
                 </table>
-            </div>
-            <div class="panel table-scroll">
-                <h3>Baneos recientes (Fail2Ban)</h3>
+                <button id="sshLoadMore" aria-label="Cargar más eventos SSH">Cargar más</button>
+            </section>
+        </div>
+
+        <div class="tab-content" data-tab="map">
+            <section class="panel">
+                <h3>Mapa de actividad (últimos eventos)</h3>
+                <div id="geoSkeleton" class="map-skeleton"></div>
+                <div id="geoMap" style="display:none;"></div>
+            </section>
+        </div>
+
+        <div class="tab-content" data-tab="audit">
+            <section class="panel table-scroll">
+                <h3>Registro de Auditoría Interna</h3>
                 <table>
-                    <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
-                    <tbody id="banEventsBody"></tbody>
+                    <thead><tr><th>ID</th><th>Usuario</th><th>Acción</th><th>IP Origen</th><th>Fecha</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($logs as $log): ?>
+                            <tr>
+                                <td><?= h($log['id']) ?></td>
+                                <td><?= h($log['username'] ?: 'Anónimo') ?></td>
+                                <td><?= h($log['action']) ?></td>
+                                <td><?= h($log['ip_address']) ?></td>
+                                <td><?= h($log['created_at']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
                 </table>
-                <div class="pager" id="banPager"></div>
-            </div>
-        </section>
-
-        <section class="grid">
-            <div class="panel table-scroll">
-                <h3>Top IP ofensivas (SSH)</h3>
-                <table>
-                    <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
-                    <tbody id="sshIpsBody"></tbody>
-                </table>
-            </div>
-            <div class="panel table-scroll">
-                <h3>Usuarios más atacados (SSH)</h3>
-                <table>
-                    <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
-                    <tbody id="sshUsersBody"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <section class="panel table-scroll">
-            <h3>Intentos SSH recientes</h3>
-            <table>
-                <thead><tr><th>Fecha</th><th>Usuario</th><th>Origen</th><th>Resultado</th></tr></thead>
-                <tbody id="sshEventsBody"></tbody>
-            </table>
-            <div class="pager" id="sshPager"></div>
-        </section>
-
-        <section class="panel">
-            <h3>Mapa de actividad (últimos eventos)</h3>
-            <div id="geoMap"></div>
-        </section>
-
-        <section class="panel table-scroll">
-            <h3>Registro de Auditoría Interna</h3>
-            <table>
-                <thead><tr><th>ID</th><th>Usuario</th><th>Acción</th><th>IP Origen</th><th>Fecha</th></tr></thead>
-                <tbody>
-                    <?php foreach ($logs as $log): ?>
-                        <tr>
-                            <td><?= h($log['id']) ?></td>
-                            <td><?= h($log['username'] ?: 'Anónimo') ?></td>
-                            <td><?= h($log['action']) ?></td>
-                            <td><?= h($log['ip_address']) ?></td>
-                            <td><?= h($log['created_at']) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </section>
+            </section>
+        </div>
     </div>
+
+    <div id="toast" class="toast" role="status">No se pudo actualizar la telemetría.</div>
 
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
@@ -291,6 +436,13 @@ function h($value) {
         };
 
         const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
+        const formatBytes = (bytes) => {
+            if (bytes <= 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const idx = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+            const value = bytes / Math.pow(1024, idx);
+            return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[idx]}`;
+        };
 
         const updateTable = (tbodyId, rows, columns = 3, htmlCols = []) => {
             const tbody = document.getElementById(tbodyId);
@@ -320,27 +472,20 @@ function h($value) {
             });
         };
 
-        const paginate = (rows, page, size) => {
-            const start = page * size;
-            return rows.slice(start, start + size);
-        };
-
-        const renderPager = (pagerId, total, page, size, onChange) => {
-            const pager = document.getElementById(pagerId);
-            if (!pager) return;
-            const pages = Math.max(1, Math.ceil(total / size));
-            pager.innerHTML = '';
-            const info = document.createElement('span');
-            info.textContent = `Página ${page + 1}/${pages}`;
-            const prev = document.createElement('button');
-            prev.textContent = '◀';
-            prev.disabled = page === 0;
-            prev.onclick = () => onChange(Math.max(0, page - 1));
-            const next = document.createElement('button');
-            next.textContent = '▶';
-            next.disabled = page >= pages - 1;
-            next.onclick = () => onChange(Math.min(pages - 1, page + 1));
-            pager.append(prev, info, next);
+        const setSkeleton = (tbodyId, rows = 3, cols = 3) => {
+            const tbody = document.getElementById(tbodyId);
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            for (let i = 0; i < rows; i++) {
+                const tr = document.createElement('tr');
+                for (let c = 0; c < cols; c++) {
+                    const td = document.createElement('td');
+                    td.className = 'skeleton';
+                    td.innerHTML = '&nbsp;';
+                    tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
         };
 
         const flagFromCode = (code) => {
@@ -357,6 +502,23 @@ function h($value) {
             return span.outerHTML;
         };
 
+        const renderSpark = (id, series) => {
+            const svg = document.getElementById(id);
+            if (!svg) return;
+            const values = series.slice(-20);
+            if (!values.length) {
+                svg.innerHTML = '';
+                return;
+            }
+            const max = Math.max(...values, 1);
+            const points = values.map((v, i) => {
+                const x = (i / Math.max(1, values.length - 1)) * 100;
+                const y = 30 - (v / max) * 28;
+                return `${x},${y}`;
+            }).join(' ');
+            svg.innerHTML = `<polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" />`;
+        };
+
         let state = {
             banEvents: [],
             sshEvents: [],
@@ -364,31 +526,131 @@ function h($value) {
             sshIps: [],
             sshUsers: [],
             geo: [],
+            system: {
+                cpu: [],
+                mem: [],
+                disk: [],
+                net: [],
+                ts: [],
+            },
+            netTotals: null,
         };
 
-        let failureCount = 0; // track consecutive failures to avoid flashing the alert
-
-        let pages = { ban: 0, ssh: 0 };
-        const PAGE_SIZE = 10;
-
-        let refreshMs = 5000;
+        let failureCount = 0;
+        let refreshMs = 15000;
         let refreshTimer = null;
-        const startRefresh = () => {
-            if (refreshTimer) clearInterval(refreshTimer);
-            refreshTimer = setInterval(refreshMetrics, refreshMs);
+        let inFlight = false;
+        let paused = false;
+        let banVisible = 15;
+        let sshVisible = 20;
+
+        const showToast = (msg) => {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.textContent = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3500);
         };
 
-        const refreshMetrics = async () => {
+        const scheduleRefresh = (delay = refreshMs) => {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(refreshLoop, delay);
+        };
+
+        const renderMap = (points) => {
+            geoLayer.clearLayers();
+            const valid = points.filter(p => p.lat !== null && p.lon !== null);
+            valid.forEach((p) => {
+                const color = p.type === 'fail2ban' ? '#10b981' : '#f59e0b';
+                L.circleMarker([p.lat, p.lon], {
+                    radius: 5,
+                    color,
+                    weight: 1,
+                    fillColor: color,
+                    fillOpacity: 0.7,
+                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}`);
+            });
+            if (valid.length) {
+                map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
+            }
+            const sk = document.getElementById('geoSkeleton');
+            const gm = document.getElementById('geoMap');
+            if (gm && sk) {
+                sk.style.display = 'none';
+                gm.style.display = 'block';
+            }
+        };
+
+        const renderSystem = (sys) => {
+            if (sys.error) return;
+            state.system.ts.push(sys.ts);
+            state.system.cpu.push(sys.cpu);
+            state.system.mem.push(sys.mem.usedPct);
+            state.system.disk.push(sys.disk.usedPct);
+            const capSeries = (arr) => { if (arr.length > 40) arr.splice(0, arr.length - 40); };
+            capSeries(state.system.ts);
+            capSeries(state.system.cpu);
+            capSeries(state.system.mem);
+            capSeries(state.system.disk);
+            const netTotal = sys.net;
+            if (state.netTotals) {
+                const deltaRx = Math.max(0, netTotal.rx - state.netTotals.rx);
+                const deltaTx = Math.max(0, netTotal.tx - state.netTotals.tx);
+                const elapsed = Math.max(1, sys.ts - (state.system.ts[state.system.ts.length - 2] || sys.ts));
+                const rxRate = deltaRx / elapsed;
+                const txRate = deltaTx / elapsed;
+                state.system.net.push(rxRate + txRate);
+                capSeries(state.system.net);
+                setText('netDetail', `↑ ${formatBytes(txRate)}/s · ↓ ${formatBytes(rxRate)}/s`);
+                setText('netValue', `${formatBytes(rxRate + txRate)}/s`);
+                document.getElementById('netChip').textContent = `↕ Red: ↑ ${formatBytes(txRate)}/s · ↓ ${formatBytes(rxRate)}/s`;
+                renderSpark('netSpark', state.system.net);
+            }
+            state.netTotals = netTotal;
+
+            setText('cpuValue', `${sys.cpu}%`);
+            renderSpark('cpuSpark', state.system.cpu);
+
+            setText('memValue', `${sys.mem.usedPct}%`);
+            setText('memDetail', `${(sys.mem.usedMb/1024).toFixed(2)} / ${(sys.mem.totalMb/1024).toFixed(2)} GB`);
+            renderSpark('memSpark', state.system.mem);
+
+            setText('diskValue', `${sys.disk.usedPct}%`);
+            setText('diskDetail', `${sys.disk.usedGb} / ${sys.disk.totalGb} GB`);
+            renderSpark('diskSpark', state.system.disk);
+        };
+
+        const renderTables = () => {
+            updateTable('banIpsBody', state.banIps, 3);
+            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3);
+            const banBtn = document.getElementById('banLoadMore');
+            if (banBtn) banBtn.disabled = banVisible >= state.banEvents.length;
+
+            updateTable('sshIpsBody', state.sshIps, 3);
+            updateTable('sshUsersBody', state.sshUsers, 2);
+            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [3]);
+            const sshBtn = document.getElementById('sshLoadMore');
+            if (sshBtn) sshBtn.disabled = sshVisible >= state.sshEvents.length;
+        };
+
+        const refreshLoop = async () => {
+            if (paused || inFlight) return;
+            inFlight = true;
             try {
-                const res = await fetch('?action=metrics');
-                const data = await res.json();
-                if (!res.ok || data.error) {
-                    failureCount++;
-                    if (failureCount >= 2) {
-                        document.getElementById('metricsError').classList.add('show');
-                    }
-                    return;
+                const [metricsRes, systemRes] = await Promise.all([
+                    fetch('?action=metrics'),
+                    fetch('?action=system'),
+                ]);
+
+                if (!metricsRes.ok || !systemRes.ok) {
+                    throw new Error('HTTP error');
                 }
+
+                const data = await metricsRes.json();
+                const system = await systemRes.json();
+
+                if (data.error) throw new Error(data.error);
+                if (system.error) throw new Error(system.error);
 
                 failureCount = 0;
                 document.getElementById('metricsError').classList.remove('show');
@@ -409,41 +671,22 @@ function h($value) {
                 state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
                 state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
                 state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${flagFromCode(r.country_code)} ${r.ip}`, badgeResult(r.result)]);
-                state.geo = (data.geo || []).map((p) => ({
-                    lat: p.lat,
-                    lon: p.lon,
-                    ip: p.ip,
-                    country: p.country,
-                    code: p.country_code,
-                    type: p.type,
-                }));
+                state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
 
-                updateTable('banIpsBody', state.banIps, 3);
-                const banPageRows = paginate(state.banEvents, pages.ban, PAGE_SIZE);
-                updateTable('banEventsBody', banPageRows, 3);
-                renderPager('banPager', state.banEvents.length, pages.ban, PAGE_SIZE, (p) => {
-                    pages.ban = p;
-                    updateTable('banEventsBody', paginate(state.banEvents, pages.ban, PAGE_SIZE), 3);
-                    renderPager('banPager', state.banEvents.length, pages.ban, PAGE_SIZE, () => {});
-                });
-
-                updateTable('sshIpsBody', state.sshIps, 3);
-                updateTable('sshUsersBody', state.sshUsers, 2);
-                const sshPageRows = paginate(state.sshEvents, pages.ssh, PAGE_SIZE);
-                updateTable('sshEventsBody', sshPageRows, 4, [3]);
-                renderPager('sshPager', state.sshEvents.length, pages.ssh, PAGE_SIZE, (p) => {
-                    pages.ssh = p;
-                    updateTable('sshEventsBody', paginate(state.sshEvents, pages.ssh, PAGE_SIZE), 4, [3]);
-                    renderPager('sshPager', state.sshEvents.length, pages.ssh, PAGE_SIZE, () => {});
-                });
-
+                renderSystem(system);
+                renderTables();
                 renderMap(state.geo);
             } catch (e) {
                 failureCount++;
-                if (failureCount >= 2) {
-                    document.getElementById('metricsError').classList.add('show');
-                }
+                document.getElementById('metricsError').classList.add('show');
+                if (failureCount % 2 === 0) showToast('No se pudo actualizar la telemetría.');
+                const penalty = Math.min(30000, failureCount * 2000);
+                scheduleRefresh(refreshMs + penalty);
+                inFlight = false;
+                return;
             }
+            inFlight = false;
+            scheduleRefresh(refreshMs);
         };
 
         // Leaflet map
@@ -456,42 +699,51 @@ function h($value) {
         const geoLayer = L.layerGroup().addTo(map);
         map.setView([20, 0], 2);
 
-        const renderMap = (points) => {
-            geoLayer.clearLayers();
-            const valid = points.filter(p => p.lat !== null && p.lon !== null);
-            valid.forEach((p) => {
-                const color = p.type === 'fail2ban' ? '#10b981' : '#f59e0b';
-                L.circleMarker([p.lat, p.lon], {
-                    radius: 5,
-                    color,
-                    weight: 1,
-                    fillColor: color,
-                    fillOpacity: 0.7,
-                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}`);
-            });
-            if (valid.length) {
-                map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
-            }
-        };
-
         document.getElementById('refreshSelect').addEventListener('change', (e) => {
-            refreshMs = Number(e.target.value) || 5000;
-            startRefresh();
+            refreshMs = Number(e.target.value) || 15000;
+            scheduleRefresh(refreshMs);
         });
 
         document.getElementById('toggleRefresh').addEventListener('click', (e) => {
-            if (refreshTimer) {
-                clearInterval(refreshTimer);
-                refreshTimer = null;
-                e.target.textContent = 'Reanudar';
+            paused = !paused;
+            e.target.textContent = paused ? 'Reanudar' : 'Pausar';
+            e.target.setAttribute('aria-pressed', paused ? 'true' : 'false');
+            if (paused) {
+                if (refreshTimer) clearTimeout(refreshTimer);
             } else {
-                e.target.textContent = 'Pausar';
-                startRefresh();
+                scheduleRefresh(0);
             }
         });
 
-        refreshMetrics();
-        startRefresh();
+        document.querySelectorAll('.tab-button').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                btn.classList.add('active');
+                const tab = btn.dataset.tab;
+                const content = document.querySelector(`.tab-content[data-tab="${tab}"]`);
+                if (content) content.classList.add('active');
+            });
+        });
+
+        document.getElementById('banLoadMore').addEventListener('click', () => {
+            banVisible += 15;
+            renderTables();
+        });
+
+        document.getElementById('sshLoadMore').addEventListener('click', () => {
+            sshVisible += 15;
+            renderTables();
+        });
+
+        // Initial skeletons
+        setSkeleton('banIpsBody', 3, 3);
+        setSkeleton('banEventsBody', 4, 3);
+        setSkeleton('sshIpsBody', 3, 3);
+        setSkeleton('sshUsersBody', 3, 2);
+        setSkeleton('sshEventsBody', 5, 4);
+
+        scheduleRefresh(0);
     </script>
 </body>
 </html>
