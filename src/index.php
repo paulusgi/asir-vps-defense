@@ -749,6 +749,11 @@ function h($value) {
                 const tab = btn.dataset.tab;
                 const content = document.querySelector(`.tab-content[data-tab="${tab}"]`);
                 if (content) content.classList.add('active');
+                if (tab === 'map') {
+                    // Asegura que Leaflet recalcule tras mostrar el tab
+                    setTimeout(() => map.invalidateSize(), 50);
+                    renderMap(state.geo);
+                }
             });
         });
 
