@@ -273,6 +273,7 @@ function h($value) {
         .toast { position: fixed; top: 16px; right: 16px; background: #1f2937; color: var(--text); padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(248,113,113,0.35); display: none; gap: 8px; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
         .toast.show { display: inline-flex; }
         .map-skeleton { height: 340px; border-radius: 14px; border: 1px solid var(--panel-border); background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.03) 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
+        .flag { display: inline-block; width: 1.5em; text-align: center; }
         @media (max-width: 720px) { .hero { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
     </style>
 </head>
@@ -680,11 +681,12 @@ function h($value) {
                         const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
                         setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
-                        state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
-                        state.banEvents = ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, `${flagFromCode(r.country_code)} ${r.ip}`]);
-                        state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
+                        const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${name || cc || ''}`.trim();
+                        state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
+                        state.banEvents = ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
+                        state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
-                        state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${flagFromCode(r.country_code)} ${r.ip}`, badgeResult(r.result)]);
+                        state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, flagLabel(r.country_code, r.ip), badgeResult(r.result)]);
                         state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
 
                         renderTables();
