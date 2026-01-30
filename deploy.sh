@@ -1068,15 +1068,41 @@ main() {
 
     unset WEB_ADMIN_PASS
 
+    echo -e "\n${YELLOW}>>> CAMBIO DE PUERTO SSH (PASO FINAL) <<<${NC}"
+    local NEW_SSH_PORT=""
+    local EFFECTIVE_SSH_PORT="22"
+    echo -n "Introduce el nuevo puerto SSH (ENTER para usar 2929): "
+    read -r NEW_SSH_PORT < /dev/tty
+    if [ -z "$NEW_SSH_PORT" ]; then
+        NEW_SSH_PORT="2929"
+    fi
+    if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
+        log_error "Puerto no válido. Se mantiene el puerto 22."
+        EFFECTIVE_SSH_PORT="22"
+    else
+        log_info "Aplicando puerto SSH $NEW_SSH_PORT (se actualizará sshd y UFW)..."
+        sed -i "s/^Port .*/Port $NEW_SSH_PORT/" /etc/ssh/sshd_config
+        ufw allow "$NEW_SSH_PORT"/tcp comment 'SSH custom' || log_warn "No se pudo abrir el puerto $NEW_SSH_PORT en UFW"
+        ufw delete allow 22/tcp >/dev/null 2>&1 || true
+        if sshd -t && systemctl restart sshd; then
+            log_success "sshd reiniciado en puerto $NEW_SSH_PORT"
+            EFFECTIVE_SSH_PORT="$NEW_SSH_PORT"
+        else
+            log_error "No se pudo reiniciar sshd con el puerto nuevo; se mantiene 22."
+            EFFECTIVE_SSH_PORT="22"
+        fi
+    fi
+
     echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
     echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
     echo -e "2. Ejecuta el siguiente comando para crear el túnel seguro:"
-    echo -e "   ${YELLOW}ssh -L 8888:127.0.0.1:8888 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
+    echo -e "   ${YELLOW}ssh -p $EFFECTIVE_SSH_PORT -L 8888:127.0.0.1:8888 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
     echo -e ""
     echo -e "3. Abre tu navegador web y accede a:"
     echo -e "   - Panel de Administración + Métricas Loki: ${GREEN}http://localhost:8888${NC}"
     echo -e ""
     echo -e "Si recibes 'Connection Refused', espera unos segundos a que los contenedores terminen de arrancar."
+
     echo -e "\n${YELLOW}Log detallado: ${LOG_FILE}${NC}"
     echo -n "Pulsa ENTER para borrar el log y salir (escribe 'No' para conservarlo): "
     read -r CLEAN_LOG < /dev/tty
@@ -1085,6 +1111,11 @@ main() {
     else
         rm -f "$LOG_FILE" && log_info "Log eliminado."
     fi
+
+    echo -e "\n${YELLOW}>>> LIMPIEZA DE VARIABLES DE ENTORNO <<<${NC}"
+    log_info "Eliminando variables sensibles del entorno de la sesión..."
+    unset MYSQL_ROOT_PASS MYSQL_APP_PASS WEB_ADMIN_PASS WEB_ADMIN_HASH ADMIN_PASS ADMIN_PASS_CONFIRM \
+        HONEYPOT_TARGET_PASS SSH_KEY CREDENTIALS_MODE DOMAIN_NAME HOST_HINT EFFECTIVE_SSH_PORT NEW_SSH_PORT
 
     echo -e "${GREEN}==================================================${NC}"
 }
