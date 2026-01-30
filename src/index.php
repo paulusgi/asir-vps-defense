@@ -582,8 +582,8 @@ function h($value) {
             });
             if (valid.length && typeof geoLayer.getBounds === 'function') {
                 map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
-            } else if (!valid.length) {
-                map.setView([20, 0], 1.1);
+            } else {
+                map.setView([20, 0], 1);
             }
             const sk = document.getElementById('geoSkeleton');
             const gm = document.getElementById('geoMap');
@@ -727,7 +727,7 @@ function h($value) {
             minZoom: 1,
         }).addTo(map);
         const geoLayer = L.featureGroup().addTo(map);
-        map.setView([20, 0], 1.1);
+        map.setView([20, 0], 1);
 
         document.getElementById('refreshSelect').addEventListener('change', (e) => {
             refreshMs = Number(e.target.value) || 15000;
