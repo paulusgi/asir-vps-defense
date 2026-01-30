@@ -95,44 +95,59 @@ run_quiet() {
 collect_public_keys_for_user() {
     local user="$1"
     declare -A seen
+    declare -A file_seen
     local keys=()
+    local files=()
 
-    # Rutas candidatas: admin recién creado, usuario real que ejecuta, root y cualquier otro home con authorized_keys
-    local paths=(
+    # Preferir find para cubrir claves inyectadas por el proveedor; fallback a rutas conocidas si falta find
+    if command -v find >/dev/null 2>&1; then
+        while IFS= read -r f; do
+            files+=("$f")
+        done < <(find /root /home -maxdepth 4 -type f \( -name "authorized_keys" -o -name "*.pub" -o -name "id_*" \) 2>/dev/null)
+    else
+        files+=(
+            "/home/$user/.ssh/authorized_keys"
+            "/home/$CURRENT_REAL_USER/.ssh/authorized_keys"
+            "/root/.ssh/authorized_keys"
+        )
+        for ak in /home/*/.ssh/authorized_keys; do
+            [ -f "$ak" ] && files+=("$ak")
+        done
+        for base in "/home/$user/.ssh" "/home/$CURRENT_REAL_USER/.ssh" "/root/.ssh" /home/*/.ssh; do
+            [ -d "$base" ] || continue
+            for pub in "$base"/*.pub; do
+                [ -f "$pub" ] && files+=("$pub")
+            done
+        done
+    fi
+
+    # Rutas explícitas clave para asegurar cobertura aunque find estuviera filtrado
+    files+=(
         "/home/$user/.ssh/authorized_keys"
         "/home/$CURRENT_REAL_USER/.ssh/authorized_keys"
         "/root/.ssh/authorized_keys"
     )
-    # Añadir todos los homes encontrados dinámicamente
-    for ak in /home/*/.ssh/authorized_keys; do
-        [ -f "$ak" ] && paths+=("$ak")
+
+    # Deduplicar lista de ficheros
+    local unique_files=()
+    for f in "${files[@]}"; do
+        [ -n "$f" ] || continue
+        if [ -z "${file_seen[$f]:-}" ]; then
+            unique_files+=("$f")
+            file_seen[$f]=1
+        fi
     done
 
-    # authorized_keys entries en todas las rutas candidatas
-    for ak in "${paths[@]}"; do
-        [ -s "$ak" ] || continue
+    # Extraer claves de cada fichero candidato (authorized_keys o *.pub)
+    for file in "${unique_files[@]}"; do
+        [ -s "$file" ] || continue
         while IFS= read -r line; do
             [[ "$line" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
             if [ -z "${seen[$line]:-}" ]; then
                 keys+=("$line")
                 seen[$line]=1
             fi
-        done < "$ak"
-    done
-
-    # Local .pub files en los mismos directorios base
-    for base in "/home/$user/.ssh" "/home/$CURRENT_REAL_USER/.ssh" "/root/.ssh" /home/*/.ssh; do
-        [ -d "$base" ] || continue
-        for pub in "$base"/*.pub; do
-            [ -f "$pub" ] || continue
-            local content
-            content=$(cat "$pub")
-            [[ "$content" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
-            if [ -z "${seen[$content]:-}" ]; then
-                keys+=("$content")
-                seen[$content]=1
-            fi
-        done
+        done < <(grep -hE '^ssh-(rsa|ed25519|ecdsa)' "$file" 2>/dev/null || cat "$file")
     done
 
     printf '%s\n' "${keys[@]}"
