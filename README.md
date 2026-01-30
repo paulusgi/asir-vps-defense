@@ -3,7 +3,7 @@
 # Estado actual (modo demo)
 ## Panel por túnel SSH centrado en SSH/Fail2Ban.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![License](https://img.shields.io/badge/license-NonCommercial-red.svg)
 ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
 ![Security](https://img.shields.io/badge/Security-Hardened-green)
