@@ -400,6 +400,7 @@ encrypt_credentials_file() {
         chown "$SECURE_ADMIN:$SECURE_ADMIN" "${cred_file}.age"
         shred -u "$cred_file"
         log_success "Credenciales cifradas en ${cred_file}.age. Sólo la clave privada asociada puede descifrarlas."
+        log_info "Archivo de texto plano borrado tras cifrado (${cred_file})."
         CREDENTIALS_MODE="encrypted"
         return 0
     else
