@@ -336,11 +336,58 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
 function lookupGeoFromMmdb(string $ip, array $fallback): array
 {
     $path = getenv('GEOIP_MMDB_PATH') ?: '/usr/share/GeoIP/GeoLite2-City.mmdb';
-    if (!is_readable($path) || !function_exists('maxminddb_fetch_assoc')) {
+    if (!is_readable($path)) {
         return $fallback;
     }
 
-    $record = maxminddb_fetch_assoc($path, $ip);
+    $record = null;
+
+    if (function_exists('maxminddb_fetch_assoc')) {
+        $record = @maxminddb_fetch_assoc($path, $ip);
+    }
+
+    // Fallback a la herramienta CLI mmdblookup si el módulo PHP no expone funciones
+    if (!is_array($record) && is_executable('/usr/bin/mmdblookup')) {
+        $cmd = sprintf(
+            '/usr/bin/mmdblookup --file %s --ip %s country iso_code country names en location latitude location longitude 2>/dev/null',
+            escapeshellarg($path),
+            escapeshellarg($ip)
+        );
+        $output = shell_exec($cmd);
+        if (is_string($output) && $output !== '') {
+            $code = null;
+            $name = null;
+            $lat = null;
+            $lon = null;
+
+            if (preg_match('/iso_code:\s*"([A-Z]{2})"/i', $output, $m)) {
+                $code = strtoupper($m[1]);
+            }
+            if (preg_match('/names\s+en:\s+"([^"]+)"/i', $output, $m)) {
+                $name = $m[1];
+            }
+            if (preg_match('/latitude:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
+                $lat = (float) $m[1];
+            }
+            if (preg_match('/longitude:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
+                $lon = (float) $m[1];
+            }
+
+            if ($code || $name || $lat !== null || $lon !== null) {
+                $record = [
+                    'country' => [
+                        'iso_code' => $code,
+                        'names' => ['en' => $name],
+                    ],
+                    'location' => [
+                        'latitude' => $lat,
+                        'longitude' => $lon,
+                    ],
+                ];
+            }
+        }
+    }
+
     if (!is_array($record)) {
         return $fallback;
     }
