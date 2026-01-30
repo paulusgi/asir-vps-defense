@@ -579,8 +579,10 @@ function h($value) {
                     fillOpacity: 0.7,
                 }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}`);
             });
-            if (valid.length) {
+            if (valid.length && typeof geoLayer.getBounds === 'function') {
                 map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
+            } else if (!valid.length) {
+                map.setView([20, 0], 2);
             }
             const sk = document.getElementById('geoSkeleton');
             const gm = document.getElementById('geoMap');
@@ -722,7 +724,7 @@ function h($value) {
             maxZoom: 6,
             minZoom: 1,
         }).addTo(map);
-        const geoLayer = L.layerGroup().addTo(map);
+        const geoLayer = L.featureGroup().addTo(map);
         map.setView([20, 0], 2);
 
         document.getElementById('refreshSelect').addEventListener('change', (e) => {
