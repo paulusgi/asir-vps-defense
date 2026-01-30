@@ -258,12 +258,16 @@ function h($value) {
         .sys-card { background: #0d1627; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; }
         .sys-card .label { color: var(--text-muted); font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
         .sys-card .value { font-size: 1.8rem; font-weight: 700; }
+        .donut { width: 96px; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--accent) 0deg, rgba(255,255,255,0.08) 0deg); position: relative; }
+        .donut::after { content: ""; position: absolute; inset: 18px; background: #0d1627; border-radius: 50%; }
+        .donut span { position: relative; font-weight: 700; font-size: 1.1rem; }
         .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); font-size: 0.9rem; }
         .tab-bar { display: flex; gap: 8px; flex-wrap: wrap; }
         .tab-button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 10px; padding: 8px 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
         .tab-button.active { background: rgba(16,185,129,0.14); border-color: rgba(16,185,129,0.5); color: var(--accent); }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
+        .load-more { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
         .skeleton { position: relative; overflow: hidden; background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.04) 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
         @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
         .toast { position: fixed; top: 16px; right: 16px; background: #1f2937; color: var(--text); padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(248,113,113,0.35); display: none; gap: 8px; align-items: center; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
@@ -310,15 +314,13 @@ function h($value) {
             </div>
             <div class="sys-card" id="cardMem">
                 <span class="label">RAM</span>
-                <div class="value" id="memValue">--</div>
+                <div class="donut" id="memDonut"><span id="memDonutLabel">--</span></div>
                 <small id="memDetail" style="color:var(--text-muted);">-- / -- GB</small>
-                <svg id="memSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
             </div>
             <div class="sys-card" id="cardDisk">
                 <span class="label">Disco</span>
-                <div class="value" id="diskValue">--</div>
+                <div class="donut" id="diskDonut"><span id="diskDonutLabel">--</span></div>
                 <small id="diskDetail" style="color:var(--text-muted);">-- / -- GB</small>
-                <svg id="diskSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
             </div>
             <div class="sys-card" id="cardNet">
                 <span class="label">Red (60s)</span>
@@ -365,7 +367,7 @@ function h($value) {
                         <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
                         <tbody id="banEventsBody"></tbody>
                     </table>
-                    <button id="banLoadMore" aria-label="Cargar más baneos">Cargar más</button>
+                    <button type="button" class="load-more" id="banLoadMore" aria-label="Cargar más baneos">Cargar más</button>
                 </div>
             </section>
         </div>
@@ -393,7 +395,7 @@ function h($value) {
                     <thead><tr><th>Fecha</th><th>Usuario</th><th>Origen</th><th>Resultado</th></tr></thead>
                     <tbody id="sshEventsBody"></tbody>
                 </table>
-                <button id="sshLoadMore" aria-label="Cargar más eventos SSH">Cargar más</button>
+                <button type="button" class="load-more" id="sshLoadMore" aria-label="Cargar más eventos SSH">Cargar más</button>
             </section>
         </div>
 
@@ -519,6 +521,13 @@ function h($value) {
             svg.innerHTML = `<polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" />`;
         };
 
+        const renderDonut = (id, pct, color = 'var(--accent)') => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const clamped = Math.max(0, Math.min(100, pct));
+            el.style.background = `conic-gradient(${color} ${clamped}%, rgba(255,255,255,0.08) 0)`;
+        };
+
         let state = {
             banEvents: [],
             sshEvents: [],
@@ -611,13 +620,13 @@ function h($value) {
             setText('cpuValue', `${sys.cpu}%`);
             renderSpark('cpuSpark', state.system.cpu);
 
-            setText('memValue', `${sys.mem.usedPct}%`);
+            setText('memDonutLabel', `${sys.mem.usedPct}%`);
             setText('memDetail', `${(sys.mem.usedMb/1024).toFixed(2)} / ${(sys.mem.totalMb/1024).toFixed(2)} GB`);
-            renderSpark('memSpark', state.system.mem);
+            renderDonut('memDonut', sys.mem.usedPct);
 
-            setText('diskValue', `${sys.disk.usedPct}%`);
+            setText('diskDonutLabel', `${sys.disk.usedPct}%`);
             setText('diskDetail', `${sys.disk.usedGb} / ${sys.disk.totalGb} GB`);
-            renderSpark('diskSpark', state.system.disk);
+            renderDonut('diskDonut', sys.disk.usedPct, '#60a5fa');
         };
 
         const renderTables = () => {
@@ -636,57 +645,64 @@ function h($value) {
         const refreshLoop = async () => {
             if (paused || inFlight) return;
             inFlight = true;
+            let hadError = false;
             try {
-                const [metricsRes, systemRes] = await Promise.all([
+                const [metricsRes, systemRes] = await Promise.allSettled([
                     fetch('?action=metrics'),
                     fetch('?action=system'),
                 ]);
 
-                if (!metricsRes.ok || !systemRes.ok) {
-                    throw new Error('HTTP error');
+                if (systemRes.status === 'fulfilled' && systemRes.value.ok) {
+                    const system = await systemRes.value.json();
+                    if (!system.error) {
+                        renderSystem(system);
+                    }
                 }
 
-                const data = await metricsRes.json();
-                const system = await systemRes.json();
+                if (metricsRes.status === 'fulfilled' && metricsRes.value.ok) {
+                    const data = await metricsRes.value.json();
+                    if (!data.error) {
+                        const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
+                        setText('fail2ban24h', fail2banTotals.last24h ?? 0);
+                        setText('fail2ban1h', fail2banTotals.last1h ?? 0);
 
-                if (data.error) throw new Error(data.error);
-                if (system.error) throw new Error(system.error);
+                        const sshTotals = (data.ssh && data.ssh.totals) || {};
+                        setText('ssh1h', sshTotals.last1h ?? 0);
+                        setText('ssh5m', sshTotals.last5m ?? 0);
 
-                failureCount = 0;
-                document.getElementById('metricsError').classList.remove('show');
+                        const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
+                        setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
-                const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
-                setText('fail2ban24h', fail2banTotals.last24h ?? 0);
-                setText('fail2ban1h', fail2banTotals.last1h ?? 0);
+                        state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
+                        state.banEvents = ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, `${flagFromCode(r.country_code)} ${r.ip}`]);
+                        state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
+                        state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
+                        state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${flagFromCode(r.country_code)} ${r.ip}`, badgeResult(r.result)]);
+                        state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
 
-                const sshTotals = (data.ssh && data.ssh.totals) || {};
-                setText('ssh1h', sshTotals.last1h ?? 0);
-                setText('ssh5m', sshTotals.last5m ?? 0);
-
-                const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
-                setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
-
-                state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
-                state.banEvents = ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, `${flagFromCode(r.country_code)} ${r.ip}`]);
-                state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, `${flagFromCode(r.country_code)} ${r.country}`, r.count]);
-                state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
-                state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, `${flagFromCode(r.country_code)} ${r.ip}`, badgeResult(r.result)]);
-                state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
-
-                renderSystem(system);
-                renderTables();
-                renderMap(state.geo);
+                        renderTables();
+                        renderMap(state.geo);
+                        failureCount = 0;
+                        document.getElementById('metricsError').classList.remove('show');
+                    } else {
+                        hadError = true;
+                    }
+                } else {
+                    hadError = true;
+                }
             } catch (e) {
+                hadError = true;
+            }
+
+            if (hadError) {
                 failureCount++;
                 document.getElementById('metricsError').classList.add('show');
                 if (failureCount % 2 === 0) showToast('No se pudo actualizar la telemetría.');
-                const penalty = Math.min(30000, failureCount * 2000);
-                scheduleRefresh(refreshMs + penalty);
-                inFlight = false;
-                return;
             }
+
+            const penalty = hadError ? Math.min(30000, failureCount * 2000) : 0;
             inFlight = false;
-            scheduleRefresh(refreshMs);
+            scheduleRefresh(refreshMs + penalty);
         };
 
         // Leaflet map
