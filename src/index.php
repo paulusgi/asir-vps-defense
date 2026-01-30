@@ -253,7 +253,8 @@ function h($value) {
         .badge-result { padding: 4px 8px; border-radius: 10px; font-size: 0.85rem; }
         .badge-result.ok { background: rgba(16,185,129,0.18); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); }
         .badge-result.warn { background: rgba(245,158,11,0.18); color: var(--accent-warm); border: 1px solid rgba(245,158,11,0.35); }
-        #geoMap { height: 340px; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
+        #geoMap { height: 380px; width: 100%; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
+        #geoSkeleton { height: 380px; width: 100%; }
         .system-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; width: 100%; }
         .sys-card { background: #0d1627; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; }
         .sys-card .label { color: var(--text-muted); font-size: 0.9rem; display: flex; align-items: center; gap: 6px; }
@@ -299,8 +300,8 @@ function h($value) {
         <div class="controls">
             <span>Auto-refresco:</span>
             <select id="refreshSelect" aria-label="Frecuencia de refresco">
-                <option value="5000">5s</option>
-                <option value="15000" selected>15s</option>
+                <option value="5000" selected>5s</option>
+                <option value="15000">15s</option>
                 <option value="60000">1m</option>
             </select>
             <button id="toggleRefresh" aria-pressed="false">Pausar</button>
@@ -547,7 +548,7 @@ function h($value) {
         };
 
         let failureCount = 0;
-        let refreshMs = 15000;
+        let refreshMs = 5000;
         let refreshTimer = null;
         let inFlight = false;
         let paused = false;
