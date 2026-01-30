@@ -210,43 +210,38 @@ check_mode() {
     # $1 path, $2 expected mode
     local path="$1"; local expected="$2"; local label="$3"
     if [ -e "$path" ]; then
-        local mode
-        mode=$(stat -c "%a" "$path")
-        if [ "$mode" != "$expected" ]; then
-            log_warn "Permisos inesperados en ${label:-$path} (modo $mode, esperado $expected)."
+    if [ ${#candidates[@]} -gt 0 ]; then
+        echo "Se detectaron ${#candidates[@]} claves públicas para $user ($purpose). Elige una o introduce otra:" >&2
+        local i=1
+        for key in "${candidates[@]}"; do
+            echo "  [$i] ${key:0:60}..." >&2
+            ((i++))
+        done
+        echo "  [M] Introducir manualmente" >&2
+        echo "  [S] Saltar" >&2
+        echo -n "Selecciona opción: " >&2
+        read -r choice < /dev/tty
+
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#candidates[@]} ]; then
+            printf '%s' "${candidates[$((choice-1))]}"
+            return 0
+        elif [[ "$choice" =~ ^[Mm]$ ]]; then
+            candidates=()
+        elif [[ "$choice" =~ ^[Ss]$ ]]; then
+            return 1
+        else
             return 1
         fi
     fi
-    return 0
-}
 
-audit_permissions() {
-    local base="$1"
-    local issues=0
-
-    log_info "Auditando permisos en $base"
-
-    # Ficheros de secretos
-    check_mode "$base/.env" 600 ".env" || issues=1
-    check_mode "$base/mysql/init" 755 "mysql/init (directorio)" || issues=1
-    if find "$base/mysql/init" -type d ! -perm 755 -print -quit | grep -q .; then issues=1; log_warn "Directorio(s) en mysql/init sin modo 755"; fi
-    if find "$base/mysql/init" -type f ! -perm 644 -print -quit | grep -q .; then issues=1; log_warn "Ficheros en mysql/init sin modo 644"; fi
-
-    # Configs PHP y Loki
-    check_mode "$base/php/conf.d/custom.ini" 644 "php/conf.d/custom.ini" || issues=1
-    check_mode "$base/php/pool.d/www.conf" 644 "php/pool.d/www.conf" || issues=1
-    check_mode "$base/loki/config.yml" 644 "loki/config.yml" || issues=1
-
-    # Webroot
-    if find "$base/src" -type d ! -perm 755 -print -quit | grep -q .; then issues=1; log_warn "Directorios en src sin modo 755"; fi
-    if find "$base/src" -type f ! -perm 644 -print -quit | grep -q .; then issues=1; log_warn "Ficheros en src sin modo 644"; fi
-
-    # Credenciales del admin
-    if [ -f "/home/$SECURE_ADMIN/admin_credentials.txt" ]; then
-        check_mode "/home/$SECURE_ADMIN/admin_credentials.txt" 600 "admin_credentials.txt" || issues=1
-        log_warn "admin_credentials.txt presente; guarda su contenido en un lugar seguro y bórralo del servidor si ya no lo necesitas."
-    else
-        log_info "admin_credentials.txt no encontrado (posiblemente ya retirado)."
+    # Entrada manual (cuando no hay detecciones o se elige M)
+    echo -n "Pega una clave pública SSH (ssh-rsa/ssh-ed25519) o deja vacío para omitir: " >&2
+    read -r manual < /dev/tty
+    if [[ "$manual" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
+        printf '%s' "$manual"
+        return 0
+    fi
+    return 1
     fi
 
     # SSH del admin
