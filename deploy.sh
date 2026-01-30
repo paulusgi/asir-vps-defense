@@ -36,6 +36,7 @@ HONEYPOT_TARGET_USER=""
 HONEYPOT_TARGET_PASS=""
 SECURE_ADMIN=""
 CURRENT_REAL_USER=""
+CREDENTIALS_MODE="unknown"
 
 # ==============================================================================
 # Funciones Auxiliares
@@ -375,24 +376,23 @@ encrypt_credentials_file() {
 
     if [ ! -f "$cred_file" ]; then
         log_warn "Archivo de credenciales no encontrado para cifrar ($cred_file)."
-        return 0
+        CREDENTIALS_MODE="missing"
+        return 1
     fi
 
     local selected_key=""
     selected_key=$(choose_public_key_for_user "$SECURE_ADMIN" "cifrar credenciales") || selected_key=""
 
     if [ -z "$selected_key" ]; then
-        log_warn "No se seleccionó clave SSH para cifrado. Se mostrarán las credenciales y se borrará el archivo plano."
-        cat "$cred_file"
-        shred -u "$cred_file"
-        return 0
+        log_warn "No se seleccionó clave SSH para cifrado. Se mantendrá el archivo plano para mostrarlo al final y luego se borrará."
+        CREDENTIALS_MODE="plain"
+        return 1
     fi
 
     if ! install_age_if_missing; then
-        log_warn "Sin age disponible. Se mostrarán las credenciales y se borrará el archivo plano."
-        cat "$cred_file"
-        shred -u "$cred_file"
-        return 0
+        log_warn "Sin age disponible. Se mantendrá el archivo plano para mostrarlo al final y luego se borrará."
+        CREDENTIALS_MODE="plain"
+        return 1
     fi
 
     if age -r "$selected_key" -o "${cred_file}.age" "$cred_file"; then
@@ -400,10 +400,12 @@ encrypt_credentials_file() {
         chown "$SECURE_ADMIN:$SECURE_ADMIN" "${cred_file}.age"
         shred -u "$cred_file"
         log_success "Credenciales cifradas en ${cred_file}.age. Sólo la clave privada asociada puede descifrarlas."
+        CREDENTIALS_MODE="encrypted"
+        return 0
     else
-        log_warn "Falló el cifrado con age. Se mostrarán las credenciales y se borrará el archivo plano."
-        cat "$cred_file"
-        shred -u "$cred_file"
+        log_warn "Falló el cifrado con age. Se mantendrá el archivo plano para mostrarlo al final y luego se borrará."
+        CREDENTIALS_MODE="plain"
+        return 1
     fi
 }
 
@@ -817,10 +819,13 @@ EOF
 
     log_success "Semilla de base de datos generada (mysql/init/02-seed.sql)."
     log_success "Credenciales guardadas temporalmente en '$CRED_FILE'."
-    echo -e "${YELLOW}Credenciales generadas (se cifrarán o se borrarán del servidor tras este paso). Anótalas si las necesitas:${NC}"
-    cat "$CRED_FILE"
-    encrypt_credentials_file "$CRED_FILE"
-    export WEB_ADMIN_PASS
+    if encrypt_credentials_file "$CRED_FILE"; then
+        log_info "Credenciales cifradas. Podrás decidir si verlas o descargar el archivo al final."
+    else
+        # Mantener el archivo plano para mostrar y destruir al final
+        CREDENTIALS_MODE="plain"
+        log_warn "Credenciales sin cifrar; se mostrarán al final con advertencia y luego se borrarán."
+    fi
 }
 
 # ==============================================================================
@@ -1019,29 +1024,43 @@ main() {
     echo -e "\n${YELLOW}>>> GESTIÓN DE CREDENCIALES <<<${NC}"
     local CRED_PLAIN="/home/$SECURE_ADMIN/admin_credentials.txt"
     local CRED_ENC="${CRED_PLAIN}.age"
+    local HOST_HINT="${DOMAIN_NAME:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 
     if [ -f "$CRED_ENC" ]; then
         echo -e "Archivo cifrado con tu clave pública SSH: ${BLUE}$CRED_ENC${NC}"
-        echo -e "Para descifrar en tu máquina con la clave privada:"
-        echo -e "   ${YELLOW}age -d -i ~/.ssh/<tu_clave> -o ~/admin_credentials.txt $CRED_ENC${NC}"
+        echo -e "Elige una opción:"
+        echo "  [1] Mostrar credenciales en pantalla (texto plano temporal)"
+        echo "  [2] Ver comando para descargar el archivo cifrado en tu máquina local"
+        echo "  [3] No hacer nada"
+        echo -n "Opción (1/2/3): "
+        read -r CRED_CHOICE < /dev/tty
+
+        case "$CRED_CHOICE" in
+            1)
+                echo -e "${YELLOW}Credenciales (no se guardan en disco):${NC}"
+                echo "- Panel Web -> usuario: admin | contraseña: $WEB_ADMIN_PASS"
+                echo "- DB root   -> $MYSQL_ROOT_PASS"
+                echo "- DB app    -> $MYSQL_APP_PASS"
+                ;;
+            2)
+                echo -e "Ejecuta en tu máquina local para descargar el archivo cifrado:"
+                echo -e "   scp $SECURE_ADMIN@${HOST_HINT:-<dominio_o_ip>}:$CRED_ENC ./admin_credentials.txt.age"
+                echo -e "Luego descifra con tu clave privada:"
+                echo -e "   age -d -i ~/.ssh/<tu_clave> -o admin_credentials.txt ./admin_credentials.txt.age"
+                ;;
+            *)
+                log_info "Continuando sin mostrar ni descargar credenciales."
+                ;;
+        esac
     elif [ -f "$CRED_PLAIN" ]; then
-        echo -e "Archivo en texto plano (no se pudo cifrar): ${BLUE}$CRED_PLAIN${NC}"
-        echo -e "Cópialo y bórralo en cuanto puedas:"
-        echo -e "   ${YELLOW}cat ~/admin_credentials.txt && shred -u ~/admin_credentials.txt${NC}"
+        echo -e "${RED}ATENCIÓN: Credenciales sin cifrar. Se mostrarán UNA sola vez y el archivo se borrará ahora.${NC}"
+        cat "$CRED_PLAIN"
+        shred -u "$CRED_PLAIN"
     else
-        echo -e "El archivo de credenciales fue eliminado tras mostrarse en consola." 
-        echo -e "Asegúrate de haberlas anotado."
+        echo -e "El archivo de credenciales ya no está presente."
     fi
-    
-    echo -e "\n--------------------------------------------------"
-    echo -n "¿Deseas ver SOLO la contraseña temporal del Panel Web para acceder ahora? (S/n): "
-    read -r SHOW_WEB_PASS < /dev/tty
-    if [[ "$SHOW_WEB_PASS" =~ ^[Ss]$ ]] || [[ -z "$SHOW_WEB_PASS" ]]; then
-        echo -e "Contraseña Panel Web: ${GREEN}$WEB_ADMIN_PASS${NC}"
-    else
-        echo -e "Entendido. Recuerda consultar el archivo de credenciales."
-    fi
-    echo -e "--------------------------------------------------"
+
+    unset WEB_ADMIN_PASS
 
     echo -e "\n${BLUE}>>> INSTRUCCIONES DE CONEXIÓN <<<${NC}"
     echo -e "1. Abre una NUEVA terminal en tu ordenador local (no en este servidor)."
