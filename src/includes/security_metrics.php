@@ -347,9 +347,10 @@ function lookupGeoFromMmdb(string $ip, array $fallback): array
     }
 
     // Fallback a la herramienta CLI mmdblookup si el módulo PHP no expone funciones
+    // Usamos la salida completa y la parseamos porque algunas builds no soportan rutas profundas.
     if (!is_array($record) && is_executable('/usr/bin/mmdblookup')) {
         $cmd = sprintf(
-            '/usr/bin/mmdblookup --file %s --ip %s country iso_code country names en location latitude location longitude 2>/dev/null',
+            '/usr/bin/mmdblookup --file %s --ip %s 2>/dev/null',
             escapeshellarg($path),
             escapeshellarg($ip)
         );
@@ -360,16 +361,16 @@ function lookupGeoFromMmdb(string $ip, array $fallback): array
             $lat = null;
             $lon = null;
 
-            if (preg_match('/iso_code:\s*"([A-Z]{2})"/i', $output, $m)) {
+            if (preg_match('/iso_code"?\s*:\s*"?([A-Z]{2})"?/i', $output, $m)) {
                 $code = strtoupper($m[1]);
             }
-            if (preg_match('/names\s+en:\s+"([^"]+)"/i', $output, $m)) {
+            if (preg_match('/names.*?"en"\s*:\s*"([^"]+)"/is', $output, $m)) {
                 $name = $m[1];
             }
-            if (preg_match('/latitude:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
+            if (preg_match('/latitude"?\s*:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
                 $lat = (float) $m[1];
             }
-            if (preg_match('/longitude:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
+            if (preg_match('/longitude"?\s*:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
                 $lon = (float) $m[1];
             }
 
