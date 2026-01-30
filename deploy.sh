@@ -132,14 +132,9 @@ choose_public_key_for_user() {
     mapfile -t candidates < <(collect_public_keys_for_user "$user")
 
     if [ ${#candidates[@]} -eq 1 ]; then
-        echo -n "Se detectó una clave pública para $user. ¿Usarla para $purpose? (S/n): "
-        read -r ans < /dev/tty
-        if [[ "$ans" =~ ^[Nn]$ ]]; then
-            candidates=()
-        else
-            printf '%s' "${candidates[0]}"
-            return 0
-        fi
+        # Auto-seleccionar si solo hay una clave detectada
+        printf '%s' "${candidates[0]}"
+        return 0
     elif [ ${#candidates[@]} -gt 1 ]; then
         echo "Se detectaron varias claves públicas para $user. Elige una o introduce otra:" >&2
         local i=1
@@ -547,17 +542,16 @@ create_secure_admin() {
         echo -e "${YELLOW}Selecciona cómo añadir la clave pública SSH del admin (obligatorio):${NC}"
         echo "  [1] Detectar claves existentes y elegir"
         echo "  [2] Introducir clave pública manualmente"
-        echo "  [3] Reintentar más tarde (no permitido: requiere clave)"
         echo -n "Opción: "
         read -r key_opt < /dev/tty
 
         if [ "$key_opt" = "1" ]; then
             SSH_KEY=$(choose_public_key_for_user "$SECURE_ADMIN" "acceso SSH") || SSH_KEY=""
             if [ -n "$SSH_KEY" ]; then
-                log_info "Clave seleccionada por detección automática."
+                log_info "Clave seleccionada mediante detección."
                 break
             else
-                log_warn "No se detectaron claves o no se eligió ninguna."
+                log_warn "No se detectaron claves. Usa la opción 2 para pegar una clave manualmente."
             fi
         elif [ "$key_opt" = "2" ]; then
             echo -n "Pega tu clave pública (ssh-ed25519/ssh-rsa): "
