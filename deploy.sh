@@ -110,7 +110,7 @@ collect_public_keys_for_user() {
     local user="$1"
     declare -A seen
     declare -A file_seen
-    local keys=()
+    PUBLIC_KEY_CANDIDATES=()
     local files=()
 
     # Preferir find para cubrir claves inyectadas por el proveedor; fallback si falta find
@@ -158,20 +158,18 @@ collect_public_keys_for_user() {
         while IFS= read -r line; do
             [[ "$line" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
             if [ -z "${seen[$line]:-}" ]; then
-                keys+=("$line")
+                PUBLIC_KEY_CANDIDATES+=("$line")
                 seen[$line]=1
             fi
         done < <(grep -hE '^ssh-(rsa|ed25519|ecdsa)' "$file" 2>/dev/null || cat "$file")
     done
-
-    printf '%s\n' "${keys[@]}"
 }
 
 choose_public_key_for_user() {
     local user="$1"
     local purpose="$2"
-    local candidates
-    mapfile -t candidates < <(collect_public_keys_for_user "$user")
+    collect_public_keys_for_user "$user"
+    local candidates=("${PUBLIC_KEY_CANDIDATES[@]}")
 
     if [ ${#candidates[@]} -gt 0 ]; then
         echo "Se detectaron ${#candidates[@]} claves públicas para $user ($purpose). Elige una o introduce otra:" >&2
