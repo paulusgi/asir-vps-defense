@@ -1,4 +1,4 @@
-#!/bin/bash
+p#!/bin/bash
 set -euo pipefail
 IFS=$'\n\t'
 # ============================================================================== 
@@ -97,20 +97,33 @@ collect_public_keys_for_user() {
     declare -A seen
     local keys=()
 
-    # authorized_keys entries
-    if [ -s "/home/$user/.ssh/authorized_keys" ]; then
+    # Rutas candidatas: admin recién creado, usuario real que ejecuta, root y cualquier otro home con authorized_keys
+    local paths=(
+        "/home/$user/.ssh/authorized_keys"
+        "/home/$CURRENT_REAL_USER/.ssh/authorized_keys"
+        "/root/.ssh/authorized_keys"
+    )
+    # Añadir todos los homes encontrados dinámicamente
+    for ak in /home/*/.ssh/authorized_keys; do
+        [ -f "$ak" ] && paths+=("$ak")
+    done
+
+    # authorized_keys entries en todas las rutas candidatas
+    for ak in "${paths[@]}"; do
+        [ -s "$ak" ] || continue
         while IFS= read -r line; do
             [[ "$line" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
             if [ -z "${seen[$line]:-}" ]; then
                 keys+=("$line")
                 seen[$line]=1
             fi
-        done < "/home/$user/.ssh/authorized_keys"
-    fi
+        done < "$ak"
+    done
 
-    # Local .pub files
-    if [ -d "/home/$user/.ssh" ]; then
-        for pub in /home/$user/.ssh/*.pub; do
+    # Local .pub files en los mismos directorios base
+    for base in "/home/$user/.ssh" "/home/$CURRENT_REAL_USER/.ssh" "/root/.ssh" /home/*/.ssh; do
+        [ -d "$base" ] || continue
+        for pub in "$base"/*.pub; do
             [ -f "$pub" ] || continue
             local content
             content=$(cat "$pub")
@@ -120,7 +133,7 @@ collect_public_keys_for_user() {
                 seen[$content]=1
             fi
         done
-    fi
+    done
 
     printf '%s\n' "${keys[@]}"
 }
