@@ -92,6 +92,24 @@ Por seguridad, el panel **no es accesible desde internet**. Solo vía túnel SSH
 
 Consulta los comandos rápidos de verificación en [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md). Incluye estado de contenedores, salud de MySQL, Fail2Ban, UFW y puertos en escucha.
 
+
+## 🏭 Uso en Producción
+
+- **Alcance del despliegue:** Enfocado a monitorear SSH/Fail2Ban en un único VPS. El panel sigue en loopback:8888 y sólo debe accederse por túnel SSH. No expone HTTP público ni incluye WAF o Grafana.
+- **Proceso recomendado:** VPS limpio Debian/Ubuntu, ejecutar `deploy.sh` como root y elegir una clave pública segura (ed25519/4096). El usuario admin queda con `PasswordAuthentication no`; el honeypot conserva password para telemetría de ataques.
+- **Seguridad operativa:** Mantén UFW sólo con 22/tcp, revisa que `sshd_config` no abra otros puertos, y valida Fail2Ban (`maxretry 2`, `bantime 35d`). No copies el archivo descifrado de credenciales a ubicaciones compartidas; bórralo tras guardarlo en un gestor.
+- **GeoIP local:** Si se facilita `GEOIP_LICENSE_KEY`, el deploy descarga `GeoLite2-City.mmdb` y lo monta en el contenedor. No hay refresco automático: renueva manualmente el mmdb cuando lo requieras.
+- **Limitaciones conocidas:** Proyecto en modo demo; sólo cubre SSH/Fail2Ban y no tiene alta disponibilidad ni multi-tenant. El panel no implementa rate-limit/CSRF ni MFA. No hay backup automático de MySQL ni rotación de logs de Loki fuera de su configuración por defecto.
+- **Buenas prácticas:** Ejecuta los checks de [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) tras cada instalación o cambio; actualiza el sistema operativo antes de desplegar; rota las claves SSH y credenciales periódicamente; mantén los contenedores actualizados con `docker compose pull && docker compose up -d`.
+
+
 ## 📄 Licencia
 
 Licencia de Uso No Comercial 1.0.0 (basada en PolyForm Noncommercial 1.0.0). Uso no comercial permitido; usos con finalidad comercial no están autorizados. Véase el archivo LICENSE para el texto completo.
+
+## ⚖️ Nota Ética
+
+- **Propósito previsto:** Monitorizar y endurecer un VPS frente a ataques SSH, registrando intentos y bans para análisis defensivo y formativo.
+- **Usos no permitidos:** No emplear para fines ofensivos, para interceptar comunicaciones legítimas ni para explotar credenciales obtenidas de atacantes. El proyecto no autoriza uso con finalidad comercial.
+- **Datos y privacidad:** El honeypot recoge usuarios/contraseñas enviados por atacantes; evita almacenar, compartir o reutilizar esas credenciales. Comprueba la legalidad de operar un honeypot en tu jurisdicción y notifica a las partes interesadas según tus políticas.
+- **Responsabilidad:** El usuario final es responsable de configurar y operar el sistema de forma ética y conforme a la ley. La documentación no garantiza protección completa; revisa y adapta la configuración a tu entorno.

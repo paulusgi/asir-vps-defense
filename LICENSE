@@ -1,38 +1,101 @@
-Este proyecto se distribuye bajo una licencia de uso no comercial.
-No puede usarse directa ni indirectamente con fines comerciales.
+---
 
-Licencia de Uso No Comercial 1.0.0 (basada en PolyForm Noncommercial 1.0.0)
+# Licencia de Uso No Comercial 1.0.0
 
-Aceptación
-Para obtener cualquier licencia bajo estos términos, debes aceptarlos como obligaciones estrictas y condiciones de todas tus licencias.
+*(basada en PolyForm Noncommercial 1.0.0)*
 
-Licencia de copyright
-El otorgante te concede una licencia de copyright para hacer todo con el software que, de otro modo, infringiría su copyright, excepto poner el software a disposición de forma principalmente destinada o dirigida a obtener ventaja comercial o compensación monetaria. Estos derechos incluyen ejecutar, copiar, modificar, fusionar, distribuir y sublicenciar el software.
+> **Aviso breve**
+> Este proyecto se distribuye exclusivamente para **uso no comercial**.
+> **No puede utilizarse, directa ni indirectamente, con fines comerciales ni para obtener ventaja económica o compensación monetaria de ningún tipo.**
 
-Licencia de patente
-El otorgante te concede una licencia de patente para fabricar, mandar fabricar, usar y vender el software, pero no para ponerlo a disposición de forma principalmente destinada o dirigida a obtener ventaja comercial o compensación monetaria.
+---
 
-Redistribución
-Puedes redistribuir el software, incluidas las modificaciones, solo si (a) no lo haces con un propósito principalmente destinado o dirigido a ventaja comercial o compensación monetaria, y (b) incluyes una copia completa y sin modificar de esta licencia con tu redistribución. No puedes ofrecer ni imponer términos adicionales o diferentes, ni aplicar otra licencia a ninguna copia del software.
+## 1. Aceptación
 
-Avisos
-Debes asegurarte de que quien reciba una copia de cualquier parte del software de tu parte también reciba una copia de estos términos.
+Al usar, copiar, modificar o redistribuir el software, aceptas estos términos como **condiciones obligatorias** de todas las licencias que se te conceden en virtud de este documento.
+Si no aceptas estos términos, **no estás autorizado a usar el software**.
 
-Sin otros derechos
-Estos términos no te permiten sublicenciar ni transferir tus licencias a nadie más, ni alquilar o arrendar ninguna parte del software. No implican otras licencias.
+---
 
-Defensa de patentes
-Si afirmas por escrito que el software infringe o contribuye a la infracción de alguna patente, tu licencia de patente para el software termina inmediatamente.
+## 2. Licencia de copyright
 
-Violaciones
-Si violas cualquiera de estos términos o haces algo con el software que no esté cubierto por tus licencias, todas tus licencias terminan inmediatamente.
+El otorgante te concede una licencia limitada, mundial, gratuita y no exclusiva para realizar cualquier acto que, de otro modo, infringiría sus derechos de copyright sobre el software, **con la única excepción** de poner el software —o trabajos derivados— a disposición de forma principalmente destinada o dirigida a obtener **ventaja comercial o compensación monetaria**.
 
-Sin responsabilidad
-En la medida que permita la ley, el software se entrega “tal cual”, sin ninguna garantía ni condición, y el otorgante no será responsable ante ti por daños derivados de estos términos ni del uso o naturaleza del software, bajo ningún tipo de reclamación legal.
+Esta licencia incluye, exclusivamente para fines no comerciales, el derecho a:
 
-Definiciones
-“El otorgante” es la persona o entidad que ofrece estos términos. El “software” es el software que el otorgante pone a disposición bajo estos términos, incluyendo cualquier parte del mismo.
-“Tú” se refiere a la persona o entidad que acepta estos términos.
-“Tu empresa” es cualquier entidad u organización para la que trabajas, más las organizaciones que controlan, son controladas por o están bajo control común con esa organización. Control significa propiedad de sustancialmente todos los activos de una entidad, o el poder de dirigir su gestión y políticas por voto, contrato u otros medios, directa o indirectamente.
-“Tus licencias” son todas las licencias que se te otorgan para el software bajo estos términos.
-“Usar” significa cualquier acción sobre el software que requiera alguna de tus licencias.
+* ejecutar el software;
+* copiarlo y reproducirlo;
+* modificarlo y crear trabajos derivados;
+* fusionarlo con otro software;
+* redistribuirlo conforme a los términos de esta licencia.
+
+---
+
+## 3. Licencia de patente
+
+El otorgante te concede una licencia limitada, mundial, gratuita y no exclusiva sobre cualquier patente que controle y que sea necesaria para usar el software, **únicamente para fines no comerciales**.
+
+Esta licencia **no autoriza** a poner el software a disposición de forma principalmente destinada o dirigida a obtener ventaja comercial o compensación monetaria.
+
+---
+
+## 4. Redistribución
+
+Puedes redistribuir el software, incluyendo versiones modificadas, **únicamente si se cumplen todas las condiciones siguientes**:
+
+a) La redistribución no tiene un propósito principalmente comercial ni está dirigida a obtener ventaja económica o compensación monetaria.
+b) Incluyes una copia **completa e íntegra** de esta licencia junto con el software redistribuido.
+c) No ofreces ni impones términos adicionales o distintos.
+d) No relicencias el software bajo una licencia diferente.
+
+---
+
+## 5. Avisos
+
+Debes asegurarte de que cualquier persona o entidad que reciba el software de tu parte reciba también una copia completa de estos términos y sea informada claramente de las restricciones de uso no comercial.
+
+---
+
+## 6. Sin otros derechos
+
+Esta licencia **no concede**:
+
+* derechos para sublicenciar o transferir las licencias concedidas;
+* derechos para alquilar, arrendar o explotar comercialmente el software;
+* ninguna licencia distinta de las expresamente indicadas en este documento.
+
+Todos los derechos no concedidos expresamente quedan reservados al otorgante.
+
+---
+
+## 7. Defensa de patentes
+
+Si inicias o afirmas por escrito cualquier reclamación de que el software infringe, directa o indirectamente, alguna patente, **todas las licencias de patente concedidas bajo estos términos terminarán automáticamente**.
+
+---
+
+## 8. Terminación por incumplimiento
+
+Cualquier violación de estos términos, o cualquier uso del software no cubierto por las licencias concedidas, dará lugar a la **terminación inmediata y automática** de todas tus licencias, sin necesidad de notificación previa.
+
+---
+
+## 9. Exclusión de garantías y responsabilidad
+
+En la máxima medida permitida por la ley aplicable, el software se proporciona **“tal cual”**, sin garantías de ningún tipo, ya sean expresas o implícitas, incluidas —sin limitarse a ellas— garantías de comerciabilidad, idoneidad para un propósito particular o ausencia de defectos.
+
+El otorgante **no será responsable**, bajo ninguna circunstancia, de daños directos, indirectos, incidentales, especiales, ejemplares o consecuentes derivados del uso o imposibilidad de uso del software.
+
+---
+
+## 10. Definiciones
+
+* **“El otorgante”**: la persona o entidad que pone el software a disposición bajo estos términos.
+* **“El software”**: el software ofrecido bajo esta licencia, incluyendo cualquier parte del mismo.
+* **“Tú”**: la persona física o jurídica que acepta estos términos.
+* **“Tu empresa”**: cualquier entidad para la que trabajes, así como aquellas que controlen, sean controladas por, o estén bajo control común con dicha entidad.
+* **“Control”**: la posesión directa o indirecta del poder para dirigir la gestión o las políticas de una entidad.
+* **“Tus licencias”**: todas las licencias concedidas bajo estos términos.
+* **“Usar”**: cualquier acción sobre el software que requiera alguna de las licencias concedidas en este documento.
+
+---
