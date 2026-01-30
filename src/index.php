@@ -587,6 +587,8 @@ function h($value) {
             if (gm && sk) {
                 sk.style.display = 'none';
                 gm.style.display = 'block';
+                // Leaflet necesita recalcular cuando el contenedor deja de estar oculto
+                setTimeout(() => map.invalidateSize(), 50);
             }
         };
 
@@ -652,14 +654,17 @@ function h($value) {
                     fetch('?action=system'),
                 ]);
 
-                if (systemRes.status === 'fulfilled' && systemRes.value.ok) {
+                const systemOk = (systemRes.status === 'fulfilled' && systemRes.value.ok);
+                const metricsOk = (metricsRes.status === 'fulfilled' && metricsRes.value.ok);
+
+                if (systemOk) {
                     const system = await systemRes.value.json();
                     if (!system.error) {
                         renderSystem(system);
                     }
                 }
 
-                if (metricsRes.status === 'fulfilled' && metricsRes.value.ok) {
+                if (metricsOk) {
                     const data = await metricsRes.value.json();
                     if (!data.error) {
                         const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
@@ -687,7 +692,9 @@ function h($value) {
                     } else {
                         hadError = true;
                     }
-                } else {
+                }
+
+                if (!systemOk || !metricsOk) {
                     hadError = true;
                 }
             } catch (e) {
@@ -698,6 +705,9 @@ function h($value) {
                 failureCount++;
                 document.getElementById('metricsError').classList.add('show');
                 if (failureCount % 2 === 0) showToast('No se pudo actualizar la telemetría.');
+            } else {
+                failureCount = 0;
+                document.getElementById('metricsError').classList.remove('show');
             }
 
             const penalty = hadError ? Math.min(30000, failureCount * 2000) : 0;
