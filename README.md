@@ -94,4 +94,4 @@ Consulta los comandos rápidos de verificación en [POSTDEPLOY_CHECKS.md](POSTDE
 
 ## 📄 Licencia
 
-MIT. Proyecto educativo/demostrativo.
+Licencia de Uso No Comercial 1.0.0 (basada en PolyForm Noncommercial 1.0.0). Uso no comercial permitido; usos con finalidad comercial no están autorizados. Véase el archivo LICENSE para el texto completo.
