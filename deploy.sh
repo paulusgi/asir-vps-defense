@@ -415,10 +415,9 @@ setup_firewall() {
     ufw default deny incoming
     ufw default allow outgoing
     
-    # Permitir puertos críticos
+    # Solo permitir SSH inicialmente (el puerto se puede cambiar al final del deploy)
+    # Los puertos 80/443 no se abren porque el panel solo es accesible por túnel SSH
     ufw allow 22/tcp comment 'SSH'
-    ufw allow 80/tcp comment 'HTTP'
-    ufw allow 443/tcp comment 'HTTPS'
     
     # Habilitar UFW de forma no interactiva y verificar
     ufw --force enable
@@ -933,6 +932,14 @@ main() {
 
     # Descarga GeoLite2-City desde CDN (sin requerir License Key)
     download_geolite_mmdb
+
+    # Asegurar que el directorio de posiciones de Promtail existe y es escribible
+    log_info "Preparando directorio de posiciones de Promtail..."
+    mkdir -p "$PROJECT_DIR/promtail/positions"
+    # Promtail corre como nobody (65534) en la imagen oficial
+    chown -R 65534:65534 "$PROJECT_DIR/promtail/positions" 2>/dev/null || chmod 777 "$PROJECT_DIR/promtail/positions"
+    touch "$PROJECT_DIR/promtail/positions/positions.yaml"
+    chown 65534:65534 "$PROJECT_DIR/promtail/positions/positions.yaml" 2>/dev/null || chmod 666 "$PROJECT_DIR/promtail/positions/positions.yaml"
 
     if is_step_done "seed_done"; then
         log_info "Semilla de base de datos ya generada; saltando."

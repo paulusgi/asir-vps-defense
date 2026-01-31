@@ -155,11 +155,22 @@ final class LokiClient
         curl_close($ch);
 
         if ($statusCode >= 400) {
+            error_log(sprintf(
+                'ASIR VPS Defense - Loki error: HTTP %d for %s (response: %s)',
+                $statusCode,
+                $url,
+                substr((string) $response, 0, 500)
+            ));
             throw new RuntimeException(sprintf('Loki responded with HTTP %d', $statusCode));
         }
 
         $decoded = json_decode($response, true);
         if (!is_array($decoded)) {
+            error_log(sprintf(
+                'ASIR VPS Defense - Loki invalid JSON from %s: %s',
+                $url,
+                substr((string) $response, 0, 500)
+            ));
             throw new RuntimeException('Unexpected Loki response payload');
         }
 

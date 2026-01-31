@@ -17,6 +17,13 @@ scrape_configs:
         labels:
           job: fail2ban
           __path__: /var/log/host/fail2ban.log*
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02 15:04:05'
+          location: Local
 
   # Debian/Ubuntu auth.log (SSHD attempts)
   - job_name: system_auth
@@ -26,6 +33,17 @@ scrape_configs:
         labels:
           job: auth
           __path__: /var/log/host/auth.log*
+    pipeline_stages:
+      # auth.log format: "Jan 31 14:23:45 hostname sshd[1234]: ..."
+      - regex:
+          expression: '^(?P<month>\w{3})\s+(?P<day>\d{1,2})\s+(?P<time>\d{2}:\d{2}:\d{2})'
+      - template:
+          source: timestamp
+          template: '{{ .month }} {{ .day }} {{ .time }}'
+      - timestamp:
+          source: timestamp
+          format: 'Jan 02 15:04:05'
+          location: Local
 
   # RHEL/CentOS use /var/log/secure for SSH auth failures
   - job_name: system_auth_secure
@@ -35,3 +53,13 @@ scrape_configs:
         labels:
           job: auth
           __path__: /var/log/host/secure*
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<month>\w{3})\s+(?P<day>\d{1,2})\s+(?P<time>\d{2}:\d{2}:\d{2})'
+      - template:
+          source: timestamp
+          template: '{{ .month }} {{ .day }} {{ .time }}'
+      - timestamp:
+          source: timestamp
+          format: 'Jan 02 15:04:05'
+          location: Local
