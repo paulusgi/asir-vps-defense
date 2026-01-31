@@ -150,7 +150,8 @@ function fetchSshMetrics(LokiClient $client, PDO $pdo): array
 
 function parseFail2BanEvent(string $line): ?array
 {
-    if (!preg_match('/\[(?<jail>[^\]]+)\]\s+(?<action>Ban|Unban)\s+(?<ip>[0-9A-Fa-f:.]+)/', $line, $matches)) {
+    // Formato Fail2Ban: "2025-01-31 23:45:12,345 fail2ban.actions [12345]: NOTICE  [sshd] Ban 1.2.3.4"
+    if (!preg_match('/NOTICE\s+\[(?<jail>[^\]]+)\]\s+(?<action>Ban|Unban)\s+(?<ip>[0-9A-Fa-f:.]+)/', $line, $matches)) {
         return null;
     }
 
