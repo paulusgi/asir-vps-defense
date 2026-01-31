@@ -71,17 +71,6 @@ readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
 readonly NC='\033[0m'  # Reset / Sin Color
 
-# Símbolos Unicode para mejor UX visual
-readonly ICON_OK="✓"
-readonly ICON_FAIL="✗"
-readonly ICON_WARN="⚠"
-readonly ICON_INFO="ℹ"
-readonly ICON_ARROW="→"
-readonly ICON_LOCK="🔒"
-readonly ICON_KEY="🔑"
-readonly ICON_FIRE="🔥"
-readonly ICON_GEAR="⚙"
-
 # =============================================================================
 # MANEJO DE ERRORES
 # =============================================================================
@@ -90,7 +79,7 @@ trap 'handle_error $LINENO' ERR
 
 handle_error() {
     local line_num="$1"
-    echo -e "\n${RED}${ICON_FAIL} [ERROR FATAL]${NC} Fallo inesperado en línea ${BOLD}$line_num${NC}" >&2
+    echo -e "\n${RED}[ERROR FATAL]${NC} Fallo inesperado en línea ${BOLD}$line_num${NC}" >&2
     echo -e "${DIM}Últimas 25 líneas del log:${NC}" >&2
     tail -n 25 "$LOG_FILE" >&2
     echo -e "\n${YELLOW}Log completo disponible en:${NC} $LOG_FILE" >&2
@@ -114,24 +103,24 @@ CREDENTIALS_MODE="unknown"
 # =============================================================================
 
 log_info() {
-    echo -e "${BLUE}${ICON_INFO}${NC} ${BLUE}[INFO]${NC}    $1"
+    echo -e "${BLUE}[INFO]${NC}    $1"
 }
 
 log_success() {
-    echo -e "${GREEN}${ICON_OK}${NC} ${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}${ICON_WARN}${NC} ${YELLOW}[WARN]${NC}    $1"
+    echo -e "${YELLOW}[WARN]${NC}    $1"
 }
 
 log_error() {
-    echo -e "${RED}${ICON_FAIL}${NC} ${RED}[ERROR]${NC}   $1"
+    echo -e "${RED}[ERROR]${NC}   $1"
 }
 
 log_step() {
     # Para pasos principales del proceso
-    echo -e "\n${CYAN}${ICON_ARROW}${NC} ${BOLD}$1${NC}"
+    echo -e "\n${CYAN}>>>${NC} ${BOLD}$1${NC}"
 }
 
 # =============================================================================
@@ -140,7 +129,7 @@ log_step() {
 
 run_quiet() {
     local msg="$1"; shift
-    local frames=('|' '/' '-' '\')
+    local frames='|/-\\'
     local i=0
 
     "$@" >>"$LOG_FILE" 2>&1 &
@@ -148,15 +137,14 @@ run_quiet() {
 
     # Si el comando no pudo lanzarse, marcamos fallo temprano
     if [ -z "$pid" ]; then
-        printf "\r  ${RED}${ICON_FAIL}${NC} %-50s ${RED}[FAIL]${NC}\n" "$msg"
+        printf "\r  %-55s [FAIL]\n" "$msg"
         log_error "No se pudo lanzar el comando: $*"
         return 1
     fi
 
     while kill -0 "$pid" 2>/dev/null; do
-        printf "\r  ${CYAN}[%s]${NC} %-50s" "${frames[i%4]}" "$msg"
+        printf "\r  %-55s [%c]" "$msg" "${frames:i++%4:1}"
         sleep 0.2
-        ((i++))
     done
 
     # Capturar el status sin que errexit aborte antes de imprimir
@@ -166,10 +154,10 @@ run_quiet() {
     set -e
 
     if [ $status -eq 0 ]; then
-        printf "\r  ${GREEN}${ICON_OK}${NC} %-50s ${GREEN}[OK]${NC}  \n" "$msg"
+        printf "\r  %-55s [OK]  \n" "$msg"
     else
-        printf "\r  ${RED}${ICON_FAIL}${NC} %-50s ${RED}[FAIL]${NC}\n" "$msg"
-        echo -e "\n${DIM}Últimas líneas del log:${NC}" >&2
+        printf "\r  %-55s [FAIL]\n" "$msg"
+        echo -e "\nÚltimas líneas del log:" >&2
         tail -n 25 "$LOG_FILE" >&2
         return $status
     fi
@@ -272,7 +260,7 @@ choose_public_key_for_user() {
 
     if [ ${#candidates[@]} -gt 0 ]; then
         echo "" >&2
-        echo -e "${CYAN}${ICON_KEY} Se encontraron ${BOLD}${#candidates[@]}${NC}${CYAN} clave(s) SSH para ${BOLD}$user${NC}${CYAN} (${purpose}):${NC}" >&2
+        echo -e "${CYAN}[SSH] Se encontraron ${BOLD}${#candidates[@]}${NC}${CYAN} clave(s) SSH para ${BOLD}$user${NC}${CYAN} (${purpose}):${NC}" >&2
         echo "" >&2
         local i=1
         for key in "${candidates[@]}"; do
@@ -490,7 +478,7 @@ detect_os() {
         OS=$NAME
         VER=$VERSION_ID
         if [[ "$ID" == "debian" ]] || [[ "$ID" == "ubuntu" ]]; then
-            log_info "Sistema Operativo: ${BOLD}$OS $VER${NC} ${GREEN}${ICON_OK}${NC}"
+            log_info "Sistema Operativo: ${BOLD}$OS $VER${NC}"
         else
             log_error "Sistema Operativo no soportado: ${BOLD}$OS${NC}"
             echo ""
@@ -521,7 +509,7 @@ wait_for_apt_locks() {
         if [ $wait_count -eq 0 ]; then
             log_warn "El sistema está ejecutando actualizaciones automáticas..."
         fi
-        printf "\r  ${YELLOW}${ICON_WARN}${NC} Esperando liberación de apt/dpkg... [%02d/%02d]" "$wait_count" "$max_wait"
+        printf "\r  ${YELLOW}[!]${NC} Esperando liberación de apt/dpkg... [%02d/%02d]" "$wait_count" "$max_wait"
         sleep 10
         ((wait_count++))
         if [ $wait_count -ge $max_wait ]; then
@@ -582,7 +570,7 @@ install_dependencies() {
         run_quiet "Descargando e instalando Docker" bash -c 'curl -fsSL https://get.docker.com | sh'
         log_success "Docker instalado correctamente"
     else
-        log_info "Docker ya está instalado ${GREEN}${ICON_OK}${NC}"
+        log_info "Docker ya está instalado"
     fi
 }
 
@@ -600,7 +588,7 @@ encrypt_credentials_file() {
     fi
 
     echo ""
-    echo -e "${CYAN}${ICON_LOCK} Cifrado de credenciales${NC}"
+    echo -e "${CYAN}[CIFRADO] Cifrado de credenciales${NC}"
     echo -e "${DIM}Selecciona una clave SSH pública para cifrar las credenciales.${NC}"
     echo -e "${DIM}Solo podrás descifrarlas con la clave privada correspondiente.${NC}"
     echo ""
@@ -793,7 +781,7 @@ create_secure_admin() {
 
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}${ICON_KEY} CONFIGURACIÓN DEL ADMIN REAL (Tú)${NC}                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[ADMIN] CONFIGURACIÓN DEL ADMIN REAL (Tú)${NC}                 ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     echo -n -e "  ${CYAN}Nombre de usuario administrador (ej: sys_ops):${NC} "
@@ -814,7 +802,7 @@ create_secure_admin() {
 
     # Establecer contraseña para uso de sudo
     echo ""
-    echo -e "  ${CYAN}${ICON_LOCK} Configuración de contraseña para SUDO${NC}"
+    echo -e "  ${CYAN}[SUDO] Configuración de contraseña para SUDO${NC}"
     echo -e "  ${DIM}Aunque el acceso SSH sea por clave, necesitas una contraseña para elevar privilegios.${NC}"
     echo ""
     
@@ -838,7 +826,7 @@ create_secure_admin() {
 
     # Configurar Clave SSH para Admin Real (obligatorio)
     echo ""
-    echo -e "  ${CYAN}${ICON_KEY} Clave SSH del administrador (obligatorio)${NC}"
+    echo -e "  ${CYAN}[SSH] Clave SSH del administrador (obligatorio)${NC}"
     echo -e "  ${DIM}Tu cuenta solo podrá acceder mediante clave pública SSH.${NC}"
     echo ""
     
@@ -903,7 +891,7 @@ handle_honeypot_logic() {
 
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}${ICON_FIRE} CONFIGURACIÓN DEL USUARIO CEBO (Honeypot)${NC}               ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[HONEYPOT] CONFIGURACIÓN DEL USUARIO CEBO${NC}                   ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     echo -e "  ${DIM}El honeypot simula un usuario vulnerable para capturar ataques.${NC}"
@@ -921,7 +909,7 @@ handle_honeypot_logic() {
     if [ "$CURRENT_REAL_USER" == "$HONEYPOT_TARGET_USER" ]; then
         echo ""
         echo -e "${RED}╭─────────────────────────────────────────────────────────────╮${NC}"
-        echo -e "${RED}│${NC}  ${BOLD}${ICON_WARN} ¡CONFLICTO DETECTADO!${NC}                                    ${RED}│${NC}"
+        echo -e "${RED}│${NC}  ${BOLD}[!] ¡CONFLICTO DETECTADO!${NC}                                  ${RED}│${NC}"
         echo -e "${RED}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
         echo -e "  Estás logueado como '${BOLD}$CURRENT_REAL_USER${NC}', pero quieres usar"
@@ -979,7 +967,7 @@ finalize_deferred_conversion() {
     if [ "$CONVERT_CURRENT_USER_TO_HONEYPOT" = true ]; then
         echo ""
         echo -e "${YELLOW}╭─────────────────────────────────────────────────────────────╮${NC}"
-        echo -e "${YELLOW}│${NC}  ${BOLD}${ICON_WARN} EJECUTANDO CONVERSIÓN DIFERIDA${NC}                          ${YELLOW}│${NC}"
+        echo -e "${YELLOW}│${NC}  ${BOLD}[!] EJECUTANDO CONVERSIÓN DIFERIDA${NC}                        ${YELLOW}│${NC}"
         echo -e "${YELLOW}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
         log_info "Convirtiendo '${BOLD}$CURRENT_REAL_USER${NC}' en Honeypot..."
@@ -1212,7 +1200,7 @@ main() {
     # =========================================================================
     print_section "PASO 1/5: PREPARACIÓN DEL SISTEMA"
     if is_step_done "prep_done"; then
-        log_info "Preparación previa detectada ${GREEN}${ICON_OK}${NC}"
+        log_info "Preparación previa detectada"
         log_info "Saltando reinstalación de dependencias y firewall"
     else
         install_dependencies
@@ -1225,7 +1213,7 @@ main() {
     # =========================================================================
     print_section "PASO 2/5: USUARIOS Y SEGURIDAD"
     if is_step_done "users_done"; then
-        log_info "Usuarios y seguridad ya configurados ${GREEN}${ICON_OK}${NC}"
+        log_info "Usuarios y seguridad ya configurados"
         if [ -z "$SECURE_ADMIN" ]; then
             log_error "No se pudo recuperar SECURE_ADMIN del estado previo"
             echo ""
@@ -1250,7 +1238,7 @@ main() {
     log_info "Directorio del proyecto: ${BOLD}$PROJECT_DIR${NC}"
 
     if is_step_done "project_done"; then
-        log_info "Proyecto ya presente ${GREEN}${ICON_OK}${NC}"
+        log_info "Proyecto ya presente"
         cd "$PROJECT_DIR" || exit 1
     else
         # Crear directorio si no existe
@@ -1280,7 +1268,7 @@ main() {
     # =========================================================================
     print_section "PASO 4/5: DESPLIEGUE DE LA APLICACIÓN"
     if is_step_done "env_done"; then
-        log_info "Archivo .env ya existe ${GREEN}${ICON_OK}${NC}"
+        log_info "Archivo .env ya existe"
         log_info "No se regenera para preservar credenciales"
         load_env_if_present
     else
@@ -1301,7 +1289,7 @@ main() {
     chown 65534:65534 "$PROJECT_DIR/promtail/positions/positions.yaml" 2>/dev/null || chmod 666 "$PROJECT_DIR/promtail/positions/positions.yaml"
 
     if is_step_done "seed_done"; then
-        log_info "Semilla de base de datos ya generada ${GREEN}${ICON_OK}${NC}"
+        log_info "Semilla de base de datos ya generada"
     else
         generate_db_seed
         mark_step_done "seed_done"
@@ -1340,7 +1328,7 @@ main() {
     # =========================================================================
     print_section "PASO 5/5: AJUSTES FINALES"
     if is_step_done "final_done"; then
-        log_info "Acciones finales ya aplicadas ${GREEN}${ICON_OK}${NC}"
+        log_info "Acciones finales ya aplicadas"
     else
         finalize_deferred_conversion
         mark_step_done "final_done"
@@ -1360,7 +1348,7 @@ main() {
     
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}${ICON_GEAR} ESTADO DE LOS SERVICIOS${NC}                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[SERVICIOS] ESTADO DE LOS SERVICIOS${NC}                        ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     
@@ -1411,7 +1399,7 @@ main() {
     # =========================================================================
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}${ICON_LOCK} GESTIÓN DE CREDENCIALES${NC}                                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[CREDENCIALES] GESTIÓN DE CREDENCIALES${NC}                      ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     
@@ -1460,7 +1448,7 @@ main() {
             esac
         done
     elif [ -f "$CRED_PLAIN" ]; then
-        echo -e "${RED}${ICON_WARN} ATENCIÓN: Credenciales sin cifrar${NC}"
+        echo -e "${RED}[!] ATENCIÓN: Credenciales sin cifrar${NC}"
         echo -e "  Se mostrarán ${BOLD}UNA sola vez${NC} y el archivo se eliminará."
         echo ""
         cat "$CRED_PLAIN"
@@ -1478,7 +1466,7 @@ main() {
     # =========================================================================
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}${ICON_LOCK} CAMBIO DE PUERTO SSH (PASO FINAL)${NC}                       ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CAMBIO DE PUERTO SSH (PASO FINAL)${NC}                    ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     
