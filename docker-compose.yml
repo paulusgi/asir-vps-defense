@@ -87,6 +87,12 @@ services:
     volumes:
       - ./loki/config.yml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     networks:
       - backend_net
 
@@ -99,6 +105,15 @@ services:
       - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
       - ./promtail/positions:/positions
     command: -config.file=/etc/promtail/config.yml
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9080/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      loki:
+        condition: service_healthy
     networks:
       - backend_net
 

@@ -42,14 +42,16 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
     $totals = [
         'last1h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [1h]))'),
         'last24h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [24h]))'),
+        'last7d' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [7d]))'),
     ];
 
+    // Query last 7 days of logs for better historical view
     $logs = $client->queryRangeRaw(
         '{job="fail2ban"}',
-        time() - 86400,
+        time() - (7 * 86400),
         time(),
-        '60s',
-        800
+        '5m',
+        1500
     );
 
     $ipCounts = [];
@@ -95,14 +97,16 @@ function fetchSshMetrics(LokiClient $client, PDO $pdo): array
     $totals = [
         'last5m' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [5m]))'),
         'last1h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [24h]))'),
     ];
 
+    // Query last 24 hours for better historical view
     $logs = $client->queryRangeRaw(
         '{job="auth"} |= "Failed password"',
-        time() - 3600,
+        time() - 86400,
         time(),
-        '30s',
-        600
+        '60s',
+        1200
     );
 
     $userCounts = [];

@@ -106,7 +106,10 @@ $options = [
 try {
     $pdo = new PDO($dsn, $user, $pass, $options);
 } catch (PDOException $e) {
-    die('Error de conexión: ' . $e->getMessage());
+    error_log('ASIR VPS Defense - DB connection failed: ' . $e->getMessage());
+    http_response_code(503);
+    echo '<!DOCTYPE html><html><head><title>Error</title></head><body><h1>Servicio no disponible</h1><p>Error interno del servidor. Contacta al administrador.</p></body></html>';
+    exit;
 }
 
 if (isset($_GET['action'])) {
@@ -138,6 +141,10 @@ if (isset($_GET['logout'])) {
 // Handle login
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
+    // Validar token CSRF
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+        $error = 'Token de seguridad inválido. Recarga la página.';
+    } else {
     $stmt = $pdo->prepare('SELECT id, username, password_hash, role FROM users WHERE username = :username');
     $stmt->execute(['username' => $_POST['username']]);
     $userRow = $stmt->fetch();
@@ -158,9 +165,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
     $error = 'Credenciales inválidas.';
     $stmt = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (NULL, "LOGIN_FAILED", :ip)');
     $stmt->execute(['ip' => $_SERVER['REMOTE_ADDR']]);
+    } // Cierre del else CSRF
 }
 
 if (!isset($_SESSION['user_id'])) {
+    // Generar token CSRF si no existe
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
     ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -185,6 +197,7 @@ if (!isset($_SESSION['user_id'])) {
             <div class="error"><?= htmlspecialchars($error) ?></div>
         <?php endif; ?>
         <form method="POST" action="">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
             <input type="text" name="username" placeholder="Usuario" required autofocus>
             <input type="password" name="password" placeholder="Contraseña" required>
             <button type="submit">Entrar</button>
@@ -276,6 +289,99 @@ function h($value) {
         .map-skeleton { height: 340px; border-radius: 14px; border: 1px solid var(--panel-border); background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.03) 63%); background-size: 400% 100%; animation: shimmer 1.2s ease-in-out infinite; }
         .flag { display: inline-block; width: 1.5em; text-align: center; }
         @media (max-width: 720px) { .hero { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
+
+        /* Indicador de severidad global */
+        .severity-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+        .severity-low { background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3); }
+        .severity-medium { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+        .severity-high { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .severity-critical { background: rgba(239, 68, 68, 0.25); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.5); animation: pulse-critical 2s infinite; }
+        @keyframes pulse-critical { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+        .severity-indicator svg { width: 16px; height: 16px; }
+
+        /* Badges de tendencia */
+        .trend-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin-left: 0.5rem;
+        }
+        .trend-up { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .trend-down { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .trend-stable { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+
+        /* Estados vacíos contextuales */
+        .empty-state {
+            text-align: center;
+            padding: 2rem 1rem;
+            color: var(--text-muted);
+        }
+        .empty-state svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 0.75rem;
+            opacity: 0.5;
+        }
+        .empty-state-title {
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.25rem;
+        }
+        .empty-state-desc {
+            font-size: 0.85rem;
+        }
+        .empty-state-positive svg { color: #22c55e; }
+        .empty-state-neutral svg { color: #60a5fa; }
+
+        /* Highlight usuarios críticos */
+        .user-critical { color: #ef4444; font-weight: 600; }
+        .user-warning { color: #fbbf24; }
+        .user-root { background: rgba(239, 68, 68, 0.1); }
+
+        /* Timestamps relativos */
+        .timestamp-relative {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            display: block;
+        }
+        .timestamp-recent { color: #fbbf24; }
+
+        /* Leyenda del mapa */
+        .map-legend {
+            display: flex;
+            gap: 1.5rem;
+            padding: 0.75rem 1rem;
+            background: var(--panel);
+            border-radius: 6px;
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+            border: 1px solid var(--panel-border);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .legend-dot.fail2ban { background: #10b981; }
+        .legend-dot.ssh { background: #f59e0b; }
     </style>
 </head>
 <body>
@@ -283,7 +389,13 @@ function h($value) {
         <header class="hero">
             <div class="meta">
                 <h1 style="margin:0;">🛡️ ASIR VPS Defense</h1>
-                <div class="status-pill" aria-live="polite">● Operativo · Solo túnel SSH</div>
+                <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                    <div class="status-pill" aria-live="polite">● Operativo · Solo túnel SSH</div>
+                    <div id="severityIndicator" class="severity-indicator severity-low">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span id="severityText">Sistema Normal</span>
+                    </div>
+                </div>
                 <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
             </div>
             <div class="user-panel">
@@ -336,12 +448,12 @@ function h($value) {
             <div class="card">
                 <span class="label">Baneos Fail2Ban (24h)</span>
                 <strong id="fail2ban24h">--</strong>
-                <small>Última hora: <span id="fail2ban1h">--</span></small>
+                <small>Última hora: <span id="fail2ban1h">--</span> | 7 días: <span id="fail2ban7d">--</span></small>
             </div>
             <div class="card">
-                <span class="label">Intentos SSH fallidos (1h)</span>
-                <strong id="ssh1h">--</strong>
-                <small>Últimos 5 min: <span id="ssh5m">--</span></small>
+                <span class="label">Intentos SSH fallidos (24h)</span>
+                <strong id="ssh24h">--</strong>
+                <small>Última hora: <span id="ssh1h">--</span> | 5 min: <span id="ssh5m">--</span></small>
             </div>
         </div>
 
@@ -406,6 +518,11 @@ function h($value) {
                 <h3>Mapa de actividad (últimos eventos)</h3>
                 <div id="geoSkeleton" class="map-skeleton"></div>
                 <div id="geoMap" style="display:none;"></div>
+                <div class="map-legend">
+                    <div class="legend-item"><span class="legend-dot fail2ban"></span> Fail2Ban (IPs baneadas)</div>
+                    <div class="legend-item"><span class="legend-dot ssh"></span> SSH (intentos fallidos)</div>
+                    <span style="margin-left:auto;color:var(--text-muted)" id="mapStats">0 ubicaciones</span>
+                </div>
             </section>
         </div>
 
@@ -439,7 +556,24 @@ function h($value) {
             if (el) el.textContent = value;
         };
 
-        const formatTs = (ts) => new Date(ts * 1000).toLocaleString('es-ES');
+        const formatTs = (ts) => {
+            if (!ts) return '';
+            const d = new Date(ts * 1000);
+            const now = Date.now();
+            const diff = now - d.getTime();
+            const mins = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+            let relative = '';
+            let recentClass = '';
+            if (mins < 1) { relative = 'ahora mismo'; recentClass = 'timestamp-recent'; }
+            else if (mins < 60) { relative = `hace ${mins}m`; recentClass = mins < 10 ? 'timestamp-recent' : ''; }
+            else if (hours < 24) { relative = `hace ${hours}h`; }
+            else if (days < 7) { relative = `hace ${days}d`; }
+            else { relative = d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }); }
+            const absolute = d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            return `${absolute}<span class="timestamp-relative ${recentClass}">${relative}</span>`;
+        };
         const formatBytes = (bytes) => {
             if (bytes <= 0) return '0 B';
             const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -448,27 +582,59 @@ function h($value) {
             return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[idx]}`;
         };
 
-        const updateTable = (tbodyId, rows, columns = 3, htmlCols = []) => {
+        const CRITICAL_USERS = ['root', 'admin', 'administrator', 'ubuntu', 'pi', 'postgres', 'mysql', 'oracle'];
+        const EMPTY_STATES = {
+            banIpsBody: { icon: 'shield', title: '¡Sin IPs baneadas!', desc: 'El sistema no ha detectado amenazas recientes', positive: true },
+            banEventsBody: { icon: 'shield', title: 'Sin eventos de baneo', desc: 'Fail2Ban no ha registrado actividad en este período', positive: true },
+            sshIpsBody: { icon: 'lock', title: 'Sin ataques SSH', desc: 'No hay intentos de acceso no autorizados', positive: true },
+            sshUsersBody: { icon: 'users', title: 'Sin usuarios atacados', desc: 'No se detectaron intentos de login sospechosos', positive: true },
+            sshEventsBody: { icon: 'activity', title: 'Sin actividad SSH', desc: 'No hay eventos de autenticación en este período', neutral: true },
+        };
+        const emptyIcon = (type) => {
+            const icons = {
+                shield: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>',
+                lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>',
+                users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
+                activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>',
+            };
+            return icons[type] || icons.activity;
+        };
+        const highlightUser = (username) => {
+            const u = (username || '').toLowerCase();
+            if (u === 'root') return `<span class="user-critical">⚠️ ${username}</span>`;
+            if (CRITICAL_USERS.includes(u)) return `<span class="user-warning">${username}</span>`;
+            return username;
+        };
+        const updateTable = (tbodyId, rows, columns = 3, htmlCols = [], userCol = -1) => {
             const tbody = document.getElementById(tbodyId);
             if (!tbody) return;
             tbody.innerHTML = '';
             if (!rows || !rows.length) {
+                const es = EMPTY_STATES[tbodyId] || { icon: 'activity', title: 'Sin datos', desc: 'No hay información disponible' };
+                const cls = es.positive ? 'empty-state-positive' : (es.neutral ? 'empty-state-neutral' : '');
                 const tr = document.createElement('tr');
                 const td = document.createElement('td');
                 td.colSpan = columns;
-                td.textContent = 'Sin registros';
+                td.innerHTML = `<div class="empty-state ${cls}">${emptyIcon(es.icon)}<div class="empty-state-title">${es.title}</div><div class="empty-state-desc">${es.desc}</div></div>`;
                 tr.appendChild(td);
                 tbody.appendChild(tr);
                 return;
             }
             rows.forEach((cols) => {
                 const tr = document.createElement('tr');
+                // Highlight row if contains critical user
+                if (userCol >= 0 && cols[userCol]) {
+                    const uname = (cols[userCol]+'').toLowerCase().replace(/[^a-z]/g,'');
+                    if (CRITICAL_USERS.includes(uname)) tr.className = 'user-root';
+                }
                 cols.forEach((value, idx) => {
                     const td = document.createElement('td');
-                    if (htmlCols.includes(idx)) {
-                        td.innerHTML = value;
+                    let content = value;
+                    if (userCol === idx) content = highlightUser(value);
+                    if (htmlCols.includes(idx) || userCol === idx) {
+                        td.innerHTML = content;
                     } else {
-                        td.textContent = value;
+                        td.textContent = content;
                     }
                     tr.appendChild(td);
                 });
@@ -505,6 +671,43 @@ function h($value) {
             span.textContent = result;
             return span.outerHTML;
         };
+
+        // Sistema de severidad global
+        const updateSeverity = (fail2ban1h, ssh5m) => {
+            const el = document.getElementById('severityIndicator');
+            const txt = document.getElementById('severityText');
+            if (!el || !txt) return;
+            el.classList.remove('severity-low', 'severity-medium', 'severity-high', 'severity-critical');
+            let level, icon, text;
+            if (fail2ban1h >= 20 || ssh5m >= 50) {
+                level = 'severity-critical'; icon = 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z';
+                text = '⚠️ Ataque Activo';
+            } else if (fail2ban1h >= 10 || ssh5m >= 20) {
+                level = 'severity-high'; icon = 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+                text = 'Alerta Alta';
+            } else if (fail2ban1h >= 5 || ssh5m >= 10) {
+                level = 'severity-medium'; icon = 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+                text = 'Actividad Elevada';
+            } else {
+                level = 'severity-low'; icon = 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z';
+                text = 'Sistema Normal';
+            }
+            el.classList.add(level);
+            el.querySelector('svg').innerHTML = `<path d="${icon}"/>`;
+            txt.textContent = text;
+        };
+
+        // Badges de tendencia
+        const trendBadge = (current, previous, invert = false) => {
+            if (previous === 0 && current === 0) return '<span class="trend-badge trend-stable">→ 0%</span>';
+            if (previous === 0) return `<span class="trend-badge ${invert ? 'trend-down' : 'trend-up'}">↑ nuevo</span>`;
+            const pct = Math.round(((current - previous) / previous) * 100);
+            if (Math.abs(pct) < 5) return '<span class="trend-badge trend-stable">→ estable</span>';
+            const cls = pct > 0 ? (invert ? 'trend-down' : 'trend-up') : (invert ? 'trend-up' : 'trend-down');
+            const arrow = pct > 0 ? '↑' : '↓';
+            return `<span class="trend-badge ${cls}">${arrow} ${Math.abs(pct)}%</span>`;
+        };
+        let prevMetrics = { fail2ban24h: 0, ssh24h: 0 };
 
         const renderSpark = (id, series) => {
             const svg = document.getElementById(id);
@@ -571,16 +774,21 @@ function h($value) {
         const renderMap = (points) => {
             geoLayer.clearLayers();
             const valid = points.filter(p => p.lat !== null && p.lon !== null);
+            let f2bCount = 0, sshCount = 0;
             valid.forEach((p) => {
                 const color = p.type === 'fail2ban' ? '#10b981' : '#f59e0b';
+                if (p.type === 'fail2ban') f2bCount++; else sshCount++;
                 L.circleMarker([p.lat, p.lon], {
                     radius: 5,
                     color,
                     weight: 1,
                     fillColor: color,
                     fillOpacity: 0.7,
-                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}`);
+                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}<br><span style="color:${color}">${p.type}</span>`);
             });
+            // Actualizar estadísticas del mapa
+            const mapStats = document.getElementById('mapStats');
+            if (mapStats) mapStats.textContent = `${valid.length} ubicaciones (${f2bCount} bans, ${sshCount} SSH)`;
             if (valid.length && typeof geoLayer.getBounds === 'function') {
                 map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
             } else {
@@ -636,14 +844,14 @@ function h($value) {
         };
 
         const renderTables = () => {
-            updateTable('banIpsBody', state.banIps, 3, [1]);
-            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [2]);
+            updateTable('banIpsBody', state.banIps, 3, [1], -1);
+            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [2], -1);
             const banBtn = document.getElementById('banLoadMore');
             if (banBtn) banBtn.disabled = banVisible >= state.banEvents.length;
 
-            updateTable('sshIpsBody', state.sshIps, 3, [1]);
-            updateTable('sshUsersBody', state.sshUsers, 2);
-            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [2, 3]);
+            updateTable('sshIpsBody', state.sshIps, 3, [1], -1);
+            updateTable('sshUsersBody', state.sshUsers, 2, [], 0); // columna 0 tiene usuarios
+            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [2, 3], 1); // columna 1 tiene usuarios
             const sshBtn = document.getElementById('sshLoadMore');
             if (sshBtn) sshBtn.disabled = sshVisible >= state.sshEvents.length;
         };
@@ -672,12 +880,30 @@ function h($value) {
                     const data = await metricsRes.value.json();
                     if (!data.error) {
                         const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
-                        setText('fail2ban24h', fail2banTotals.last24h ?? 0);
-                        setText('fail2ban1h', fail2banTotals.last1h ?? 0);
+                        const f24h = fail2banTotals.last24h ?? 0;
+                        const f1h = fail2banTotals.last1h ?? 0;
+                        const f7d = fail2banTotals.last7d ?? 0;
+                        setText('fail2ban24h', f24h);
+                        setText('fail2ban1h', f1h);
+                        setText('fail2ban7d', f7d);
+                        // Añadir tendencia comparando con valor previo
+                        const f24hEl = document.getElementById('fail2ban24h');
+                        if (f24hEl && prevMetrics.fail2ban24h > 0) {
+                            const badge = f24hEl.parentElement.querySelector('.trend-badge');
+                            if (!badge) f24hEl.insertAdjacentHTML('afterend', trendBadge(f24h, prevMetrics.fail2ban24h));
+                        }
 
                         const sshTotals = (data.ssh && data.ssh.totals) || {};
-                        setText('ssh1h', sshTotals.last1h ?? 0);
-                        setText('ssh5m', sshTotals.last5m ?? 0);
+                        const s24h = sshTotals.last24h ?? 0;
+                        const s1h = sshTotals.last1h ?? 0;
+                        const s5m = sshTotals.last5m ?? 0;
+                        setText('ssh24h', s24h);
+                        setText('ssh1h', s1h);
+                        setText('ssh5m', s5m);
+
+                        // Actualizar severidad global
+                        updateSeverity(f1h, s5m);
+                        prevMetrics = { fail2ban24h: f24h, ssh24h: s24h };
 
                         const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
                         setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
