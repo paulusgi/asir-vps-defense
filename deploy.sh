@@ -140,9 +140,8 @@ log_step() {
 
 run_quiet() {
     local msg="$1"; shift
-    local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'  # Braille spinner (más elegante)
+    local frames=('|' '/' '-' '\')
     local i=0
-    local spin_len=${#frames}
 
     "$@" >>"$LOG_FILE" 2>&1 &
     local pid=$!
@@ -155,8 +154,8 @@ run_quiet() {
     fi
 
     while kill -0 "$pid" 2>/dev/null; do
-        printf "\r  ${CYAN}%s${NC} %-50s" "${frames:i%spin_len:1}" "$msg"
-        sleep 0.1
+        printf "\r  ${CYAN}[%s]${NC} %-50s" "${frames[i%4]}" "$msg"
+        sleep 0.2
         ((i++))
     done
 
