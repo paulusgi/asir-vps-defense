@@ -41,6 +41,11 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Configuración para evitar prompts interactivos en apt/dpkg
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export NEEDRESTART_SUSPEND=1
+
 # =============================================================================
 # CONSTANTES Y CONFIGURACIÓN
 # =============================================================================
@@ -499,33 +504,65 @@ detect_os() {
 wait_for_apt_locks() {
     log_info "Verificando disponibilidad del gestor de paquetes..."
     
+    # Detener servicios de actualización automática si están ejecutándose
+    if systemctl is-active --quiet unattended-upgrades 2>/dev/null; then
+        log_warn "Deteniendo actualizaciones automáticas (unattended-upgrades)..."
+        systemctl stop unattended-upgrades 2>/dev/null || true
+        systemctl stop apt-daily.timer 2>/dev/null || true
+        systemctl stop apt-daily-upgrade.timer 2>/dev/null || true
+        sleep 2
+    fi
+    
     local wait_count=0
-    local max_wait=30  # Máximo 5 minutos (30 * 10s)
+    local max_wait=60  # Máximo 10 minutos (60 * 10s)
     
     # Bucle hasta que no haya procesos apt/dpkg ejecutándose
-    while pgrep -a apt > /dev/null || pgrep -a apt-get > /dev/null || pgrep -a dpkg > /dev/null; do
+    while pgrep -x apt > /dev/null || pgrep -x apt-get > /dev/null || pgrep -x dpkg > /dev/null || pgrep -x unattended-upgr > /dev/null; do
         if [ $wait_count -eq 0 ]; then
             log_warn "El sistema está ejecutando actualizaciones automáticas..."
+            echo -e "  ${DIM}Esperando a que terminen los procesos apt/dpkg...${NC}"
         fi
         printf "\r  ${YELLOW}[!]${NC} Esperando liberación de apt/dpkg... [%02d/%02d]" "$wait_count" "$max_wait"
         sleep 10
         ((wait_count++))
         if [ $wait_count -ge $max_wait ]; then
             echo ""
-            log_error "Tiempo de espera excedido. Revisa procesos apt/dpkg manualmente."
-            exit 1
+            log_error "Tiempo de espera excedido. Intentando forzar liberación..."
+            # Intentar matar procesos de actualización automática
+            pkill -9 unattended-upgr 2>/dev/null || true
+            pkill -9 apt.systemd.dai 2>/dev/null || true
+            sleep 5
+            break
         fi
     done
     
     # Doble comprobación de archivos de bloqueo
-    while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-        log_warn "Bloqueo de base de datos dpkg detectado. Esperando..."
-        sleep 5
+    local lock_wait=0
+    while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+        if [ $lock_wait -eq 0 ]; then
+            log_warn "Bloqueo de base de datos dpkg detectado. Esperando..."
+        fi
+        sleep 3
+        ((lock_wait++))
+        if [ $lock_wait -ge 20 ]; then
+            log_warn "Forzando liberación de locks..."
+            rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock 2>/dev/null || true
+            dpkg --configure -a 2>/dev/null || true
+            break
+        fi
     done
     
-    if [ $wait_count -gt 0 ]; then
+    # Espera adicional para asegurar que el sistema se estabilice
+    if [ $wait_count -gt 0 ] || [ $lock_wait -gt 0 ]; then
         echo ""
+        log_info "Esperando estabilización del sistema..."
+        sleep 5
         log_success "Gestor de paquetes disponible"
+    fi
+    
+    # Configurar needrestart para no preguntar
+    if [ -f /etc/needrestart/needrestart.conf ]; then
+        sed -i "s/^#\$nrconf{restart} = .*/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf 2>/dev/null || true
     fi
 }
 
@@ -541,10 +578,10 @@ install_dependencies() {
     run_quiet "Actualizando repositorios" apt-get update -y
 
     # Instalar con reintento y verificación
-    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog)" apt-get install -y psmisc curl git ufw fail2ban rsyslog; then
+    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog; then
         log_warn "Fallo en la instalación. Reintentando tras espera..."
         wait_for_apt_locks
-        run_quiet "Instalando paquetes base (reintento)" apt-get install -y psmisc curl git ufw fail2ban rsyslog
+        run_quiet "Instalando paquetes base (reintento)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog
     fi
 
     # Comprobación crítica: Fail2Ban debe estar presente
@@ -733,6 +770,10 @@ configure_fail2ban() {
         chown syslog:adm /var/log/auth.log 2>/dev/null || true
         chmod 640 /var/log/auth.log
     fi
+    
+    # Asegurar que el log de Fail2Ban existe con permisos correctos
+    touch /var/log/fail2ban.log
+    chmod 644 /var/log/fail2ban.log
 
     # Crear configuración de jaula personalizada
     cat > /etc/fail2ban/jail.local <<EOF
@@ -742,6 +783,9 @@ configure_fail2ban() {
 # ==============================================================================
 
 [DEFAULT]
+# Configuración de logging
+logtarget = /var/log/fail2ban.log
+
 # Banear hosts por 35 días (política estricta)
 bantime = 35d
 
@@ -1382,12 +1426,19 @@ main() {
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     
+    # Asegurar que estamos en el directorio del proyecto
+    local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
+    cd "$PROJECT_DIR" || {
+        log_error "No se pudo acceder al directorio del proyecto: $PROJECT_DIR"
+        exit 1
+    }
+    
     log_info "Esperando a que los servicios estén listos (30-60s)..."
     
     # 1. Esperar al Healthcheck de MySQL
     local retries=0
     while [ $retries -lt 30 ]; do
-        if docker compose ps | grep -q "healthy"; then
+        if docker compose ps 2>/dev/null | grep -q "healthy"; then
              break
         fi
         printf "\r  ${CYAN}⏳${NC} Esperando healthchecks... [%02d/30]" "$retries"
@@ -1422,7 +1473,7 @@ main() {
 
     echo ""
     echo -e "  ${DIM}Estado actual de los contenedores:${NC}"
-    docker compose ps
+    docker compose ps 2>/dev/null || log_warn "No se pudo obtener el estado de los contenedores"
     
     # =========================================================================
     # GESTIÓN DE CREDENCIALES

@@ -16,7 +16,7 @@ scrape_configs:
           - localhost
         labels:
           job: fail2ban
-          __path__: /var/log/host/fail2ban.log*
+          __path__: /var/log/host/fail2ban.log
     pipeline_stages:
       - regex:
           expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})'
