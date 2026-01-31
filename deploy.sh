@@ -196,8 +196,6 @@ collect_public_keys_for_user() {
     declare -A file_seen
     PUBLIC_KEY_CANDIDATES=()
     local files=()
-
-    log_info "Buscando claves SSH públicas en el sistema..."
     
     # Preferir find para cubrir claves inyectadas por el proveedor; fallback si falta find
     if command -v find >/dev/null 2>&1; then
@@ -657,6 +655,7 @@ setup_firewall() {
 configure_ssh() {
     local REAL_USER=$1
     local HONEYPOT_USER=$2
+    local SSH_PORT=${3:-22}
 
     log_step "Configurando SSH Hardening (Split Authentication)"
     
@@ -672,7 +671,7 @@ cat > /etc/ssh/sshd_config <<EOF
 # ==============================================================================
 
 # Configuración base
-Port 22
+Port $SSH_PORT
 Protocol 2
 PermitRootLogin no
 PasswordAuthentication yes
@@ -723,6 +722,7 @@ EOF
 # =============================================================================
 
 configure_fail2ban() {
+    local SSH_PORT="${1:-22}"
     log_step "Configurando Fail2Ban (Protección Activa)"
 
     systemctl stop fail2ban 2>/dev/null || true
@@ -756,7 +756,7 @@ ignoreip = 127.0.0.1/8 ::1
 
 [sshd]
 enabled = true
-port    = ssh
+port    = $SSH_PORT
 logpath = %(sshd_log)s
 backend = %(sshd_backend)s
 filter  = sshd
@@ -767,7 +767,7 @@ EOF
     systemctl is-active --quiet fail2ban
     systemctl enable fail2ban
     
-    log_success "Fail2Ban configurado"
+    log_success "Fail2Ban configurado (puerto $SSH_PORT)"
     echo -e "  ${DIM}Política: ${BOLD}35 días${NC}${DIM} de ban tras ${BOLD}2${NC}${DIM} intentos fallidos${NC}"
     echo -e "  ${DIM}Ventana de detección: 10 minutos${NC}"
 }
@@ -1212,6 +1212,34 @@ main() {
     # PASO 2: Configuración de Usuario y Seguridad
     # =========================================================================
     print_section "PASO 2/5: USUARIOS Y SEGURIDAD"
+    
+    # Preguntar puerto SSH ANTES de configurar (si no está ya configurado)
+    local SSH_PORT="22"
+    if ! is_step_done "users_done"; then
+        echo ""
+        echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
+        echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CONFIGURACIÓN DE PUERTO SSH${NC}                          ${CYAN}│${NC}"
+        echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
+        echo ""
+        echo -e "  ${DIM}Puerto SSH por defecto: 22 (se recomienda cambiar)${NC}"
+        echo -n -e "  ${CYAN}Nuevo puerto SSH (ENTER para usar 2929):${NC} "
+        read -r SSH_PORT < /dev/tty
+        if [ -z "$SSH_PORT" ]; then
+            SSH_PORT="2929"
+        fi
+        if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
+            log_warn "Puerto no válido. Se usará el puerto 22 por defecto."
+            SSH_PORT="22"
+        fi
+        log_info "Puerto SSH seleccionado: ${BOLD}$SSH_PORT${NC}"
+        
+        # Abrir puerto en UFW antes de configurar SSH
+        if [ "$SSH_PORT" != "22" ]; then
+            ufw allow "$SSH_PORT"/tcp comment 'SSH custom' || log_warn "No se pudo abrir el puerto $SSH_PORT en UFW"
+            ufw delete allow 22/tcp >/dev/null 2>&1 || true
+        fi
+    fi
+    
     if is_step_done "users_done"; then
         log_info "Usuarios y seguridad ya configurados"
         if [ -z "$SECURE_ADMIN" ]; then
@@ -1222,11 +1250,13 @@ main() {
             echo ""
             exit 1
         fi
+        # Recuperar puerto SSH de la configuración existente
+        SSH_PORT=$(grep -E '^Port ' /etc/ssh/sshd_config | awk '{print $2}' || echo "22")
     else
         create_secure_admin
         handle_honeypot_logic
-        configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER"
-        configure_fail2ban
+        configure_ssh "$SECURE_ADMIN" "$HONEYPOT_TARGET_USER" "$SSH_PORT"
+        configure_fail2ban "$SSH_PORT"
         mark_step_done "users_done"
     fi
     
@@ -1462,51 +1492,18 @@ main() {
     unset WEB_ADMIN_PASS
 
     # =========================================================================
-    # CAMBIO DE PUERTO SSH
-    # =========================================================================
-    echo ""
-    echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CAMBIO DE PUERTO SSH (PASO FINAL)${NC}                    ${CYAN}│${NC}"
-    echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
-    echo ""
-    
-    local NEW_SSH_PORT=""
-    local EFFECTIVE_SSH_PORT="22"
-    echo -n -e "  ${CYAN}Nuevo puerto SSH (ENTER para usar 2929):${NC} "
-    read -r NEW_SSH_PORT < /dev/tty
-    if [ -z "$NEW_SSH_PORT" ]; then
-        NEW_SSH_PORT="2929"
-    fi
-    if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || [ "$NEW_SSH_PORT" -lt 1 ] || [ "$NEW_SSH_PORT" -gt 65535 ]; then
-        log_error "Puerto no válido. Se mantiene el puerto 22."
-        EFFECTIVE_SSH_PORT="22"
-    else
-        log_info "Aplicando puerto SSH ${BOLD}$NEW_SSH_PORT${NC}..."
-        sed -i "s/^Port .*/Port $NEW_SSH_PORT/" /etc/ssh/sshd_config
-        ufw allow "$NEW_SSH_PORT"/tcp comment 'SSH custom' || log_warn "No se pudo abrir el puerto $NEW_SSH_PORT en UFW"
-        ufw delete allow 22/tcp >/dev/null 2>&1 || true
-        if sshd -t && systemctl restart sshd; then
-            log_success "sshd reiniciado en puerto ${BOLD}$NEW_SSH_PORT${NC}"
-            EFFECTIVE_SSH_PORT="$NEW_SSH_PORT"
-        else
-            log_error "No se pudo reiniciar sshd; se mantiene puerto 22"
-            EFFECTIVE_SSH_PORT="22"
-        fi
-    fi
-
-    # =========================================================================
     # INSTRUCCIONES FINALES
     # =========================================================================
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║${NC}  ${BOLD}${ICON_OK} INSTRUCCIONES DE CONEXIÓN${NC}                                 ${GREEN}║${NC}"
+    echo -e "${GREEN}║${NC}  ${BOLD}[OK] INSTRUCCIONES DE CONEXIÓN${NC}                               ${GREEN}║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "  ${CYAN}1.${NC} Abre una ${BOLD}NUEVA terminal${NC} en tu ordenador local"
     echo ""
     echo -e "  ${CYAN}2.${NC} Ejecuta el siguiente comando para crear el túnel seguro:"
     echo ""
-    echo -e "     ${YELLOW}ssh -p $EFFECTIVE_SSH_PORT -L 8888:127.0.0.1:8888 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
+    echo -e "     ${YELLOW}ssh -p $SSH_PORT -L 8888:127.0.0.1:8888 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
     echo ""
     echo -e "  ${CYAN}3.${NC} Abre tu navegador web y accede a:"
     echo ""
@@ -1532,11 +1529,11 @@ main() {
     echo ""
     log_info "Limpiando variables sensibles del entorno..."
     unset MYSQL_ROOT_PASS MYSQL_APP_PASS WEB_ADMIN_PASS WEB_ADMIN_HASH ADMIN_PASS ADMIN_PASS_CONFIRM \
-        HONEYPOT_TARGET_PASS SSH_KEY CREDENTIALS_MODE DOMAIN_NAME HOST_HINT EFFECTIVE_SSH_PORT NEW_SSH_PORT
+        HONEYPOT_TARGET_PASS SSH_KEY CREDENTIALS_MODE DOMAIN_NAME HOST_HINT SSH_PORT
 
     echo ""
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}   ${ICON_OK} INSTALACIÓN COMPLETADA EXITOSAMENTE${NC}"
+    echo -e "${GREEN}   [OK] INSTALACIÓN COMPLETADA EXITOSAMENTE${NC}"
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
     echo ""
 }

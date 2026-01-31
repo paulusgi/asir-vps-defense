@@ -845,13 +845,13 @@ function h($value) {
 
         const renderTables = () => {
             updateTable('banIpsBody', state.banIps, 3, [1], -1);
-            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [2], -1);
+            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [0, 2], -1); // col 0: timestamp, col 2: IP+bandera
             const banBtn = document.getElementById('banLoadMore');
             if (banBtn) banBtn.disabled = banVisible >= state.banEvents.length;
 
             updateTable('sshIpsBody', state.sshIps, 3, [1], -1);
             updateTable('sshUsersBody', state.sshUsers, 2, [], 0); // columna 0 tiene usuarios
-            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [2, 3], 1); // columna 1 tiene usuarios
+            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [0, 2, 3], 1); // col 0: timestamp, col 2: IP+bandera, col 3: badge resultado
             const sshBtn = document.getElementById('sshLoadMore');
             if (sshBtn) sshBtn.disabled = sshVisible >= state.sshEvents.length;
         };
