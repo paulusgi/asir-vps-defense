@@ -276,11 +276,11 @@ function h($value) {
         .donut::after { content: ""; position: absolute; inset: 18px; background: #0d1627; border-radius: 50%; }
         .donut span { position: relative; font-weight: 700; font-size: 1.1rem; }
         .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); font-size: 0.9rem; }
-        .tab-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
-        .tab-button { background: rgba(15,23,42,0.8); color: var(--text-muted); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px 18px; cursor: pointer; transition: all 0.2s ease; font-weight: 500; font-size: 0.95rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-        .tab-button:hover { background: rgba(15,23,42,0.95); border-color: rgba(16,185,129,0.3); color: var(--text); transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
-        .tab-button.active { background: linear-gradient(135deg, rgba(16,185,129,0.20), rgba(16,185,129,0.12)); border-color: rgba(16,185,129,0.6); color: var(--accent); font-weight: 600; box-shadow: 0 0 16px rgba(16,185,129,0.15), 0 4px 8px rgba(0,0,0,0.3); }
-        .tab-button.active:hover { transform: translateY(0); }
+        .tab-bar { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; border-bottom: 2px solid rgba(255,255,255,0.08); }
+        .tab-button { background: transparent; color: var(--text-muted); border: none; border-bottom: 3px solid transparent; padding: 12px 20px; cursor: pointer; transition: all 0.25s ease; font-weight: 500; font-size: 0.95rem; position: relative; }
+        .tab-button:hover { color: var(--text); border-bottom-color: rgba(16,185,129,0.4); background: rgba(255,255,255,0.03); }
+        .tab-button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; background: rgba(16,185,129,0.06); }
+        .tab-button.active::before { content: ""; position: absolute; bottom: -2px; left: 0; right: 0; height: 2px; background: var(--accent); box-shadow: 0 0 8px rgba(16,185,129,0.5); }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         .load-more { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
