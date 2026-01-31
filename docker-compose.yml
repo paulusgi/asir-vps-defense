@@ -84,9 +84,13 @@ services:
     image: grafana/loki:2.9.2
     container_name: asir_loki
     restart: always
+    environment:
+      - TZ=Europe/Madrid
     volumes:
       - ./loki/config.yml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1"]
       interval: 30s
@@ -100,10 +104,14 @@ services:
     image: grafana/promtail:2.9.2
     container_name: asir_promtail
     restart: always
+    environment:
+      - TZ=Europe/Madrid
     volumes:
       - ./promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
       - ./promtail/positions:/positions
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:9080/ready || exit 1"]
