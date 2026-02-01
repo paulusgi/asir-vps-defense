@@ -28,17 +28,13 @@ services:
       - ./src:/var/www/html:ro
       - ./php/conf.d/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
       - ./geoip/GeoLite2-City.mmdb:/usr/share/GeoIP/GeoLite2-City.mmdb:ro
+      - ./secrets/mysql_app_password.txt:/run/secrets/mysql_app_password:ro
     environment:
       - MYSQL_HOST=mysql
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - LOKI_URL=http://loki:3100
       - GEOIP_MMDB_PATH=/usr/share/GeoIP/GeoLite2-City.mmdb
-    secrets:
-      - source: mysql_app_password
-        uid: "1000"
-        gid: "1000"
-        mode: 0400
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
