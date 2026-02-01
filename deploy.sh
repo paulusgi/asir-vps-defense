@@ -110,28 +110,28 @@ CURRENT_REAL_USER=""
 CREDENTIALS_MODE="unknown"
 
 # =============================================================================
-# FUNCIONES DE LOGGING (UX mejorada)
+# FUNCIONES DE LOGGING (UX mejorada con iconos Unicode)
 # =============================================================================
 
 log_info() {
-    echo -e "${BLUE}[INFO]${NC}    $1"
+    echo -e "${BLUE}[ℹ]${NC}  $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[✓]${NC}  $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC}    $1"
+    echo -e "${YELLOW}[⚠]${NC}  $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC}   $1"
+    echo -e "${RED}[✗]${NC}  $1"
 }
 
 log_step() {
     # Para pasos principales del proceso
-    echo -e "\n${CYAN}>>>${NC} ${BOLD}$1${NC}"
+    echo -e "\n${CYAN}→${NC} ${BOLD}$1${NC}"
 }
 
 # =============================================================================
@@ -140,7 +140,7 @@ log_step() {
 
 run_quiet() {
     local msg="$1"; shift
-    local frames='|/-\\'
+    local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local i=0
 
     "$@" >>"$LOG_FILE" 2>&1 &
@@ -148,14 +148,15 @@ run_quiet() {
 
     # Si el comando no pudo lanzarse, marcamos fallo temprano
     if [ -z "$pid" ]; then
-        printf "\r  %-55s [FAIL]\n" "$msg"
+        printf "\r  %-55s [✗]\n" "$msg"
         log_error "No se pudo lanzar el comando: $*"
         return 1
     fi
 
     while kill -0 "$pid" 2>/dev/null; do
-        printf "\r  %-55s [%c]" "$msg" "${frames:i++%4:1}"
-        sleep 0.2
+        printf "\r  %-55s [${CYAN}%s${NC}]" "$msg" "${spinner:i%10:1}"
+        i=$((i + 1))
+        sleep 0.15
     done
 
     # Capturar el status sin que errexit aborte antes de imprimir
@@ -165,9 +166,9 @@ run_quiet() {
     set -e
 
     if [ $status -eq 0 ]; then
-        printf "\r  %-55s [OK]  \n" "$msg"
+        printf "\r  %-55s [${GREEN}✓${NC}]  \n" "$msg"
     else
-        printf "\r  %-55s [FAIL]\n" "$msg"
+        printf "\r  %-55s [${RED}✗${NC}]\n" "$msg"
         echo -e "\nÚltimas líneas del log:" >&2
         tail -n 25 "$LOG_FILE" >&2
         return $status
@@ -510,35 +511,27 @@ detect_os() {
 wait_for_apt_locks() {
     log_info "Verificando disponibilidad del gestor de paquetes..."
     
-    # Detener servicios de actualización automática si están ejecutándose
-    if systemctl is-active --quiet unattended-upgrades 2>/dev/null; then
-        log_warn "Deteniendo actualizaciones automáticas (unattended-upgrades)..."
-        systemctl stop unattended-upgrades 2>/dev/null || true
-        systemctl stop apt-daily.timer 2>/dev/null || true
-        systemctl stop apt-daily-upgrade.timer 2>/dev/null || true
-        sleep 2
-    fi
-    
     local wait_count=0
     local max_wait=60  # Máximo 10 minutos (60 * 10s)
+    local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local spin_i=0
     
     # Bucle hasta que no haya procesos apt/dpkg ejecutándose
     while pgrep -x apt > /dev/null || pgrep -x apt-get > /dev/null || pgrep -x dpkg > /dev/null || pgrep -x unattended-upgr > /dev/null; do
         if [ $wait_count -eq 0 ]; then
-            log_warn "El sistema está ejecutando actualizaciones automáticas..."
-            echo -e "  ${DIM}Esperando a que terminen los procesos apt/dpkg...${NC}"
+            log_info "El sistema está ejecutando actualizaciones automáticas..."
+            echo -e "  ${DIM}Esperando a que terminen (esto puede tardar unos minutos)...${NC}"
         fi
-        printf "\r  ${YELLOW}[!]${NC} Esperando liberación de apt/dpkg... [%02d/%02d]" "$wait_count" "$max_wait"
+        printf "\r  ${CYAN}%s${NC} Esperando apt/dpkg... [%02d/%02d]" "${spinner:spin_i%10:1}" "$wait_count" "$max_wait"
+        spin_i=$((spin_i + 1))
         sleep 10
-        ((wait_count++))
+        wait_count=$((wait_count + 1))
         if [ $wait_count -ge $max_wait ]; then
             echo ""
-            log_error "Tiempo de espera excedido. Intentando forzar liberación..."
-            # Intentar matar procesos de actualización automática
-            pkill -9 unattended-upgr 2>/dev/null || true
-            pkill -9 apt.systemd.dai 2>/dev/null || true
-            sleep 5
-            break
+            log_error "Tiempo de espera excedido (10 minutos). Abortando."
+            echo -e "  ${YELLOW}Sugerencia:${NC} Espera a que terminen las actualizaciones y vuelve a ejecutar el script."
+            echo -e "  ${DIM}Puedes comprobar con: ps aux | grep -E 'apt|dpkg'${NC}"
+            exit 1
         fi
     done
     
@@ -546,15 +539,17 @@ wait_for_apt_locks() {
     local lock_wait=0
     while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
         if [ $lock_wait -eq 0 ]; then
-            log_warn "Bloqueo de base de datos dpkg detectado. Esperando..."
+            log_info "Bloqueo de base de datos dpkg detectado. Esperando..."
         fi
+        printf "\r  ${CYAN}%s${NC} Esperando locks... [%02d/30]" "${spinner:spin_i%10:1}" "$lock_wait"
+        spin_i=$((spin_i + 1))
         sleep 3
-        ((lock_wait++))
-        if [ $lock_wait -ge 20 ]; then
-            log_warn "Forzando liberación de locks..."
-            rm -f /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock 2>/dev/null || true
-            dpkg --configure -a 2>/dev/null || true
-            break
+        lock_wait=$((lock_wait + 1))
+        if [ $lock_wait -ge 30 ]; then
+            echo ""
+            log_error "Tiempo de espera de locks excedido."
+            echo -e "  ${YELLOW}Sugerencia:${NC} Reinicia el sistema y vuelve a ejecutar el script."
+            exit 1
         fi
     done
     
