@@ -39,10 +39,12 @@ function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
 
 function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
 {
+    // Usamos regex para coincidir solo con "Ban" (no Unban, Restore Ban, etc.)
+    // El patrón ] Ban captura el formato típico: "fail2ban.actions ... [sshd] Ban IP"
     $totals = [
-        'last1h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [1h]))'),
-        'last24h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [24h]))'),
-        'last7d' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |= "Ban" [7d]))'),
+        'last1h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |~ "\\\\] Ban [0-9]" [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |~ "\\\\] Ban [0-9]" [24h]))'),
+        'last7d' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |~ "\\\\] Ban [0-9]" [7d]))'),
     ];
 
     // Query last 7 days of logs for better historical view
