@@ -52,6 +52,10 @@ export NEEDRESTART_SUSPEND=1
 
 readonly SCRIPT_VERSION="2.1.0"
 readonly SCRIPT_NAME="ASIR VPS Defense"
+readonly BACKUP_VG_NAME="backups"
+readonly BACKUP_LV_NAME="backups"
+readonly BACKUP_MOUNTPOINT="/srv/backups"
+readonly BACKUP_RETENTION_DEFAULT=7
 
 # Rutas de estado y logs
 readonly ENV_FILE=".env"
@@ -582,10 +586,10 @@ install_dependencies() {
     fi
 
     # Instalar con reintento y verificación
-    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog; then
+    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog, lvm2, xz-utils, cron)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron; then
         log_warn "Fallo en la instalación. Reintentando tras espera..."
         wait_for_apt_locks
-        run_quiet "Instalando paquetes base (reintento)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog
+        run_quiet "Instalando paquetes base (reintento)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron
     fi
 
     # Comprobación crítica: Fail2Ban debe estar presente
@@ -1210,6 +1214,109 @@ EOF
     fi
 }
 
+# =============================================================================
+# CONFIGURACIÓN DE VOLUMEN Y BACKUPS
+# =============================================================================
+
+ensure_backup_volume() {
+    log_step "Preparando volumen lógico para backups"
+
+    if mountpoint -q "$BACKUP_MOUNTPOINT"; then
+        log_info "Volumen de backups ya montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
+        return 0
+    fi
+
+    mkdir -p "$BACKUP_MOUNTPOINT"
+
+    if vgdisplay "$BACKUP_VG_NAME" >/dev/null 2>&1; then
+        log_info "VG existente detectado: ${BOLD}$BACKUP_VG_NAME${NC}"
+        if ! lvdisplay "$BACKUP_VG_NAME/$BACKUP_LV_NAME" >/dev/null 2>&1; then
+            log_warn "LV $BACKUP_LV_NAME no existe en VG $BACKUP_VG_NAME, creando LV..."
+            if ! lvcreate -n "$BACKUP_LV_NAME" -l 100%FREE "$BACKUP_VG_NAME" >/dev/null 2>&1; then
+                log_error "No se pudo crear el LV $BACKUP_LV_NAME en $BACKUP_VG_NAME"
+                return 1
+            fi
+        fi
+    else
+        echo ""
+        echo -e "${YELLOW}No se encontró VG '${BOLD}$BACKUP_VG_NAME${NC}${YELLOW}'.${NC}"
+        echo -e "Indica el dispositivo de bloque para inicializar (ej: /dev/sdb) o deja vacío para saltar: "
+        read -r BACKUP_DEVICE < /dev/tty
+        if [ -z "$BACKUP_DEVICE" ]; then
+            log_warn "Salta preparación de backups (no hay VG disponible)"
+            return 1
+        fi
+        if ! lsblk -ndo NAME "/dev/$(basename "$BACKUP_DEVICE")" >/dev/null 2>&1; then
+            log_error "Dispositivo inválido: $BACKUP_DEVICE"
+            return 1
+        fi
+        echo -n -e "${CYAN}Se creará PV+VG+LV en ${BOLD}$BACKUP_DEVICE${NC}${CYAN}. ¿Confirmar? (escribe YES en mayúsculas): ${NC}"
+        read -r CONFIRM_BACKUP_LVM < /dev/tty
+        if [ "$CONFIRM_BACKUP_LVM" != "YES" ]; then
+            log_warn "Operación cancelada por el usuario"
+            return 1
+        fi
+        if ! pvcreate "$BACKUP_DEVICE" >/dev/null 2>&1; then
+            log_error "pvcreate falló sobre $BACKUP_DEVICE"
+            return 1
+        fi
+        if ! vgcreate "$BACKUP_VG_NAME" "$BACKUP_DEVICE" >/dev/null 2>&1; then
+            log_error "vgcreate falló para $BACKUP_VG_NAME"
+            return 1
+        fi
+        if ! lvcreate -n "$BACKUP_LV_NAME" -l 100%FREE "$BACKUP_VG_NAME" >/dev/null 2>&1; then
+            log_error "lvcreate falló para $BACKUP_LV_NAME"
+            return 1
+        fi
+    fi
+
+    local lv_path="/dev/$BACKUP_VG_NAME/$BACKUP_LV_NAME"
+    local fs_type
+    fs_type=$(blkid -o value -s TYPE "$lv_path" 2>/dev/null || true)
+    if [ -z "$fs_type" ]; then
+        log_info "Creando sistema de ficheros ext4 en $lv_path"
+        mkfs.ext4 -L backups "$lv_path" >/dev/null
+    fi
+
+    local uuid
+    uuid=$(blkid -o value -s UUID "$lv_path")
+    if ! grep -q "$BACKUP_MOUNTPOINT" /etc/fstab; then
+        echo "UUID=$uuid $BACKUP_MOUNTPOINT ext4 defaults,nofail 0 2" >> /etc/fstab
+    fi
+
+    if mount "$BACKUP_MOUNTPOINT"; then
+        log_success "Volumen de backups montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
+        chmod 750 "$BACKUP_MOUNTPOINT"
+    else
+        log_error "No se pudo montar $BACKUP_MOUNTPOINT"
+        return 1
+    fi
+}
+
+prompt_initial_backup() {
+    local project_dir="$1"
+    if [ ! -d "$project_dir" ]; then
+        log_warn "No se encuentra el directorio del proyecto para el backup inicial"
+        return
+    fi
+    if ! mountpoint -q "$BACKUP_MOUNTPOINT"; then
+        log_warn "Backups no configurados (volumen no montado)"
+        return
+    fi
+    echo ""
+    echo -n -e "${CYAN}¿Crear un backup inicial ahora? (S/n): ${NC}"
+    read -r CREATE_BACKUP_NOW < /dev/tty
+    if [[ "$CREATE_BACKUP_NOW" =~ ^[Nn]$ ]]; then
+        log_info "Backup inicial omitido por el usuario"
+        return
+    fi
+    if BACKUP_ROOT="$BACKUP_MOUNTPOINT" BACKUP_RETENTION="$BACKUP_RETENTION_DEFAULT" "$project_dir/backups.sh" create --retention "$BACKUP_RETENTION_DEFAULT"; then
+        log_success "Backup inicial creado en $BACKUP_MOUNTPOINT"
+    else
+        log_warn "Backup inicial falló; revisa el log"
+    fi
+}
+
 # ==============================================================================
 # EJECUCIÓN PRINCIPAL
 # ==============================================================================
@@ -1336,6 +1443,7 @@ main() {
 
         # Asegurar que la propiedad es correcta inmediatamente
         chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "$PROJECT_DIR"
+        [ -f "$PROJECT_DIR/backups.sh" ] && chmod 750 "$PROJECT_DIR/backups.sh"
         cd "$PROJECT_DIR" || exit 1
         mark_step_done "project_done"
         log_success "Directorio de trabajo: ${BOLD}$(pwd)${NC}"
@@ -1402,9 +1510,11 @@ main() {
     fi
     
     # =========================================================================
-    # PASO 5: Limpieza Final y Acciones Diferidas
+    # PASO 5: Backups y Acciones Finales
     # =========================================================================
-    print_section "PASO 5/5: AJUSTES FINALES"
+    print_section "PASO 5/5: BACKUPS Y AJUSTES FINALES"
+    ensure_backup_volume || log_warn "Backups no configurados (puedes ejecutar ./deploy.sh tras preparar el VG 'backups')"
+    prompt_initial_backup "$PROJECT_DIR"
     if is_step_done "final_done"; then
         log_info "Acciones finales ya aplicadas"
     else
