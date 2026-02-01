@@ -343,7 +343,7 @@ list_backups() {
             local protected_icon="  "
             local protected_color="$NC"
             if [ -f "$BACKUP_ROOT/$name.keep" ]; then
-                protected_icon="🔒"
+                protected_icon="🔒 Protegido"
                 protected_color="$GREEN"
             fi
             local size_human
@@ -412,7 +412,7 @@ download_hint() {
     local i=1
     for f in "${files[@]}"; do
         local prot=""
-        [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒${NC}"
+        [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protegido${NC}"
         local size
         size=$(du -h "$BACKUP_ROOT/$f" 2>/dev/null | awk '{print $1}')
         echo "    ${GREEN}$i${NC})  $f  ${DIM}($size)${NC}$prot"
@@ -620,7 +620,7 @@ menu_loop() {
                 local i=1
                 for f in "${files[@]}"; do
                     local prot=""
-                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒${NC}"
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protegido${NC}"
                     echo "    ${GREEN}$i${NC})  $f$prot"
                     i=$((i+1))
                 done
@@ -721,7 +721,7 @@ menu_loop() {
                 local i=1
                 for f in "${files[@]}"; do
                     local prot=""
-                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒${NC}"
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protegido${NC}"
                     local size
                     size=$(du -h "$BACKUP_ROOT/$f" 2>/dev/null | awk '{print $1}')
                     echo "    ${GREEN}$i${NC})  $f  ${DIM}($size)${NC}$prot"
