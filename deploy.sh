@@ -1238,29 +1238,60 @@ ensure_backup_volume() {
             fi
         fi
     else
-        echo ""
-        echo -e "${YELLOW}No se encontró VG '${BOLD}$BACKUP_VG_NAME${NC}${YELLOW}'.${NC}"
-        echo -e "Indica el dispositivo de bloque para inicializar (ej: /dev/sdb) o deja vacío para saltar: "
-        read -r BACKUP_DEVICE < /dev/tty
-        if [ -z "$BACKUP_DEVICE" ]; then
+        local chosen_device="${BACKUP_DEVICE:-}"
+        local candidates=()
+
+        # Detectar discos sin montar (excluye loop y root montado)
+        while IFS= read -r disk; do
+            candidates+=("$disk")
+        done < <(lsblk -dpno NAME,TYPE,MOUNTPOINT | awk '$2=="disk" && $3=="" {print $1}')
+
+        if [ -z "$chosen_device" ]; then
+            if [ ${#candidates[@]} -eq 1 ]; then
+                chosen_device="${candidates[0]}"
+                log_info "Disco libre detectado: ${BOLD}$chosen_device${NC}"
+            elif [ ${#candidates[@]} -gt 1 ]; then
+                echo ""
+                echo -e "${CYAN}Discos disponibles para backups:${NC}"
+                local idx=1
+                for d in "${candidates[@]}"; do
+                    echo -e "  ${GREEN}[$idx]${NC} $d"
+                    idx=$((idx+1))
+                done
+                echo -e "${YELLOW}Elige un número o escribe un dispositivo manual (ej: /dev/sdb):${NC} "
+                read -r selection < /dev/tty
+                if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le ${#candidates[@]} ]; then
+                    chosen_device="${candidates[$((selection-1))]}"
+                else
+                    chosen_device="$selection"
+                fi
+            else
+                echo ""
+                echo -e "${YELLOW}No se encontró VG '${BOLD}$BACKUP_VG_NAME${NC}${YELLOW}'.${NC}"
+                echo -e "Indica el dispositivo de bloque para inicializar (ej: /dev/sdb) o deja vacío para saltar: "
+                read -r chosen_device < /dev/tty
+            fi
+        fi
+
+        if [ -z "$chosen_device" ]; then
             log_warn "Salta preparación de backups (no hay VG disponible)"
             return 1
         fi
-        if ! lsblk -ndo NAME "/dev/$(basename "$BACKUP_DEVICE")" >/dev/null 2>&1; then
-            log_error "Dispositivo inválido: $BACKUP_DEVICE"
+        if ! lsblk -ndo NAME "$chosen_device" >/dev/null 2>&1; then
+            log_error "Dispositivo inválido: $chosen_device"
             return 1
         fi
-        echo -n -e "${CYAN}Se creará PV+VG+LV en ${BOLD}$BACKUP_DEVICE${NC}${CYAN}. ¿Confirmar? (escribe YES en mayúsculas): ${NC}"
+        echo -n -e "${CYAN}Se creará PV+VG+LV en ${BOLD}$chosen_device${NC}${CYAN}. ¿Confirmar? (escribe YES en mayúsculas): ${NC}"
         read -r CONFIRM_BACKUP_LVM < /dev/tty
         if [ "$CONFIRM_BACKUP_LVM" != "YES" ]; then
             log_warn "Operación cancelada por el usuario"
             return 1
         fi
-        if ! pvcreate "$BACKUP_DEVICE" >/dev/null 2>&1; then
-            log_error "pvcreate falló sobre $BACKUP_DEVICE"
+        if ! pvcreate "$chosen_device" >/dev/null 2>&1; then
+            log_error "pvcreate falló sobre $chosen_device"
             return 1
         fi
-        if ! vgcreate "$BACKUP_VG_NAME" "$BACKUP_DEVICE" >/dev/null 2>&1; then
+        if ! vgcreate "$BACKUP_VG_NAME" "$chosen_device" >/dev/null 2>&1; then
             log_error "vgcreate falló para $BACKUP_VG_NAME"
             return 1
         fi
