@@ -61,6 +61,22 @@ ensure_dependencies() {
     fi
 }
 
+detect_ssh_port() {
+    local port
+    port=$(grep -E '^Port ' /etc/ssh/sshd_config 2>/dev/null | tail -1 | awk '{print $2}')
+    [ -n "$port" ] || port=22
+    echo "$port"
+}
+
+detect_host_ip() {
+    local ip
+    ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    if [ -z "$ip" ]; then
+        ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++){if($i=="src"){print $(i+1); exit}}}')
+    fi
+    echo "$ip"
+}
+
 pause() {
     echo ""
     read -r -p "${DIM}Pulsa ENTER para continuar...${NC} " _
@@ -325,11 +341,23 @@ delete_backup() {
 
 download_hint() {
     ensure_mount
-    local host
-    host=$(hostname -I 2>/dev/null | awk '{print $1}')
-    echo "Descarga desde tu máquina local (ejemplo):"
-    echo "  scp -P <puerto_ssh> <usuario>@${host:-<host>}:$BACKUP_ROOT/<backup>.tar.xz ."
-    echo "(Usa el puerto SSH configurado en tu VPS)"
+    local host port latest
+    host=$(detect_host_ip)
+    port=$(detect_ssh_port)
+
+    mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%T@ %f\n' | sort -nr)
+    if [ ${#files[@]} -gt 0 ]; then
+        latest=$(echo "${files[0]}" | awk '{print $2}')
+    fi
+
+    echo "${BOLD}Descarga rápida desde tu máquina local:${NC}"
+    if [ -n "$latest" ]; then
+        echo "  scp -P ${port} <usuario>@${host:-<host>}:$BACKUP_ROOT/${latest} ."
+        echo "${DIM}(Usando el backup más reciente)${NC}"
+    else
+        echo "  scp -P ${port} <usuario>@${host:-<host>}:$BACKUP_ROOT/<backup>.tar.xz ."
+    fi
+    echo "${DIM}Sustituye <usuario> por tu admin SSH y ajusta la ruta si cambiaste BACKUP_ROOT.${NC}"
 }
 
 schedule_backup() {
