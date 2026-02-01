@@ -514,7 +514,6 @@ wait_for_apt_locks() {
     log_info "Verificando disponibilidad del gestor de paquetes..."
     
     local elapsed=0
-    local max_seconds=180  # Máximo 3 minutos
     local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local spin_i=0
     local showed_msg=false
@@ -527,24 +526,16 @@ wait_for_apt_locks() {
         
         if [ "$showed_msg" = false ]; then
             log_info "El sistema está ejecutando actualizaciones automáticas..."
-            echo -e "  ${DIM}Esperando a que se liberen los locks de apt/dpkg...${NC}"
+            echo -e "  ${DIM}Esperando a que terminen (esto puede tardar varios minutos)...${NC}"
             showed_msg=true
         fi
         
         local mins=$((elapsed / 60))
         local secs=$((elapsed % 60))
-        printf "\r  ${CYAN}%s${NC} Esperando locks... [%d:%02d / 3:00]" "${spinner:spin_i%10:1}" "$mins" "$secs"
+        printf "\r  ${CYAN}%s${NC} Esperando locks... [%d:%02d]" "${spinner:spin_i%10:1}" "$mins" "$secs"
         spin_i=$((spin_i + 1))
         sleep 3
         elapsed=$((elapsed + 3))
-        
-        if [ $elapsed -ge $max_seconds ]; then
-            echo ""
-            log_error "Tiempo de espera excedido (3 minutos). Abortando."
-            echo -e "  ${YELLOW}Sugerencia:${NC} Espera a que terminen las actualizaciones y vuelve a ejecutar el script."
-            echo -e "  ${DIM}Comprueba con: sudo lsof /var/lib/dpkg/lock-frontend${NC}"
-            exit 1
-        fi
     done
     
     # Mensaje de éxito si hubo espera
