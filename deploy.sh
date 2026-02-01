@@ -1076,6 +1076,9 @@ generate_env() {
     MYSQL_ROOT_PASS=$(openssl rand -base64 24)
     MYSQL_APP_PASS=$(openssl rand -base64 24)
     
+    # Crear Docker Secrets (archivos con permisos 600)
+    create_docker_secrets "$PROJECT_DIR" "$MYSQL_ROOT_PASS" "$MYSQL_APP_PASS"
+    
     cat > .env <<EOF
 # ==============================================================================
 # ASIR VPS Defense - Variables de Entorno
@@ -1085,11 +1088,9 @@ generate_env() {
 # Dominio/IP del servidor
 DOMAIN_NAME=$DOMAIN_NAME
 
-# Credenciales MySQL (generadas automáticamente)
-MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASS
+# MySQL (credenciales gestionadas por Docker Secrets en ./secrets/)
 MYSQL_DATABASE=asir_defense
 MYSQL_USER=app_user
-MYSQL_PASSWORD=$MYSQL_APP_PASS
 
 # Configuración de Red Docker
 FRONTEND_SUBNET=172.20.0.0/16
@@ -1100,7 +1101,7 @@ GEOIP_LICENSE_KEY=
 EOF
 
     chmod 600 .env
-    log_success "Archivo .env generado con credenciales seguras"
+    log_success "Archivo .env generado (credenciales en Docker Secrets)"
 }
 
 # =============================================================================
@@ -1113,9 +1114,32 @@ EOF
 # Esta función:
 #   1. Reemplaza MYSQL_ROOT_PASSWORD y MYSQL_PASSWORD por placeholders
 #   2. Preserva las demás variables necesarias para operación normal
-#   3. Se ejecuta ANTES del primer backup para que los backups no
-#      contengan credenciales en texto plano
+#   3. Los secrets se almacenan en archivos separados con permisos 600
 # =============================================================================
+
+create_docker_secrets() {
+    local project_dir="$1"
+    local root_pass="$2"
+    local app_pass="$3"
+    
+    log_step "Creando Docker Secrets para credenciales MySQL"
+    
+    local secrets_dir="$project_dir/secrets"
+    mkdir -p "$secrets_dir"
+    
+    # Crear archivos de secrets con permisos restrictivos
+    echo -n "$root_pass" > "$secrets_dir/mysql_root_password.txt"
+    echo -n "$app_pass" > "$secrets_dir/mysql_app_password.txt"
+    
+    # Permisos: solo root puede leer
+    chmod 600 "$secrets_dir/mysql_root_password.txt"
+    chmod 600 "$secrets_dir/mysql_app_password.txt"
+    chmod 700 "$secrets_dir"
+    chown -R root:root "$secrets_dir"
+    
+    log_success "Docker Secrets creados en $secrets_dir"
+    echo -e "  ${DIM}Los passwords se leen de /run/secrets/ dentro de los contenedores${NC}"
+}
 
 sanitize_env() {
     local env_file="${1:-.env}"
@@ -1124,9 +1148,9 @@ sanitize_env() {
         return 1
     fi
 
-    log_step "Limpiando credenciales sensibles del .env"
+    log_step "Limpiando credenciales del .env (ya están en Docker Secrets)"
 
-    # Variables sensibles a limpiar (regex compatible con sed)
+    # Variables sensibles a limpiar
     local sensitive_vars=(
         "MYSQL_ROOT_PASSWORD"
         "MYSQL_PASSWORD"
@@ -1134,33 +1158,28 @@ sanitize_env() {
 
     local changed=0
     for var in "${sensitive_vars[@]}"; do
-        if grep -qE "^${var}=.+" "$env_file"; then
-            # Reemplazar el valor por un placeholder indicativo
-            sed -i "s|^${var}=.*|${var}=<REDACTED_AFTER_DEPLOY>|" "$env_file"
+        if grep -qE "^${var}=.+" "$env_file" && ! grep -qE "^${var}=<MANAGED_BY_DOCKER_SECRETS>" "$env_file"; then
+            sed -i "s|^${var}=.*|${var}=<MANAGED_BY_DOCKER_SECRETS>|" "$env_file"
             changed=1
         fi
     done
 
     if [ "$changed" -eq 1 ]; then
-        # Añadir comentario explicativo si no existe
-        if ! grep -q "SECURITY NOTE" "$env_file"; then
+        if ! grep -q "DOCKER SECRETS" "$env_file"; then
             cat >> "$env_file" <<'SECURITY_EOF'
 
 # ==============================================================================
-# SECURITY NOTE
+# DOCKER SECRETS
 # ==============================================================================
-# Las credenciales de MySQL han sido eliminadas de este archivo por seguridad.
-# MySQL ya las tiene almacenadas internamente en su datadir.
-# Los backups utilizan copia física del datadir (no requieren password).
-# Si necesitas las credenciales originales, consulta:
-#   - El archivo de credenciales cifrado del admin
-#   - O regenera con: docker compose down -v && ./deploy.sh
+# Las credenciales de MySQL se gestionan mediante Docker Secrets.
+# Los passwords están en ./secrets/ con permisos 600 (solo root).
+# Los contenedores los leen de /run/secrets/ (más seguro que env vars).
 # ==============================================================================
 SECURITY_EOF
         fi
-        log_success "Credenciales sensibles eliminadas del .env"
+        log_success "Credenciales movidas a Docker Secrets"
     else
-        log_info ".env ya está sanitizado o no contiene credenciales"
+        log_info ".env ya está configurado para Docker Secrets"
     fi
 }
 
@@ -2013,13 +2032,9 @@ main() {
     # SANITIZACIÓN DEL .env Y BACKUP INICIAL
     # =========================================================================
     # Ahora que las credenciales ya se mostraron al usuario, podemos:
-    # 1. Limpiar el .env de passwords en texto plano
-    # 2. Crear el backup inicial (que ya NO contendrá credenciales)
+    # Crear el backup inicial (los secrets están en ./secrets/, no en .env)
     echo ""
     print_section "BACKUP INICIAL"
-    
-    # Sanitizar .env ANTES del backup
-    sanitize_env "$PROJECT_DIR/.env"
     
     # Crear backup inicial si el volumen está disponible
     prompt_initial_backup "$PROJECT_DIR"

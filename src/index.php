@@ -93,7 +93,16 @@ function readSystemMetrics(): array
 $host = getenv('MYSQL_HOST');
 $db   = getenv('MYSQL_DATABASE');
 $user = getenv('MYSQL_USER');
-$pass = getenv('MYSQL_PASSWORD');
+
+// Leer password de Docker Secret (más seguro que variable de entorno)
+$secretFile = '/run/secrets/mysql_app_password';
+if (file_exists($secretFile)) {
+    $pass = trim(file_get_contents($secretFile));
+} else {
+    // Fallback a variable de entorno para desarrollo local
+    $pass = getenv('MYSQL_PASSWORD');
+}
+
 $charset = 'utf8mb4';
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";

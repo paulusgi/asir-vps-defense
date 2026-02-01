@@ -32,9 +32,10 @@ services:
       - MYSQL_HOST=mysql
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - LOKI_URL=http://loki:3100
       - GEOIP_MMDB_PATH=/usr/share/GeoIP/GeoLite2-City.mmdb
+    secrets:
+      - mysql_app_password
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -59,13 +60,15 @@ services:
     container_name: asir_mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_app_password
+    secrets:
+      - mysql_root_password
+      - mysql_app_password
     healthcheck:
-      # Use CMD-SHELL so the password env var expands inside the container, and wait longer on cold starts
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD || exit 1"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
       interval: 10s
       timeout: 5s
       start_period: 60s
@@ -138,3 +141,12 @@ networks:
 volumes:
   mysql_data:
   loki_data:
+
+# ==============================================================================
+# SECRETS (archivos con credenciales, permisos 600)
+# ==============================================================================
+secrets:
+  mysql_root_password:
+    file: ./secrets/mysql_root_password.txt
+  mysql_app_password:
+    file: ./secrets/mysql_app_password.txt
