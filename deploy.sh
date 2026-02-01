@@ -1367,15 +1367,18 @@ main() {
         log_info "Usuario admin recuperado de sesión anterior: ${BOLD}$SECURE_ADMIN${NC}"
     fi
 
-    # Si todo ya estuvo completado, permitir una ejecución de auditoría rápida y salir
+    # Si todo ya estuvo completado, aún permitimos configurar backups pendientes y auditar
     if is_step_done "prep_done" && is_step_done "users_done" && is_step_done "project_done" \
        && is_step_done "env_done" && is_step_done "seed_done" && is_step_done "final_done"; then
         local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
         if [ -d "$PROJECT_DIR" ]; then
             cd "$PROJECT_DIR" || exit 1
             load_env_if_present
+            print_section "BACKUPS PENDIENTES"
+            ensure_backup_volume || log_warn "Backups no configurados (puedes reejecutar tras preparar un disco)"
+            prompt_initial_backup "$PROJECT_DIR"
             print_section "AUDITORÍA DE PERMISOS"
-            log_info "Instalación completa detectada. Ejecutando solo auditoría..."
+            log_info "Instalación completa detectada. Ejecutando auditoría y finalizando..."
             audit_permissions "$PROJECT_DIR"
             exit 0
         fi
