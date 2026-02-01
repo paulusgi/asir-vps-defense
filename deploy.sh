@@ -513,8 +513,8 @@ detect_os() {
 wait_for_apt_locks() {
     log_info "Verificando disponibilidad del gestor de paquetes..."
     
-    local wait_count=0
-    local max_wait=60  # Máximo 3 minutos (60 * 3s)
+    local elapsed=0
+    local max_seconds=180  # Máximo 3 minutos
     local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local spin_i=0
     local showed_msg=false
@@ -531,12 +531,14 @@ wait_for_apt_locks() {
             showed_msg=true
         fi
         
-        printf "\r  ${CYAN}%s${NC} Esperando locks... [%02d/%02d]" "${spinner:spin_i%10:1}" "$wait_count" "$max_wait"
+        local mins=$((elapsed / 60))
+        local secs=$((elapsed % 60))
+        printf "\r  ${CYAN}%s${NC} Esperando locks... [%d:%02d / 3:00]" "${spinner:spin_i%10:1}" "$mins" "$secs"
         spin_i=$((spin_i + 1))
         sleep 3
-        wait_count=$((wait_count + 1))
+        elapsed=$((elapsed + 3))
         
-        if [ $wait_count -ge $max_wait ]; then
+        if [ $elapsed -ge $max_seconds ]; then
             echo ""
             log_error "Tiempo de espera excedido (3 minutos). Abortando."
             echo -e "  ${YELLOW}Sugerencia:${NC} Espera a que terminen las actualizaciones y vuelve a ejecutar el script."
