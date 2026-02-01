@@ -617,6 +617,15 @@ install_dependencies() {
     fi
 }
 
+ensure_lvm_tools() {
+    if command -v pvcreate >/dev/null 2>&1; then
+        return 0
+    fi
+    log_info "Instalando lvm2 para gestionar backups..."
+    wait_for_apt_locks
+    run_quiet "Instalando lvm2" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" lvm2
+}
+
 # =============================================================================
 # CIFRADO DE CREDENCIALES
 # =============================================================================
@@ -1221,6 +1230,11 @@ EOF
 ensure_backup_volume() {
     log_step "Preparando volumen lógico para backups"
 
+    ensure_lvm_tools || {
+        log_error "No se pudo instalar lvm2; no es posible preparar backups"
+        return 1
+    }
+
     if mountpoint -q "$BACKUP_MOUNTPOINT"; then
         log_info "Volumen de backups ya montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
         return 0
@@ -1241,10 +1255,14 @@ ensure_backup_volume() {
         local chosen_device="${BACKUP_DEVICE:-}"
         local candidates=()
 
-        # Detectar discos sin montar (excluye loop y root montado)
+        # Detectar discos sin montajes ni particiones montadas (evita el disco del sistema)
         while IFS= read -r disk; do
+            # Si el disco o cualquiera de sus hijos tiene un mountpoint, se descarta
+            if lsblk -nr -o MOUNTPOINT "$disk" | grep -q '\S'; then
+                continue
+            fi
             candidates+=("$disk")
-        done < <(lsblk -dpno NAME,TYPE,MOUNTPOINT | awk '$2=="disk" && $3=="" {print $1}')
+        done < <(lsblk -dpno NAME,TYPE | awk '$2=="disk" {print $1}')
 
         if [ -z "$chosen_device" ]; then
             if [ ${#candidates[@]} -eq 1 ]; then
