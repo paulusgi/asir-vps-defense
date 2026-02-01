@@ -114,24 +114,24 @@ CREDENTIALS_MODE="unknown"
 # =============================================================================
 
 log_info() {
-    echo -e "${BLUE}[ ℹ ]${NC} $1"
+    echo -e "${BLUE}INFO${NC}   $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[ ✓ ]${NC} $1"
+    echo -e "${GREEN}OK${NC}     $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[ ⚠ ]${NC} $1"
+    echo -e "${YELLOW}WARN${NC}   $1"
 }
 
 log_error() {
-    echo -e "${RED}[ ✗ ]${NC} $1"
+    echo -e "${RED}FAIL${NC}   $1"
 }
 
 log_step() {
     # Para pasos principales del proceso
-    echo -e "\n${CYAN}→${NC} ${BOLD}$1${NC}"
+    echo -e "\n${CYAN}>>${NC} ${BOLD}$1${NC}"
 }
 
 # =============================================================================
