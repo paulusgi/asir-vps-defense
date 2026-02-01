@@ -1376,12 +1376,12 @@ main() {
             cd "$PROJECT_DIR" || exit 1
             load_env_if_present
             print_section "BACKUPS PENDIENTES"
-            ensure_backup_volume || log_warn "Backups no configurados (puedes reejecutar tras preparar un disco)"
-            if ! is_step_done "backups_prepared"; then
-                log_warn "Backups siguen pendientes: prepara un disco y reejecuta si es necesario"
-            else
+            if ensure_backup_volume; then
                 prompt_initial_backup "$PROJECT_DIR"
+                mark_step_done "backups_prepared"
                 mark_step_done "backups_done"
+            else
+                log_warn "Backups no configurados (prepara un disco y reejecuta)"
             fi
             print_section "AUDITORÍA DE PERMISOS"
             log_info "Instalación completa detectada. Ejecutando auditoría y finalizando..."
