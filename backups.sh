@@ -176,10 +176,30 @@ create_backup() {
         rm -rf "$staging"
         exit 1
     fi
-    if ! "${COMPOSE[@]}" exec -T -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql sh -c 'mysqldump -uroot --single-transaction --routines --triggers asir_defense' > "$staging/db/asir_defense.sql"; then
-        echo "Fallo al generar mysqldump" >&2
+
+    echo "Deteniendo MySQL para copia física del datadir..."
+    local mysql_stopped=false
+    if "${COMPOSE[@]}" stop mysql >/dev/null 2>&1; then
+        mysql_stopped=true
+    else
+        echo "No se pudo detener MySQL" >&2
         rm -rf "$staging"
         exit 1
+    fi
+
+    # Copiar datadir desde el volumen del contenedor detenido
+    if ! docker run --rm --volumes-from asir_mysql -v "$staging/db":/backup busybox sh -c 'cd /var/lib/mysql && cp -a . /backup'; then
+        echo "Fallo al copiar el datadir de MySQL" >&2
+        rm -rf "$staging"
+        if [ "$mysql_stopped" = true ]; then
+            "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || true
+        fi
+        exit 1
+    fi
+
+    echo "Iniciando MySQL..."
+    if [ "$mysql_stopped" = true ]; then
+        "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || echo "MySQL no se pudo iniciar automáticamente" >&2
     fi
 
     cat > "$staging/meta.json" <<EOF
