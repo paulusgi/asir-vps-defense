@@ -1274,6 +1274,96 @@ EOF
 }
 
 # =============================================================================
+# HARDENING DE ROOT
+# =============================================================================
+
+check_and_harden_root() {
+    log_step "Verificando configuración de seguridad de root"
+    
+    local root_issues=0
+    local password_locked=false
+    local ssh_denied=false
+    
+    # 1. Verificar si el password de root está bloqueado
+    local shadow_status
+    shadow_status=$(grep "^root:" /etc/shadow 2>/dev/null | cut -d: -f2 | head -c1)
+    if [[ "$shadow_status" == "!" ]] || [[ "$shadow_status" == "*" ]]; then
+        password_locked=true
+        log_success "Password de root bloqueado"
+    else
+        local passwd_status
+        passwd_status=$(passwd -S root 2>/dev/null | awk '{print $2}')
+        if [[ "$passwd_status" == "L" ]]; then
+            password_locked=true
+            log_success "Password de root bloqueado"
+        else
+            log_warn "Password de root NO está bloqueado"
+            root_issues=$((root_issues + 1))
+        fi
+    fi
+    
+    # 2. Verificar PermitRootLogin en SSH
+    local permit_root
+    permit_root=$(grep -E "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tail -1)
+    if [[ "$permit_root" == "no" ]]; then
+        ssh_denied=true
+        log_success "SSH deniega login de root (PermitRootLogin no)"
+    elif [[ -z "$permit_root" ]]; then
+        # Si no está definido, el default en muchos sistemas es "prohibit-password"
+        log_info "PermitRootLogin no definido explícitamente (usando default del sistema)"
+    else
+        log_warn "SSH permite login de root (PermitRootLogin $permit_root)"
+        root_issues=$((root_issues + 1))
+    fi
+    
+    # 3. Si hay problemas, ofrecer hardening
+    if [ $root_issues -gt 0 ]; then
+        echo ""
+        echo -e "${YELLOW}╭─────────────────────────────────────────────────────────────╮${NC}"
+        echo -e "${YELLOW}│${NC}  ${BOLD}[!] CONFIGURACIÓN DE ROOT MEJORABLE${NC}                       ${YELLOW}│${NC}"
+        echo -e "${YELLOW}╰─────────────────────────────────────────────────────────────╯${NC}"
+        echo ""
+        echo -e "  ${CYAN}Se recomienda:${NC}"
+        if [ "$password_locked" = false ]; then
+            echo -e "    • Bloquear el password de root (nadie puede hacer login directo)"
+        fi
+        if [ "$ssh_denied" = false ]; then
+            echo -e "    • Denegar login SSH de root (PermitRootLogin no)"
+        fi
+        echo ""
+        echo -e "  ${DIM}Esto NO afecta a sudo - seguirás pudiendo usar 'sudo -i'${NC}"
+        echo ""
+        echo -n -e "  ${CYAN}¿Aplicar hardening de root? (S/n):${NC} "
+        read -r CONFIRM_ROOT_HARDENING < /dev/tty
+        
+        if [[ "$CONFIRM_ROOT_HARDENING" =~ ^[Ss]$ ]] || [[ -z "$CONFIRM_ROOT_HARDENING" ]]; then
+            # Bloquear password de root
+            if [ "$password_locked" = false ]; then
+                passwd -l root >/dev/null 2>&1
+                log_success "Password de root bloqueado"
+            fi
+            
+            # Denegar root en SSH
+            if [ "$ssh_denied" = false ]; then
+                if grep -q "^PermitRootLogin" /etc/ssh/sshd_config; then
+                    sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+                else
+                    echo "PermitRootLogin no" >> /etc/ssh/sshd_config
+                fi
+                systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
+                log_success "SSH configurado para denegar root"
+            fi
+            
+            log_success "Hardening de root completado"
+        else
+            log_info "Hardening de root omitido (puedes hacerlo manualmente después)"
+        fi
+    else
+        log_success "Configuración de root es segura"
+    fi
+}
+
+# =============================================================================
 # CONFIGURACIÓN DE VOLUMEN Y BACKUPS
 # =============================================================================
 
@@ -1731,6 +1821,10 @@ main() {
 
     # Preparar volumen de backups (pero NO crear backup aún - se hará al final)
     ensure_backup_volume || log_warn "Backups no configurados (puedes ejecutar ./deploy.sh tras preparar el VG 'backups')"
+    
+    # Verificar y ofrecer hardening de root
+    check_and_harden_root
+    
     if is_step_done "final_done"; then
         log_info "Acciones finales ya aplicadas"
     else
