@@ -422,12 +422,14 @@ is_step_done() {
 
 print_section() {
     local title="$1"
-    local width=60
-    local padding=$(( (width - ${#title}) / 2 ))
+    local width=58  # Ancho interior del recuadro (sin los bordes ║)
+    local title_len=${#title}
+    local padding_left=$(( (width - title_len) / 2 ))
+    local padding_right=$(( width - title_len - padding_left ))
     
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
-    printf "${GREEN}║${NC}%*s${BOLD}%s${NC}%*s${GREEN}║${NC}\n" $padding "" "$title" $((width - padding - ${#title})) ""
+    printf "${GREEN}║${NC}%${padding_left}s${BOLD}%s${NC}%${padding_right}s${GREEN}║${NC}\n" "" "$title" ""
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
