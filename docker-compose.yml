@@ -35,7 +35,10 @@ services:
       - LOKI_URL=http://loki:3100
       - GEOIP_MMDB_PATH=/usr/share/GeoIP/GeoLite2-City.mmdb
     secrets:
-      - mysql_app_password
+      - source: mysql_app_password
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
