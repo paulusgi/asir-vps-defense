@@ -966,14 +966,16 @@ handle_honeypot_logic() {
         echo -e "${RED}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
         echo -e "  Estás logueado como '${BOLD}$CURRENT_REAL_USER${NC}', pero quieres usar"
-        echo -e "  ese mismo nombre como Honeypot."
+        echo -e "  ese mismo nombre como usuario cebo (Honeypot)."
         echo ""
-        echo -e "  ${CYAN}Solución segura:${NC}"
-        echo -e "    1. Tu nuevo usuario seguro (${GREEN}$SECURE_ADMIN${NC}) - YA CREADO"
-        echo -e "    2. Convertir '${YELLOW}$CURRENT_REAL_USER${NC}' en Honeypot AL FINAL del script"
-        echo -e "       (Esto evita cortar tu sesión actual)"
+        echo -e "  ${CYAN}¿Qué pasará si aceptas?${NC}"
+        echo -e "    • Tu cuenta actual '${YELLOW}$CURRENT_REAL_USER${NC}' se convertirá en trampa"
+        echo -e "    • Usarás '${GREEN}$SECURE_ADMIN${NC}' como tu nuevo usuario seguro"
+        echo -e "    • La conversión se hará AL FINAL para no cortar tu sesión"
         echo ""
-        echo -n -e "  ${CYAN}¿Proceder con conversión diferida? (S/n):${NC} "
+        echo -e "  ${DIM}Si no aceptas, deberás elegir otro nombre para el Honeypot.${NC}"
+        echo ""
+        echo -n -e "  ${CYAN}¿Convertir '$CURRENT_REAL_USER' en Honeypot? (S/n):${NC} "
         read -r CONFIRM_CONVERSION < /dev/tty
         
         if [[ "$CONFIRM_CONVERSION" =~ ^[Ss]$ ]] || [[ -z "$CONFIRM_CONVERSION" ]]; then
