@@ -8,25 +8,24 @@ BACKUP_ROOT="${BACKUP_ROOT:-/srv/backups}"
 BACKUP_RETENTION="${BACKUP_RETENTION:-7}"
 LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
-COPY_CMD=""
+COPY_CMD=()
 WARN_COPY=0
 
 copy_tree() {
     local src="$1"
     local dst="$2"
-    if [ -z "$COPY_CMD" ]; then
+    if [ ${#COPY_CMD[@]} -eq 0 ]; then
         if command -v rsync >/dev/null 2>&1; then
-            COPY_CMD="rsync -a"
+            COPY_CMD=(rsync -a)
         else
-            COPY_CMD="cp -a"
+            COPY_CMD=(cp -a)
             if [ $WARN_COPY -eq 0 ]; then
                 echo "rsync no disponible; usando cp -a (puede ser más lento)" >&2
                 WARN_COPY=1
             fi
         fi
     fi
-    # shellcheck disable=SC2086
-    $COPY_CMD "$src" "$dst"
+    "${COPY_CMD[@]}" "$src" "$dst"
 }
 
 ensure_dependencies() {
