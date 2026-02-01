@@ -142,7 +142,10 @@ Comandos:
   prune [--keep N]         Conserva solo los N últimos (por fecha)
   download-hint            Muestra cómo descargar un backup vía scp
   restore <fichero>        Restaura un backup existente
-  schedule <HH:MM> [N]     Programa backup diario a esa hora; retención N (defecto ${BACKUP_RETENTION})
+  schedule <HH:MM> [N] [FREQ] [DAY]
+                           Programa backup automático
+                           FREQ: daily (defecto), weekly, monthly
+                           DAY:  0-6 (día semana) o 1-28 (día mes)
 
 Contenido de cada backup:
   - docker-compose.yml, .env (configuración)
@@ -546,21 +549,95 @@ restore_backup() {
 schedule_backup() {
     local time="$1"
     local keep="$2"
+    local freq="${3:-daily}"
+    local day_param="${4:-}"
+
     if ! [[ "$time" =~ ^[0-9]{2}:[0-9]{2}$ ]]; then
-        echo "Hora inválida. Usa HH:MM" >&2
-        exit 1
+        echo "  ${RED}✗ Hora inválida. Usa HH:MM${NC}" >&2
+        return 1
     fi
+
     local minute hour
     minute=${time#*:}
     hour=${time%:*}
+
+    local cron_schedule=""
+    local freq_desc=""
+    local day_names=("Domingo" "Lunes" "Martes" "Miércoles" "Jueves" "Viernes" "Sábado")
+
+    case "$freq" in
+        daily)
+            cron_schedule="${minute} ${hour} * * *"
+            freq_desc="Diario a las ${hour}:${minute}"
+            ;;
+        weekly)
+            if ! [[ "$day_param" =~ ^[0-6]$ ]]; then
+                echo "  ${RED}✗ Día de semana inválido (0=Dom, 6=Sáb)${NC}" >&2
+                return 1
+            fi
+            cron_schedule="${minute} ${hour} * * ${day_param}"
+            freq_desc="Semanal: ${day_names[$day_param]} a las ${hour}:${minute}"
+            ;;
+        monthly)
+            if ! [[ "$day_param" =~ ^[0-9]+$ ]] || [ "$day_param" -lt 1 ] || [ "$day_param" -gt 28 ]; then
+                echo "  ${RED}✗ Día del mes inválido (1-28)${NC}" >&2
+                return 1
+            fi
+            cron_schedule="${minute} ${hour} ${day_param} * *"
+            freq_desc="Mensual: día ${day_param} a las ${hour}:${minute}"
+            ;;
+        *)
+            echo "  ${RED}✗ Frecuencia inválida${NC}" >&2
+            return 1
+            ;;
+    esac
+
     local cron_file="/etc/cron.d/asir-backups"
     cat > "$cron_file" <<EOF
+# Backup automático ASIR VPS Defense
+# Frecuencia: ${freq_desc}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-${minute} ${hour} * * * root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT} LOG_FILE=${LOG_FILE} bash ${PROJECT_DIR}/backups.sh create --retention ${keep} --no-protect >> ${LOG_FILE} 2>&1
+${cron_schedule} root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT} LOG_FILE=${LOG_FILE} bash ${PROJECT_DIR}/backups.sh create --retention ${keep} --no-protect >> ${LOG_FILE} 2>&1
 EOF
     chmod 644 "$cron_file"
-    log "Cron diario configurado a las ${hour}:${minute} con retención ${keep}"
-    echo "  ${GREEN}✔${NC} Backup diario programado a las ${WHITE}${hour}:${minute}${NC} (keep=${keep})"
+    log "Cron configurado: ${freq_desc} con retención ${keep}"
+    echo ""
+    echo "  ${GREEN}✔${NC} Backup programado: ${WHITE}${freq_desc}${NC}"
+    echo "  ${DIM}Retención: ${keep} backups${NC}"
+}
+
+show_current_schedule() {
+    local cron_file="/etc/cron.d/asir-backups"
+    if [ -f "$cron_file" ]; then
+        local schedule_line
+        schedule_line=$(grep -v '^#' "$cron_file" | grep -v '^PATH=' | grep -v '^$' | head -1)
+        if [ -n "$schedule_line" ]; then
+            echo "  ${CYAN}Programación actual:${NC}"
+            # Extraer campos del cron
+            local min hour dom mon dow
+            read -r min hour dom mon dow _ <<< "$schedule_line"
+            if [ "$dom" = "*" ] && [ "$dow" = "*" ]; then
+                echo "    ${WHITE}Diario${NC} a las ${hour}:${min}"
+            elif [ "$dom" = "*" ] && [ "$dow" != "*" ]; then
+                local day_names=("Domingo" "Lunes" "Martes" "Miércoles" "Jueves" "Viernes" "Sábado")
+                echo "    ${WHITE}Semanal${NC}: ${day_names[$dow]} a las ${hour}:${min}"
+            elif [ "$dom" != "*" ]; then
+                echo "    ${WHITE}Mensual${NC}: día ${dom} a las ${hour}:${min}"
+            fi
+            echo ""
+        fi
+    fi
+}
+
+remove_schedule() {
+    local cron_file="/etc/cron.d/asir-backups"
+    if [ -f "$cron_file" ]; then
+        rm -f "$cron_file"
+        log "Programación de backup eliminada"
+        echo "  ${GREEN}✔${NC} Programación eliminada"
+    else
+        echo "  ${YELLOW}⚠ No hay programación configurada${NC}"
+    fi
 }
 
 menu_loop() {
@@ -573,7 +650,7 @@ menu_loop() {
         echo "    ${GREEN}3${NC})  🗑️   Eliminar backup"
         echo "    ${GREEN}4${NC})  🔒  Proteger/Desproteger backup"
         echo "    ${GREEN}5${NC})  🧹  Prune (mantener N últimos)"
-        echo "    ${GREEN}6${NC})  ⏰  Programar backup diario"
+        echo "    ${GREEN}6${NC})  ⏰  Programar backups automáticos"
         echo "    ${GREEN}7${NC})  📥  Descargar backup (scp)"
         echo "    ${GREEN}8${NC})  🔄  Restaurar backup"
         echo "    ${GREEN}9${NC})  📤  Importar backup externo"
@@ -686,15 +763,66 @@ menu_loop() {
                 ;;
             6)
                 echo ""
-                echo "  ${BOLD}${CYAN}⏰ Programar backup diario${NC}"
+                echo "  ${BOLD}${CYAN}⏰ Programar backups automáticos${NC}"
+                echo "  ${DIM}────────────────────────────────────────${NC}"
                 echo ""
-                echo -n "  Hora diaria (HH:MM): "
-                read -r hhmm
-                echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
-                read -r keep
-                [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                show_current_schedule
+                echo "  Selecciona frecuencia:"
                 echo ""
-                schedule_backup "$hhmm" "$keep"
+                echo "    ${GREEN}1${NC})  Diario"
+                echo "    ${GREEN}2${NC})  Semanal"
+                echo "    ${GREEN}3${NC})  Mensual"
+                echo "    ${RED}0${NC})  Eliminar programación"
+                echo ""
+                echo -n "  ${CYAN}➤ Opción:${NC} "
+                read -r freq_opt
+
+                case "$freq_opt" in
+                    1)
+                        echo ""
+                        echo -n "  Hora (HH:MM): "
+                        read -r hhmm
+                        echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                        read -r keep
+                        [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                        schedule_backup "$hhmm" "$keep" "daily"
+                        ;;
+                    2)
+                        echo ""
+                        echo "  Día de la semana:"
+                        echo "    ${GREEN}0${NC}) Domingo    ${GREEN}1${NC}) Lunes      ${GREEN}2${NC}) Martes"
+                        echo "    ${GREEN}3${NC}) Miércoles  ${GREEN}4${NC}) Jueves     ${GREEN}5${NC}) Viernes"
+                        echo "    ${GREEN}6${NC}) Sábado"
+                        echo ""
+                        echo -n "  ${CYAN}➤ Día (0-6):${NC} "
+                        read -r dow
+                        echo -n "  Hora (HH:MM): "
+                        read -r hhmm
+                        echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                        read -r keep
+                        [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                        schedule_backup "$hhmm" "$keep" "weekly" "$dow"
+                        ;;
+                    3)
+                        echo ""
+                        echo -n "  Día del mes (1-28): "
+                        read -r dom
+                        echo -n "  Hora (HH:MM): "
+                        read -r hhmm
+                        echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                        read -r keep
+                        [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                        schedule_backup "$hhmm" "$keep" "monthly" "$dom"
+                        ;;
+                    0)
+                        echo ""
+                        remove_schedule
+                        ;;
+                    *)
+                        echo ""
+                        echo "  ${RED}✗ Opción inválida${NC}"
+                        ;;
+                esac
                 pause
                 ;;
             7)
@@ -833,7 +961,7 @@ main() {
             restore_backup "${1:-}"
             ;;
         schedule)
-            schedule_backup "${1:-}" "${2:-$BACKUP_RETENTION}"
+            schedule_backup "${1:-}" "${2:-$BACKUP_RETENTION}" "${3:-daily}" "${4:-}"
             ;;
         *)
             usage
