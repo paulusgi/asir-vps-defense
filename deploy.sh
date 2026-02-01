@@ -804,8 +804,8 @@ bantime = 35d
 # Una IP es baneada si ha generado "maxretry" durante el último "findtime"
 findtime = 10m
 
-# Número de fallos permitidos antes del ban (3 = ban al 3er intento, 2 oportunidades reales)
-maxretry = 3
+# Número de fallos permitidos antes del ban (6 = 2 intentos reales, cada intento genera 3 líneas de log)
+maxretry = 6
 
 # Ignorar localhost
 ignoreip = 127.0.0.1/8 ::1
@@ -816,7 +816,7 @@ port    = $SSH_PORT
 logpath = %(sshd_log)s
 backend = %(sshd_backend)s
 filter  = sshd
-maxretry = 3
+maxretry = 6
 EOF
 
     systemctl restart fail2ban
