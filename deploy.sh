@@ -575,7 +575,11 @@ install_dependencies() {
     
     log_step "Instalando dependencias del sistema"
     
-    run_quiet "Actualizando repositorios" apt-get update -y
+    if ! run_quiet "Actualizando repositorios" apt-get update -y; then
+        log_warn "apt-get update falló, posible lock activo. Reintentando tras esperar..."
+        wait_for_apt_locks
+        run_quiet "Actualizando repositorios (reintento)" apt-get update -y
+    fi
 
     # Instalar con reintento y verificación
     if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog; then
