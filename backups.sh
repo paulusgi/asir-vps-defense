@@ -8,16 +8,43 @@ BACKUP_ROOT="${BACKUP_ROOT:-/srv/backups}"
 BACKUP_RETENTION="${BACKUP_RETENTION:-7}"
 LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
+COPY_CMD=""
+WARN_COPY=0
 
 copy_tree() {
     local src="$1"
     local dst="$2"
-    if command -v rsync >/dev/null 2>&1; then
-        rsync -a "$src" "$dst"
-    else
-        echo "rsync no disponible; usando cp -a (puede ser más lento)" >&2
-        cp -a "$src" "$dst"
+    if [ -z "$COPY_CMD" ]; then
+        if command -v rsync >/dev/null 2>&1; then
+            COPY_CMD="rsync -a"
+        else
+            COPY_CMD="cp -a"
+            if [ $WARN_COPY -eq 0 ]; then
+                echo "rsync no disponible; usando cp -a (puede ser más lento)" >&2
+                WARN_COPY=1
+            fi
+        fi
     fi
+    # shellcheck disable=SC2086
+    $COPY_CMD "$src" "$dst"
+}
+
+ensure_dependencies() {
+    local missing=()
+    command -v rsync >/dev/null 2>&1 || missing+=(rsync)
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        return
+    fi
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        echo "Faltan dependencias y no está apt-get disponible: ${missing[*]}" >&2
+        return
+    fi
+
+    echo "Instalando dependencias: ${missing[*]}" >&2
+    apt-get update -y >/dev/null 2>&1 || true
+    apt-get install -y "${missing[@]}" >/dev/null 2>&1 || echo "No se pudo instalar: ${missing[*]}" >&2
 }
 
 pause() {
@@ -141,7 +168,7 @@ create_backup() {
         rm -rf "$staging"
         exit 1
     fi
-    if ! "${COMPOSE[@]}" exec -T mysql sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines --triggers asir_defense' > "$staging/db/asir_defense.sql"; then
+    if ! MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "${COMPOSE[@]}" exec -T mysql sh -c 'mysqldump -uroot --single-transaction --routines --triggers asir_defense' > "$staging/db/asir_defense.sql"; then
         echo "Fallo al generar mysqldump" >&2
         rm -rf "$staging"
         exit 1
@@ -291,6 +318,8 @@ menu_loop() {
 
 main() {
     require_root
+
+    ensure_dependencies
 
     if [ $# -eq 0 ]; then
         menu_loop
