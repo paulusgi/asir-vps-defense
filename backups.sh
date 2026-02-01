@@ -241,6 +241,12 @@ delete_backup() {
         echo "Debes indicar el nombre del backup (.tar.xz)" >&2
         exit 1
     fi
+    echo -n "Confirma eliminación de '$file' (escribe YES): "
+    read -r confirm
+    if [ "$confirm" != "YES" ]; then
+        echo "Operación cancelada"
+        return
+    fi
     if rm -f "$BACKUP_ROOT/$file"; then
         log "Backup eliminado manualmente: $file"
         echo "Backup eliminado: $file"
