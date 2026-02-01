@@ -50,13 +50,23 @@ load_env() {
 }
 
 ensure_mount() {
-    if ! mountpoint -q "$BACKUP_ROOT"; then
-        echo "El punto de montaje $BACKUP_ROOT no está disponible" >&2
-        exit 1
+    if mountpoint -q "$BACKUP_ROOT"; then
+        return
     fi
+
+    # Intento de montaje automático (loop o disco dedicado deben estar en /etc/fstab)
+    if mount "$BACKUP_ROOT" >/dev/null 2>&1 || mount -a >/dev/null 2>&1; then
+        if mountpoint -q "$BACKUP_ROOT"; then
+            return
+        fi
+    fi
+
+    echo "El punto de montaje $BACKUP_ROOT no está disponible" >&2
+    exit 1
 }
 
 prune_backups() {
+    ensure_mount
     local keep="$1"
     local files
     mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
@@ -137,6 +147,7 @@ delete_backup() {
 }
 
 download_hint() {
+    ensure_mount
     local host
     host=$(hostname -I 2>/dev/null | awk '{print $1}')
     echo "Descarga desde tu máquina local (ejemplo):"
@@ -162,12 +173,86 @@ EOF
     log "Cron diario configurado a las ${hour}:${minute} con retención ${keep}"
 }
 
+menu_loop() {
+    while true; do
+        echo ""
+        echo "==== Backup Manager ===="
+        echo "1) Crear backup ahora"
+        echo "2) Listar backups"
+        echo "3) Eliminar backup"
+        echo "4) Prune (mantener N últimos)"
+        echo "5) Programar backup diario"
+        echo "6) Cómo descargar (scp)"
+        echo "7) Salir"
+        echo -n "Opción: "
+        read -r opt
+
+        case "$opt" in
+            1)
+                echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
+                read -r keep
+                [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                create_backup "$keep"
+                ;;
+            2)
+                list_backups
+                ;;
+            3)
+                ensure_mount
+                local files
+                mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
+                if [ ${#files[@]} -eq 0 ]; then
+                    echo "No hay backups para borrar"
+                    continue
+                fi
+                echo "Selecciona backup a borrar:"
+                local i=1
+                for f in "${files[@]}"; do
+                    echo "  $i) $f"; i=$((i+1))
+                done
+                echo -n "Número: "
+                read -r sel
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
+                    delete_backup "${files[$((sel-1))]}"
+                else
+                    echo "Selección inválida"
+                fi
+                ;;
+            4)
+                echo -n "Mantener cuántos backups (ENTER=${BACKUP_RETENTION}): "
+                read -r keep
+                [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                prune_backups "$keep"
+                ;;
+            5)
+                echo -n "Hora diaria (HH:MM): "
+                read -r hhmm
+                echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
+                read -r keep
+                [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                schedule_backup "$hhmm" "$keep"
+                ;;
+            6)
+                download_hint
+                ;;
+            7)
+                exit 0
+                ;;
+            *)
+                echo "Opción inválida"
+                ;;
+        esac
+    done
+}
+
 main() {
     require_root
-    if [ $# -lt 1 ]; then
-        usage
-        exit 1
+
+    if [ $# -eq 0 ]; then
+        menu_loop
+        exit 0
     fi
+
     local cmd="$1"; shift
     case "$cmd" in
         create)

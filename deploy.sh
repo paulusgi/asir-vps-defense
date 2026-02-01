@@ -56,6 +56,8 @@ readonly BACKUP_VG_NAME="backups"
 readonly BACKUP_LV_NAME="backups"
 readonly BACKUP_MOUNTPOINT="/srv/backups"
 readonly BACKUP_RETENTION_DEFAULT=7
+readonly BACKUP_LOOP_FILE="/var/lib/asir-vps-defense/backups.img"
+readonly BACKUP_LOOP_DEFAULT_SIZE="20G"
 
 # Rutas de estado y logs
 readonly ENV_FILE=".env"
@@ -1297,9 +1299,22 @@ ensure_backup_volume() {
                 fi
             else
                 echo ""
-                echo -e "${YELLOW}No se encontró VG '${BOLD}$BACKUP_VG_NAME${NC}${YELLOW}'.${NC}"
-                echo -e "Indica el dispositivo de bloque para inicializar (ej: /dev/sdb) o deja vacío para saltar: "
-                read -r chosen_device < /dev/tty
+                echo -e "${YELLOW}No se encontraron discos libres dedicados.${NC}"
+                echo -e "${CYAN}Opción segura por defecto:${NC} Crear un archivo-loop en ${BOLD}$BACKUP_LOOP_FILE${NC}${CYAN} (no protege frente a fallo de disco).${NC}"
+                echo -n -e "¿Crear loop ahora? (S/n): "
+                read -r CONF_LOOP < /dev/tty
+                if [[ ! "$CONF_LOOP" =~ ^[Nn]$ ]]; then
+                    echo -n -e "Tamaño del loop (ENTER=${BACKUP_LOOP_DEFAULT_SIZE}): "
+                    read -r LOOP_SIZE < /dev/tty
+                    [ -z "$LOOP_SIZE" ] && LOOP_SIZE="$BACKUP_LOOP_DEFAULT_SIZE"
+                    if create_loop_backing "$LOOP_SIZE"; then
+                        chosen_device="$BACKUP_LOOP_DEVICE"
+                        log_info "Usando loop device ${BOLD}$chosen_device${NC} (${LOOP_SIZE})"
+                    else
+                        log_warn "No se pudo crear el loop; sin backups"
+                        return 1
+                    fi
+                fi
             fi
         fi
 
@@ -1367,6 +1382,26 @@ ensure_backup_volume() {
         log_error "No se pudo montar $BACKUP_MOUNTPOINT"
         return 1
     fi
+}
+
+create_loop_backing() {
+    local size="$1"
+    local dir
+    dir=$(dirname "$BACKUP_LOOP_FILE")
+    mkdir -p "$dir"
+    # Crear archivo sparse
+    if ! fallocate -l "$size" "$BACKUP_LOOP_FILE" 2>/dev/null && ! truncate -s "$size" "$BACKUP_LOOP_FILE" 2>/dev/null; then
+        log_error "No se pudo crear el archivo $BACKUP_LOOP_FILE"
+        return 1
+    fi
+    # Asociar a loop libre
+    BACKUP_LOOP_DEVICE=$(losetup -f --show "$BACKUP_LOOP_FILE")
+    if [ -z "$BACKUP_LOOP_DEVICE" ]; then
+        log_error "No se pudo asignar loop device"
+        return 1
+    fi
+    log_info "Loop creado: $BACKUP_LOOP_DEVICE (${BACKUP_LOOP_FILE})"
+    return 0
 }
 
 prompt_initial_backup() {
