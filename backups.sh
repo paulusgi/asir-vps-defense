@@ -10,6 +10,7 @@ LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
 COPY_CMD=()
 WARN_COPY=0
+BACKUP_PROTECT_DEFAULT="${BACKUP_PROTECT_DEFAULT:-no}"
 
 copy_tree() {
     local src="$1"
@@ -138,23 +139,32 @@ prune_backups() {
     local keep="$1"
     local files
     mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
-    local count=${#files[@]}
-    if [ "$count" -le "$keep" ]; then
-        echo "Prune: nada que borrar (total $count, keep $keep)"
+    local candidates=()
+    for f in "${files[@]}"; do
+        if [ ! -f "$BACKUP_ROOT/$f.keep" ]; then
+            candidates+=("$f")
+        fi
+    done
+
+    local count_total=${#files[@]}
+    local count_cand=${#candidates[@]}
+    if [ "$count_cand" -le "$keep" ]; then
+        echo "Prune: nada que borrar (total=$count_total, protegidos=$((count_total-count_cand)), keep=$keep)"
         return
     fi
-    local to_delete=$((count-keep))
+    local to_delete=$((count_cand-keep))
     local deleted=0
-    for fname in "${files[@]:0:to_delete}"; do
+    for fname in "${candidates[@]:0:to_delete}"; do
         rm -f "$BACKUP_ROOT/$fname"
         log "Backup eliminado por rotación: $fname"
         deleted=$((deleted+1))
     done
-    echo "Prune completado: eliminados $deleted, quedan $keep"
+    echo "Prune completado: eliminados $deleted (protegidos intactos)"
 }
 
 create_backup() {
     local retention="$1"
+    local protect_flag="${2:-}"
     load_env
     ensure_mount
     local ts
@@ -219,6 +229,24 @@ EOF
     chown root:root "$archive"
     log "Backup creado: $archive"
     echo "Backup creado: $archive"
+
+    if [ -z "$protect_flag" ]; then
+        protect_flag="$BACKUP_PROTECT_DEFAULT"
+    fi
+    if [ "$protect_flag" = "ask" ]; then
+        echo -n "¿Proteger este backup para excluirlo de prune? (S/n): "
+        read -r ans
+        if [ -z "$ans" ] || [[ "$ans" =~ ^[Ss]$ ]]; then
+            protect_flag="yes"
+        else
+            protect_flag="no"
+        fi
+    fi
+    if [ "$protect_flag" = "yes" ]; then
+        touch "$archive.keep"
+        echo "Backup marcado como protegido"
+    fi
+
     prune_backups "$retention"
 }
 
@@ -229,8 +257,12 @@ list_backups() {
     if [ -z "$output" ]; then
         echo "No hay backups disponibles"
     else
-        echo -e "Nombre\tFecha\tTamaño"
-        echo "$output"
+        echo -e "Nombre\tFecha\tTamaño\tProtegido"
+        while IFS=$'\t' read -r name date size; do
+            local protected="no"
+            [ -f "$BACKUP_ROOT/$name.keep" ] && protected="sí"
+            echo -e "$name\t$date\t$size\t$protected"
+        done <<< "$output"
     fi
 }
 
@@ -247,9 +279,18 @@ delete_backup() {
         echo "Operación cancelada"
         return
     fi
+    if [ -f "$BACKUP_ROOT/$file.keep" ]; then
+        echo "ATENCIÓN: el backup está protegido. Escribe DELETE para eliminarlo igualmente: "
+        read -r confirm2
+        if [ "$confirm2" != "DELETE" ]; then
+            echo "Operación cancelada"
+            return
+        fi
+    fi
     if rm -f "$BACKUP_ROOT/$file"; then
         log "Backup eliminado manualmente: $file"
         echo "Backup eliminado: $file"
+        rm -f "$BACKUP_ROOT/$file.keep"
     fi
 }
 
@@ -288,10 +329,11 @@ menu_loop() {
         echo "1) Crear backup ahora"
         echo "2) Listar backups"
         echo "3) Eliminar backup"
-        echo "4) Prune (mantener N últimos)"
-        echo "5) Programar backup diario"
-        echo "6) Cómo descargar (scp)"
-        echo "7) Salir"
+        echo "4) Proteger/Desproteger backup"
+        echo "5) Prune (mantener N últimos)"
+        echo "6) Programar backup diario"
+        echo "7) Cómo descargar (scp)"
+        echo "8) Salir"
         echo -n "Opción: "
         read -r opt
 
@@ -300,7 +342,7 @@ menu_loop() {
                 echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
-                create_backup "$keep"
+                create_backup "$keep" "ask"
                 pause
                 ;;
             2)
@@ -331,13 +373,45 @@ menu_loop() {
                 pause
                 ;;
             4)
+                ensure_mount
+                local files
+                mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
+                if [ ${#files[@]} -eq 0 ]; then
+                    echo "No hay backups para gestionar"
+                    pause
+                    continue
+                fi
+                echo "Selecciona backup para alternar protección:"
+                local i=1
+                for f in "${files[@]}"; do
+                    local tag=""
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && tag="[PROTEGIDO]"
+                    echo "  $i) $f $tag"; i=$((i+1))
+                done
+                echo -n "Número: "
+                read -r sel
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
+                    local target="${files[$((sel-1))]}"
+                    if [ -f "$BACKUP_ROOT/$target.keep" ]; then
+                        rm -f "$BACKUP_ROOT/$target.keep"
+                        echo "Backup desprotegido: $target"
+                    else
+                        touch "$BACKUP_ROOT/$target.keep"
+                        echo "Backup protegido: $target"
+                    fi
+                else
+                    echo "Selección inválida"
+                fi
+                pause
+                ;;
+            5)
                 echo -n "Mantener cuántos backups (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                 prune_backups "$keep"
                 pause
                 ;;
-            5)
+            6)
                 echo -n "Hora diaria (HH:MM): "
                 read -r hhmm
                 echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
@@ -346,11 +420,11 @@ menu_loop() {
                 schedule_backup "$hhmm" "$keep"
                 pause
                 ;;
-            6)
+            7)
                 download_hint
                 pause
                 ;;
-            7)
+            8)
                 exit 0
                 ;;
             *)
@@ -375,14 +449,19 @@ main() {
     case "$cmd" in
         create)
             local retention="$BACKUP_RETENTION"
+            local protect_cli="$BACKUP_PROTECT_DEFAULT"
             while [ $# -gt 0 ]; do
                 case "$1" in
                     --retention)
                         retention="$2"; shift 2;;
+                    --protect)
+                        protect_cli="yes"; shift;;
+                    --no-protect)
+                        protect_cli="no"; shift;;
                     *) break;;
                 esac
             done
-            create_backup "$retention"
+            create_backup "$retention" "$protect_cli"
             ;;
         list)
             list_backups
