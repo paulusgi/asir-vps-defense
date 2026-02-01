@@ -598,12 +598,18 @@ install_dependencies() {
 }
 
 ensure_lvm_tools() {
+    # Cargar módulo dm-mod para device-mapper (necesario para LVM)
+    modprobe dm-mod 2>/dev/null || true
+    
     if command -v pvcreate >/dev/null 2>&1; then
         return 0
     fi
     log_info "Instalando lvm2 para gestionar backups..."
     wait_for_apt_locks
     run_quiet "Instalando lvm2" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" lvm2
+    
+    # Recargar módulo tras instalar
+    modprobe dm-mod 2>/dev/null || true
 }
 
 # =============================================================================
@@ -1385,7 +1391,12 @@ ensure_backup_volume() {
             log_warn "Operación cancelada por el usuario"
             return 1
         fi
-        if ! pvcreate "$chosen_device" >/dev/null 2>&1; then
+        
+        # Limpiar firmas previas y esperar a que el dispositivo esté listo
+        wipefs -a "$chosen_device" >/dev/null 2>&1 || true
+        sleep 1
+        
+        if ! pvcreate -f "$chosen_device" >/dev/null 2>&1; then
             log_error "pvcreate falló sobre $chosen_device"
             return 1
         fi
@@ -1432,6 +1443,10 @@ create_loop_backing() {
     local dir
     dir=$(dirname "$BACKUP_LOOP_FILE")
     mkdir -p "$dir"
+    
+    # Asegurar módulo loop cargado
+    modprobe loop 2>/dev/null || true
+    
     # Crear archivo sparse
     if ! fallocate -l "$size" "$BACKUP_LOOP_FILE" 2>/dev/null && ! truncate -s "$size" "$BACKUP_LOOP_FILE" 2>/dev/null; then
         log_error "No se pudo crear el archivo $BACKUP_LOOP_FILE"
@@ -1443,6 +1458,10 @@ create_loop_backing() {
         log_error "No se pudo asignar loop device"
         return 1
     fi
+    
+    # Esperar a que el dispositivo esté disponible
+    sleep 1
+    
     log_info "Loop creado: $BACKUP_LOOP_DEVICE (${BACKUP_LOOP_FILE})"
     return 0
 }
