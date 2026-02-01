@@ -1414,6 +1414,10 @@ prompt_initial_backup() {
         log_warn "No se encuentra el directorio del proyecto para el backup inicial"
         return
     fi
+    if [ ! -x "$project_dir/backups.sh" ]; then
+        log_warn "No se encontró $project_dir/backups.sh; omitiendo backup inicial"
+        return
+    fi
     if ! mountpoint -q "$BACKUP_MOUNTPOINT"; then
         log_warn "Backups no configurados (volumen no montado)"
         return
