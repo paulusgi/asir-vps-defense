@@ -514,52 +514,40 @@ wait_for_apt_locks() {
     log_info "Verificando disponibilidad del gestor de paquetes..."
     
     local wait_count=0
-    local max_wait=60  # Máximo 10 minutos (60 * 10s)
+    local max_wait=60  # Máximo 3 minutos (60 * 3s)
     local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local spin_i=0
+    local showed_msg=false
     
-    # Bucle hasta que no haya procesos apt/dpkg ejecutándose
-    while pgrep -x apt > /dev/null || pgrep -x apt-get > /dev/null || pgrep -x dpkg > /dev/null || pgrep -x unattended-upgr > /dev/null; do
-        if [ $wait_count -eq 0 ]; then
+    # Comprobar únicamente los archivos de lock (lo que realmente bloquea apt)
+    while fuser /var/lib/dpkg/lock >/dev/null 2>&1 \
+       || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+       || fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
+       || fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
+        
+        if [ "$showed_msg" = false ]; then
             log_info "El sistema está ejecutando actualizaciones automáticas..."
-            echo -e "  ${DIM}Esperando a que terminen (esto puede tardar unos minutos)...${NC}"
+            echo -e "  ${DIM}Esperando a que se liberen los locks de apt/dpkg...${NC}"
+            showed_msg=true
         fi
-        printf "\r  ${CYAN}%s${NC} Esperando apt/dpkg... [%02d/%02d]" "${spinner:spin_i%10:1}" "$wait_count" "$max_wait"
-        spin_i=$((spin_i + 1))
-        sleep 10
-        wait_count=$((wait_count + 1))
-        if [ $wait_count -ge $max_wait ]; then
-            echo ""
-            log_error "Tiempo de espera excedido (10 minutos). Abortando."
-            echo -e "  ${YELLOW}Sugerencia:${NC} Espera a que terminen las actualizaciones y vuelve a ejecutar el script."
-            echo -e "  ${DIM}Puedes comprobar con: ps aux | grep -E 'apt|dpkg'${NC}"
-            exit 1
-        fi
-    done
-    
-    # Doble comprobación de archivos de bloqueo
-    local lock_wait=0
-    while fuser /var/lib/dpkg/lock >/dev/null 2>&1 || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
-        if [ $lock_wait -eq 0 ]; then
-            log_info "Bloqueo de base de datos dpkg detectado. Esperando..."
-        fi
-        printf "\r  ${CYAN}%s${NC} Esperando locks... [%02d/30]" "${spinner:spin_i%10:1}" "$lock_wait"
+        
+        printf "\r  ${CYAN}%s${NC} Esperando locks... [%02d/%02d]" "${spinner:spin_i%10:1}" "$wait_count" "$max_wait"
         spin_i=$((spin_i + 1))
         sleep 3
-        lock_wait=$((lock_wait + 1))
-        if [ $lock_wait -ge 30 ]; then
+        wait_count=$((wait_count + 1))
+        
+        if [ $wait_count -ge $max_wait ]; then
             echo ""
-            log_error "Tiempo de espera de locks excedido."
-            echo -e "  ${YELLOW}Sugerencia:${NC} Reinicia el sistema y vuelve a ejecutar el script."
+            log_error "Tiempo de espera excedido (3 minutos). Abortando."
+            echo -e "  ${YELLOW}Sugerencia:${NC} Espera a que terminen las actualizaciones y vuelve a ejecutar el script."
+            echo -e "  ${DIM}Comprueba con: sudo lsof /var/lib/dpkg/lock-frontend${NC}"
             exit 1
         fi
     done
     
-    # Espera adicional para asegurar que el sistema se estabilice
-    if [ $wait_count -gt 0 ] || [ $lock_wait -gt 0 ]; then
+    # Mensaje de éxito si hubo espera
+    if [ "$showed_msg" = true ]; then
         echo ""
-        log_info "Esperando estabilización del sistema..."
-        sleep 5
         log_success "Gestor de paquetes disponible"
     fi
     
