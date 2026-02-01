@@ -10,7 +10,7 @@ LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
 COPY_CMD=()
 WARN_COPY=0
-BACKUP_PROTECT_DEFAULT="${BACKUP_PROTECT_DEFAULT:-no}"
+BACKUP_PROTECT_DEFAULT="${BACKUP_PROTECT_DEFAULT:-ask}"
 
 copy_tree() {
     local src="$1"
@@ -167,6 +167,8 @@ create_backup() {
     local protect_flag="${2:-}"
     load_env
     ensure_mount
+    local existing_count
+    existing_count=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" 2>/dev/null | wc -l)
     local ts
     ts=$(date +%Y%m%d-%H%M%S)
     local name="backup-${ts}"
@@ -232,6 +234,11 @@ EOF
 
     if [ -z "$protect_flag" ]; then
         protect_flag="$BACKUP_PROTECT_DEFAULT"
+    fi
+    # Si es el primer backup, protégelo siempre
+    if [ "$existing_count" -eq 0 ]; then
+        protect_flag="yes"
+        echo "Primer backup detectado: marcado como protegido"
     fi
     if [ "$protect_flag" = "ask" ]; then
         echo -n "¿Proteger este backup para excluirlo de prune? (S/n): "
@@ -316,7 +323,7 @@ schedule_backup() {
     local cron_file="/etc/cron.d/asir-backups"
     cat > "$cron_file" <<EOF
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-${minute} ${hour} * * * root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT} LOG_FILE=${LOG_FILE} bash ${PROJECT_DIR}/backups.sh create --retention ${keep} >> ${LOG_FILE} 2>&1
+${minute} ${hour} * * * root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT} LOG_FILE=${LOG_FILE} bash ${PROJECT_DIR}/backups.sh create --retention ${keep} --no-protect >> ${LOG_FILE} 2>&1
 EOF
     chmod 644 "$cron_file"
     log "Cron diario configurado a las ${hour}:${minute} con retención ${keep}"
@@ -342,6 +349,7 @@ menu_loop() {
                 echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                # Manuales: proteger por defecto, pero preguntar si desea cambiar
                 create_backup "$keep" "ask"
                 pause
                 ;;
