@@ -399,6 +399,12 @@ audit_permissions() {
 load_env_if_present() {
     # Carga las variables de .env en el entorno actual
     if [ -f .env ]; then
+        # Si el .env fue sanitizado (contiene REDACTED), no lo cargamos
+        if grep -q 'REDACTED' .env 2>/dev/null; then
+            log_warn "El .env está sanitizado de un deploy anterior. Se regenerará."
+            rm -f .env
+            return
+        fi
         set -a
         # shellcheck source=/dev/null
         . ./.env
