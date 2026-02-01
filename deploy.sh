@@ -1235,6 +1235,9 @@ ensure_backup_volume() {
         return 1
     }
 
+    local root_dev
+    root_dev=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//')
+
     if mountpoint -q "$BACKUP_MOUNTPOINT"; then
         log_info "Volumen de backups ya montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
         return 0
@@ -1255,10 +1258,19 @@ ensure_backup_volume() {
         local chosen_device="${BACKUP_DEVICE:-}"
         local candidates=()
 
+        echo ""
+        echo -e "${CYAN}Dispositivos detectados (lsblk):${NC}"
+        lsblk -e7 -o NAME,TYPE,SIZE,MOUNTPOINT | sed 's/^/  /'
+        echo ""
+
         # Detectar discos sin montajes ni particiones montadas (evita el disco del sistema)
         while IFS= read -r disk; do
             # Si el disco o cualquiera de sus hijos tiene un mountpoint, se descarta
             if lsblk -nr -o MOUNTPOINT "$disk" | grep -q '\S'; then
+                continue
+            fi
+            # Evitar el disco que contiene / (root)
+            if [ -n "$root_dev" ] && [ "$disk" = "$root_dev" ]; then
                 continue
             fi
             candidates+=("$disk")
@@ -1298,6 +1310,20 @@ ensure_backup_volume() {
         if ! lsblk -ndo NAME "$chosen_device" >/dev/null 2>&1; then
             log_error "Dispositivo inválido: $chosen_device"
             return 1
+        fi
+        # Proteger el disco/partición del sistema
+        if [ -n "$root_dev" ]; then
+            if [ "$chosen_device" = "$root_dev" ]; then
+                log_error "No puedes usar el disco que contiene / ($root_dev) para backups"
+                return 1
+            fi
+            # Si se elige una partición, comprobar su disco padre
+            local parent
+            parent=$(lsblk -no PKNAME "$chosen_device" 2>/dev/null || true)
+            if [ -n "$parent" ] && [ "/dev/$parent" = "$root_dev" ]; then
+                log_error "El dispositivo seleccionado pertenece al disco del sistema (/dev/$parent). Usa un disco dedicado."
+                return 1
+            fi
         fi
         echo -n -e "${CYAN}Se creará PV+VG+LV en ${BOLD}$chosen_device${NC}${CYAN}. ¿Confirmar? (escribe YES en mayúsculas): ${NC}"
         read -r CONFIRM_BACKUP_LVM < /dev/tty
