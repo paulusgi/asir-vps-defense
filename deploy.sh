@@ -996,21 +996,16 @@ handle_honeypot_logic() {
         fi
     fi
 
-    # Establecer Contraseña del Honeypot
-    echo ""
-    echo -n -e "  ${CYAN}Contraseña para el Honeypot (ENTER para generar aleatoria):${NC} "
-    read -r HONEYPOT_TARGET_PASS < /dev/tty
-    
-    if [ -z "$HONEYPOT_TARGET_PASS" ]; then
-        HONEYPOT_TARGET_PASS=$(openssl rand -base64 12)
-        log_info "Contraseña generada para Honeypot: ${BOLD}$HONEYPOT_TARGET_PASS${NC}"
-    fi
+    # Establecer Contraseña del Honeypot (segura y secreta - no se almacena)
+    # Generamos una contraseña fuerte de ~33 caracteres que no se guarda en ningún sitio
+    HONEYPOT_TARGET_PASS=$(openssl rand -base64 33 | tr -d '\n')
+    log_info "Contraseña segura generada para el honeypot (no se almacena)"
 
     # Si NO convertimos el usuario actual, establecer contraseña ahora. 
     # Si convertimos, esperamos hasta el final.
     if [ "$CONVERT_CURRENT_USER_TO_HONEYPOT" = false ]; then
         echo "$HONEYPOT_TARGET_USER:$HONEYPOT_TARGET_PASS" | chpasswd
-        log_success "Contraseña establecida para ${BOLD}$HONEYPOT_TARGET_USER${NC}"
+        log_success "Usuario honeypot ${BOLD}$HONEYPOT_TARGET_USER${NC} configurado"
     fi
 }
 
