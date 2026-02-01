@@ -238,7 +238,7 @@ create_backup() {
     staging=$(mktemp -d)
 
     mkdir -p "$staging/files"
-    for path in docker-compose.yml .env nginx php promtail loki mysql/init src; do
+    for path in docker-compose.yml .env secrets nginx php promtail loki mysql/init src; do
         if [ -e "$PROJECT_DIR/$path" ]; then
             copy_tree "$PROJECT_DIR/$path" "$staging/files/"
         fi
@@ -510,7 +510,7 @@ restore_backup() {
 
     # Restaurar archivos de configuración
     echo "  ${DIM}Restaurando archivos de configuración...${NC}"
-    for path in docker-compose.yml .env nginx php promtail loki mysql src; do
+    for path in docker-compose.yml .env secrets nginx php promtail loki mysql src; do
         if [ -e "$staging/files/$path" ]; then
             rm -rf "$PROJECT_DIR/$path"
             cp -a "$staging/files/$path" "$PROJECT_DIR/"
