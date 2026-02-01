@@ -1355,7 +1355,7 @@ ensure_backup_volume() {
                 echo -n -e "¿Crear loop ahora? (S/n): "
                 read -r CONF_LOOP < /dev/tty
                 if [[ ! "$CONF_LOOP" =~ ^[Nn]$ ]]; then
-                    echo -n -e "Tamaño del loop (ENTER=${BACKUP_LOOP_DEFAULT_SIZE}): "
+                    echo -n -e "Tamaño del loop en GB (ENTER=${BACKUP_LOOP_DEFAULT_SIZE}): "
                     read -r LOOP_SIZE < /dev/tty
                     [ -z "$LOOP_SIZE" ] && LOOP_SIZE="$BACKUP_LOOP_DEFAULT_SIZE"
                     if create_loop_backing "$LOOP_SIZE"; then
@@ -1450,12 +1450,18 @@ create_loop_backing() {
     dir=$(dirname "$BACKUP_LOOP_FILE")
     mkdir -p "$dir"
     
+    # Si el usuario puso solo un número, asumir GB
+    if [[ "$size" =~ ^[0-9]+$ ]]; then
+        size="${size}G"
+        log_info "Interpretado como ${size}"
+    fi
+    
     # Asegurar módulo loop cargado
     modprobe loop 2>/dev/null || true
     
     # Crear archivo sparse
     if ! fallocate -l "$size" "$BACKUP_LOOP_FILE" 2>/dev/null && ! truncate -s "$size" "$BACKUP_LOOP_FILE" 2>/dev/null; then
-        log_error "No se pudo crear el archivo $BACKUP_LOOP_FILE"
+        log_error "No se pudo crear el archivo $BACKUP_LOOP_FILE (tamaño: $size)"
         return 1
     fi
     # Asociar a loop libre
