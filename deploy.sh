@@ -114,19 +114,19 @@ CREDENTIALS_MODE="unknown"
 # =============================================================================
 
 log_info() {
-    echo -e "${BLUE}[ℹ]${NC}  $1"
+    echo -e "${BLUE}[ ℹ ]${NC} $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[✓]${NC}  $1"
+    echo -e "${GREEN}[ ✓ ]${NC} $1"
 }
 
 log_warn() {
-    echo -e "${YELLOW}[⚠]${NC}  $1"
+    echo -e "${YELLOW}[ ⚠ ]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[✗]${NC}  $1"
+    echo -e "${RED}[ ✗ ]${NC} $1"
 }
 
 log_step() {
@@ -148,7 +148,7 @@ run_quiet() {
 
     # Si el comando no pudo lanzarse, marcamos fallo temprano
     if [ -z "$pid" ]; then
-        printf "\r  %-55s [✗]\n" "$msg"
+        printf "\r  %-55s [${RED}✗${NC}]\n" "$msg"
         log_error "No se pudo lanzar el comando: $*"
         return 1
     fi
