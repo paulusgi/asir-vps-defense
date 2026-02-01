@@ -1408,6 +1408,25 @@ create_loop_backing() {
     return 0
 }
 
+ensure_backups_script() {
+    local dir="$1"
+    local owner="${2:-}"
+    local path="$dir/backups.sh"
+    if [ -x "$path" ]; then
+        return 0
+    fi
+    log_info "Descargando backups.sh en $path"
+    if curl -fsSL "https://raw.githubusercontent.com/paulusgi/asir-vps-defense/mainv2/backups.sh" -o "$path"; then
+        chmod 750 "$path"
+        if [ -n "$owner" ]; then
+            chown "$owner:$owner" "$path" 2>/dev/null || true
+        fi
+        return 0
+    fi
+    log_warn "No se pudo obtener backups.sh desde el repositorio; gestiona el backup manualmente"
+    return 1
+}
+
 prompt_initial_backup() {
     local project_dir="$1"
     if [ ! -d "$project_dir" ]; then
@@ -1461,6 +1480,7 @@ main() {
         local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
         if [ -d "$PROJECT_DIR" ]; then
             cd "$PROJECT_DIR" || exit 1
+            ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
             load_env_if_present
             print_section "BACKUPS PENDIENTES"
             if ensure_backup_volume; then
@@ -1552,6 +1572,7 @@ main() {
     if is_step_done "project_done"; then
         log_info "Proyecto ya presente"
         cd "$PROJECT_DIR" || exit 1
+        ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
     else
         # Crear directorio si no existe
         if [ ! -d "$PROJECT_DIR" ]; then
@@ -1570,7 +1591,7 @@ main() {
 
         # Asegurar que la propiedad es correcta inmediatamente
         chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "$PROJECT_DIR"
-        [ -f "$PROJECT_DIR/backups.sh" ] && chmod 750 "$PROJECT_DIR/backups.sh"
+        ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
         cd "$PROJECT_DIR" || exit 1
         mark_step_done "project_done"
         log_success "Directorio de trabajo: ${BOLD}$(pwd)${NC}"
