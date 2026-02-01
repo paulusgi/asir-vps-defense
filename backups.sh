@@ -34,6 +34,7 @@ ensure_dependencies() {
     command -v rsync >/dev/null 2>&1 || missing+=(rsync)
 
     if [ ${#missing[@]} -eq 0 ]; then
+        echo "Dependencias OK"
         return
     fi
 
@@ -44,7 +45,11 @@ ensure_dependencies() {
 
     echo "Instalando dependencias: ${missing[*]}" >&2
     apt-get update -y >/dev/null 2>&1 || true
-    apt-get install -y "${missing[@]}" >/dev/null 2>&1 || echo "No se pudo instalar: ${missing[*]}" >&2
+    if apt-get install -y "${missing[@]}" >/dev/null 2>&1; then
+        echo "Dependencias instaladas: ${missing[*]}"
+    else
+        echo "No se pudo instalar: ${missing[*]}" >&2
+    fi
 }
 
 pause() {
@@ -136,13 +141,17 @@ prune_backups() {
     mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
     local count=${#files[@]}
     if [ "$count" -le "$keep" ]; then
+        echo "Prune: nada que borrar (total $count, keep $keep)"
         return
     fi
     local to_delete=$((count-keep))
+    local deleted=0
     for fname in "${files[@]:0:to_delete}"; do
         rm -f "$BACKUP_ROOT/$fname"
         log "Backup eliminado por rotación: $fname"
+        deleted=$((deleted+1))
     done
+    echo "Prune completado: eliminados $deleted, quedan $keep"
 }
 
 create_backup() {
@@ -190,12 +199,20 @@ EOF
     chmod 640 "$archive"
     chown root:root "$archive"
     log "Backup creado: $archive"
+    echo "Backup creado: $archive"
     prune_backups "$retention"
 }
 
 list_backups() {
     ensure_mount
-    find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\t%TY-%Tm-%Td %TH:%TM\t%k KB\n' | sort
+    local output
+    output=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\t%TY-%Tm-%Td %TH:%TM\t%k KB\n' | sort)
+    if [ -z "$output" ]; then
+        echo "No hay backups disponibles"
+    else
+        echo -e "Nombre\tFecha\tTamaño"
+        echo "$output"
+    fi
 }
 
 delete_backup() {
@@ -207,6 +224,7 @@ delete_backup() {
     fi
     if rm -f "$BACKUP_ROOT/$file"; then
         log "Backup eliminado manualmente: $file"
+        echo "Backup eliminado: $file"
     fi
 }
 
@@ -216,6 +234,7 @@ download_hint() {
     host=$(hostname -I 2>/dev/null | awk '{print $1}')
     echo "Descarga desde tu máquina local (ejemplo):"
     echo "  scp -P <puerto_ssh> <usuario>@${host:-<host>}:$BACKUP_ROOT/<backup>.tar.xz ."
+    echo "(Usa el puerto SSH configurado en tu VPS)"
 }
 
 schedule_backup() {
@@ -235,6 +254,7 @@ ${minute} ${hour} * * * root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT}
 EOF
     chmod 644 "$cron_file"
     log "Cron diario configurado a las ${hour}:${minute} con retención ${keep}"
+    echo "Programado backup diario a las ${hour}:${minute} (keep=${keep})"
 }
 
 menu_loop() {
