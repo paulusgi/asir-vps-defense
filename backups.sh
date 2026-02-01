@@ -141,7 +141,14 @@ Comandos:
   delete <fichero>         Elimina un backup concreto (.tar.xz)
   prune [--keep N]         Conserva solo los N últimos (por fecha)
   download-hint            Muestra cómo descargar un backup vía scp
+  restore <fichero>        Restaura un backup existente
   schedule <HH:MM> [N]     Programa backup diario a esa hora; retención N (defecto ${BACKUP_RETENTION})
+
+Contenido de cada backup:
+  - docker-compose.yml, .env (configuración)
+  - nginx/, php/, promtail/, loki/ (servicios)
+  - mysql/init/, src/ (código y SQL)
+  - db/ (datadir MySQL completo)
 EOF
 }
 
@@ -383,35 +390,158 @@ delete_backup() {
 
 download_hint() {
     ensure_mount
-    local host port latest
+    local host port
     host=$(detect_host_ip)
     port=$(detect_ssh_port)
-    latest=""
 
-    mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%T@ %f\n' | sort -nr)
-    if [ ${#files[@]} -gt 0 ]; then
-        latest=$(echo "${files[0]}" | awk '{print $2}')
+    mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort -r)
+    if [ ${#files[@]} -eq 0 ]; then
+        echo ""
+        echo "  ${YELLOW}⚠ No hay backups disponibles para descargar${NC}"
+        return
     fi
 
     echo ""
-    echo "  ${BOLD}${CYAN}📥 Descarga de backups${NC}"
+    echo "  ${BOLD}${CYAN}📥 Descargar backup via SCP${NC}"
     echo "  ${DIM}────────────────────────────────────────${NC}"
     echo ""
-    echo "  ${YELLOW}Desde tu máquina local, ejecuta:${NC}"
+    echo "  Selecciona el backup a descargar:"
     echo ""
-    if [ -n "$latest" ]; then
-        echo "  ${GREEN}scp -P ${port} <usuario>@${host:-<IP>}:${BACKUP_ROOT}/${latest} .${NC}"
+    local i=1
+    for f in "${files[@]}"; do
+        local prot=""
+        [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒${NC}"
+        local size
+        size=$(du -h "$BACKUP_ROOT/$f" 2>/dev/null | awk '{print $1}')
+        echo "    ${GREEN}$i${NC})  $f  ${DIM}($size)${NC}$prot"
+        i=$((i+1))
+    done
+    echo ""
+    echo -n "  ${CYAN}➤ Número:${NC} "
+    read -r sel
+
+    if ! [[ "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt ${#files[@]} ]; then
         echo ""
-        echo "  ${DIM}↑ Comando para el backup más reciente${NC}"
-    else
-        echo "  ${GREEN}scp -P ${port} <usuario>@${host:-<IP>}:${BACKUP_ROOT}/<backup>.tar.xz .${NC}"
+        echo "  ${RED}✗ Selección inválida${NC}"
+        return
     fi
+
+    local chosen="${files[$((sel-1))]}"
+    echo ""
+    echo "  ${BOLD}${YELLOW}Desde tu máquina local, ejecuta:${NC}"
+    echo ""
+    echo "  ${WHITE}scp -P ${port} <usuario>@${host:-<IP>}:${BACKUP_ROOT}/${chosen} .${NC}"
     echo ""
     echo "  ${DIM}Notas:${NC}"
     echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
     echo "  ${DIM}  • Puerto SSH detectado: ${WHITE}${port}${NC}"
     echo "  ${DIM}  • IP detectada: ${WHITE}${host:-desconocida}${NC}"
     echo ""
+}
+
+import_backup() {
+    ensure_mount
+    local host port
+    host=$(detect_host_ip)
+    port=$(detect_ssh_port)
+
+    echo ""
+    echo "  ${BOLD}${CYAN}📤 Importar backup externo${NC}"
+    echo "  ${DIM}────────────────────────────────────────${NC}"
+    echo ""
+    echo "  ${WHITE}Para subir un backup desde tu máquina local:${NC}"
+    echo ""
+    echo "  ${WHITE}scp -P ${port} /ruta/local/backup-XXXXXX.tar.xz <usuario>@${host:-<IP>}:${BACKUP_ROOT}/${NC}"
+    echo ""
+    echo "  ${DIM}Notas:${NC}"
+    echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
+    echo "  ${DIM}  • El archivo debe terminar en .tar.xz${NC}"
+    echo "  ${DIM}  • Puerto SSH detectado: ${WHITE}${port}${NC}"
+    echo "  ${DIM}  • IP detectada: ${WHITE}${host:-desconocida}${NC}"
+    echo ""
+    echo "  ${YELLOW}Una vez subido, usa la opción 8 para restaurarlo.${NC}"
+    echo ""
+}
+
+restore_backup() {
+    ensure_mount
+    local file="$1"
+    local archive="$BACKUP_ROOT/$file"
+
+    if [ ! -f "$archive" ]; then
+        echo "  ${RED}✗ Backup no encontrado: $file${NC}" >&2
+        return 1
+    fi
+
+    echo ""
+    echo "  ${BOLD}${YELLOW}⚠ RESTAURACIÓN DE BACKUP${NC}"
+    echo "  ${DIM}────────────────────────────────────────${NC}"
+    echo ""
+    echo "  ${WHITE}Contenido del backup:${NC}"
+    echo "    • docker-compose.yml, .env (configuración)"
+    echo "    • nginx/, php/, promtail/, loki/ (configs)"
+    echo "    • mysql/init/ (scripts SQL)"
+    echo "    • src/ (código del panel)"
+    echo "    • db/ (datadir MySQL completo)"
+    echo ""
+    echo "  ${RED}⚠ ADVERTENCIA:${NC}"
+    echo "    Esto SOBRESCRIBIRÁ la configuración actual"
+    echo "    y REEMPLAZARÁ la base de datos MySQL."
+    echo ""
+    echo -n "  Escribe ${WHITE}RESTORE${NC} para continuar: "
+    read -r confirm
+    if [ "$confirm" != "RESTORE" ]; then
+        echo "  ${DIM}Operación cancelada${NC}"
+        return
+    fi
+
+    local staging
+    staging=$(mktemp -d)
+
+    echo ""
+    echo "  ${DIM}Extrayendo backup...${NC}"
+    if ! tar -xJf "$archive" -C "$staging"; then
+        echo "  ${RED}✗ Fallo al extraer el backup${NC}" >&2
+        rm -rf "$staging"
+        return 1
+    fi
+
+    # Restaurar archivos de configuración
+    echo "  ${DIM}Restaurando archivos de configuración...${NC}"
+    for path in docker-compose.yml .env nginx php promtail loki mysql src; do
+        if [ -e "$staging/files/$path" ]; then
+            rm -rf "$PROJECT_DIR/$path"
+            cp -a "$staging/files/$path" "$PROJECT_DIR/"
+        fi
+    done
+
+    # Restaurar MySQL datadir
+    if [ -d "$staging/db" ] && [ "$(ls -A "$staging/db" 2>/dev/null)" ]; then
+        echo "  ${DIM}Deteniendo MySQL...${NC}"
+        "${COMPOSE[@]}" stop mysql >/dev/null 2>&1 || true
+
+        echo "  ${DIM}Restaurando datadir de MySQL...${NC}"
+        # Obtener el volumen de MySQL
+        local mysql_volume
+        mysql_volume=$(docker volume ls -q | grep -E 'mysql_data$' | head -1)
+        if [ -n "$mysql_volume" ]; then
+            # Limpiar y restaurar
+            docker run --rm -v "$mysql_volume":/var/lib/mysql -v "$staging/db":/backup busybox sh -c 'rm -rf /var/lib/mysql/* && cp -a /backup/. /var/lib/mysql/'
+        fi
+
+        echo "  ${DIM}Iniciando MySQL...${NC}"
+        "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || true
+    fi
+
+    rm -rf "$staging"
+
+    echo ""
+    echo "  ${GREEN}✔ Backup restaurado correctamente${NC}"
+    echo ""
+    echo "  ${YELLOW}Nota:${NC} Puede ser necesario reiniciar los servicios:"
+    echo "    ${DIM}cd $PROJECT_DIR && docker compose down && docker compose up -d${NC}"
+    echo ""
+    log "Backup restaurado: $file"
 }
 
 schedule_backup() {
@@ -445,10 +575,13 @@ menu_loop() {
         echo "    ${GREEN}4${NC})  🔒  Proteger/Desproteger backup"
         echo "    ${GREEN}5${NC})  🧹  Prune (mantener N últimos)"
         echo "    ${GREEN}6${NC})  ⏰  Programar backup diario"
-        echo "    ${GREEN}7${NC})  📥  Cómo descargar (scp)"
-        echo "    ${RED}8${NC})  🚪  Salir"
+        echo "    ${GREEN}7${NC})  📥  Descargar backup (scp)"
+        echo "    ${GREEN}8${NC})  🔄  Restaurar backup"
+        echo "    ${GREEN}9${NC})  📤  Importar backup externo"
+        echo "    ${GREEN}i${NC})  ℹ️   Qué contiene un backup"
+        echo "    ${RED}0${NC})  🚪  Salir"
         echo ""
-        echo -n "  ${CYAN}➤ Selecciona opción [1-8]:${NC} "
+        echo -n "  ${CYAN}➤ Selecciona opción [0-9/i]:${NC} "
         read -r opt
 
         case "$opt" in
@@ -570,6 +703,74 @@ menu_loop() {
                 pause
                 ;;
             8)
+                ensure_mount
+                local files
+                mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort -r)
+                if [ ${#files[@]} -eq 0 ]; then
+                    echo ""
+                    echo "  ${YELLOW}⚠ No hay backups para restaurar${NC}"
+                    pause
+                    continue
+                fi
+                echo ""
+                echo "  ${BOLD}${CYAN}🔄 Restaurar backup${NC}"
+                echo "  ${DIM}────────────────────────────────────────${NC}"
+                echo ""
+                local i=1
+                for f in "${files[@]}"; do
+                    local prot=""
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒${NC}"
+                    local size
+                    size=$(du -h "$BACKUP_ROOT/$f" 2>/dev/null | awk '{print $1}')
+                    echo "    ${GREEN}$i${NC})  $f  ${DIM}($size)${NC}$prot"
+                    i=$((i+1))
+                done
+                echo ""
+                echo -n "  ${CYAN}➤ Número a restaurar:${NC} "
+                read -r sel
+                if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
+                    restore_backup "${files[$((sel-1))]}"
+                else
+                    echo ""
+                    echo "  ${RED}✗ Selección inválida${NC}"
+                fi
+                pause
+                ;;
+            9)
+                import_backup
+                pause
+                ;;
+            i|I)
+                echo ""
+                echo "  ${BOLD}${CYAN}ℹ️  Contenido de un backup${NC}"
+                echo "  ${DIM}────────────────────────────────────────${NC}"
+                echo ""
+                echo "  Cada backup (.tar.xz) incluye:"
+                echo ""
+                echo "    ${WHITE}Configuración:${NC}"
+                echo "      • docker-compose.yml  ${DIM}(definición de servicios)${NC}"
+                echo "      • .env                ${DIM}(credenciales y variables)${NC}"
+                echo ""
+                echo "    ${WHITE}Servicios:${NC}"
+                echo "      • nginx/              ${DIM}(configuración web server)${NC}"
+                echo "      • php/                ${DIM}(configuración PHP-FPM)${NC}"
+                echo "      • promtail/           ${DIM}(recolector de logs)${NC}"
+                echo "      • loki/               ${DIM}(almacén de logs)${NC}"
+                echo ""
+                echo "    ${WHITE}Datos:${NC}"
+                echo "      • mysql/init/         ${DIM}(scripts SQL iniciales)${NC}"
+                echo "      • src/                ${DIM}(código fuente del panel)${NC}"
+                echo "      • db/                 ${DIM}(datadir MySQL completo)${NC}"
+                echo ""
+                echo "    ${WHITE}Metadatos:${NC}"
+                echo "      • meta.json           ${DIM}(fecha, host, retención)${NC}"
+                echo ""
+                echo "  ${DIM}El backup permite restaurar completamente el sistema${NC}"
+                echo "  ${DIM}incluyendo usuarios del panel y configuración.${NC}"
+                echo ""
+                pause
+                ;;
+            0)
                 exit 0
                 ;;
             *)
@@ -628,6 +829,9 @@ main() {
             ;;
         download-hint)
             download_hint
+            ;;
+        restore)
+            restore_backup "${1:-}"
             ;;
         schedule)
             schedule_backup "${1:-}" "${2:-$BACKUP_RETENTION}"
