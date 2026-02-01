@@ -9,6 +9,17 @@ BACKUP_RETENTION="${BACKUP_RETENTION:-7}"
 LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
 
+copy_tree() {
+    local src="$1"
+    local dst="$2"
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a "$src" "$dst"
+    else
+        echo "rsync no disponible; usando cp -a (puede ser más lento)" >&2
+        cp -a "$src" "$dst"
+    fi
+}
+
 pause() {
     echo ""
     read -r -p "Pulsa ENTER para continuar... " _
@@ -120,7 +131,7 @@ create_backup() {
     mkdir -p "$staging/files"
     for path in docker-compose.yml .env nginx php promtail loki mysql/init src; do
         if [ -e "$PROJECT_DIR/$path" ]; then
-            rsync -a "$PROJECT_DIR/$path" "$staging/files/"
+            copy_tree "$PROJECT_DIR/$path" "$staging/files/"
         fi
     done
 
