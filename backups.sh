@@ -172,9 +172,11 @@ load_env() {
         echo "No se encontró .env en $PROJECT_DIR" >&2
         exit 1
     fi
-    if [ -z "${MYSQL_ROOT_PASSWORD:-}" ]; then
-        echo "MYSQL_ROOT_PASSWORD no definido en .env" >&2
-        exit 1
+    # Nota: MYSQL_ROOT_PASSWORD ya no es necesario porque usamos copia física
+    # del datadir (stop MySQL → copy → start). Si está redactado, es correcto.
+    if [ -z "${MYSQL_ROOT_PASSWORD:-}" ] || [[ "${MYSQL_ROOT_PASSWORD:-}" == *REDACTED* ]]; then
+        # Password no disponible o sanitizada - OK para backup físico
+        MYSQL_ROOT_PASSWORD=""
     fi
 }
 
