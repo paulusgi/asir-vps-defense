@@ -1131,11 +1131,15 @@ create_docker_secrets() {
     echo -n "$root_pass" > "$secrets_dir/mysql_root_password.txt"
     echo -n "$app_pass" > "$secrets_dir/mysql_app_password.txt"
     
-    # Permisos: solo root puede leer
+    # Permisos: root para root_password, uid 1000 (PHP) para app_password
     chmod 600 "$secrets_dir/mysql_root_password.txt"
-    chmod 600 "$secrets_dir/mysql_app_password.txt"
-    chmod 700 "$secrets_dir"
-    chown -R root:root "$secrets_dir"
+    chown root:root "$secrets_dir/mysql_root_password.txt"
+    
+    # PHP corre como uid 1000, necesita leer este archivo
+    chmod 400 "$secrets_dir/mysql_app_password.txt"
+    chown 1000:1000 "$secrets_dir/mysql_app_password.txt"
+    
+    chmod 755 "$secrets_dir"
     
     log_success "Docker Secrets creados en $secrets_dir"
     echo -e "  ${DIM}Los passwords se leen de /run/secrets/ dentro de los contenedores${NC}"
