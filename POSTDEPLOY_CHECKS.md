@@ -30,14 +30,19 @@ systemctl status fail2ban --no-pager
 fail2ban-client status sshd
 ```
 
-**Firewall UFW** (puerto SSH elegido; por defecto 2929/tcp abierto, 22 cerrado)
+**Firewall UFW** (solo el puerto SSH elegido debe estar abierto)
 ```bash
 sudo ufw status numbered
 ```
 
-**Puertos expuestos** (sustituye 2929 si elegiste otro)
+**Puertos expuestos** (ajusta el puerto SSH si elegiste otro)
 ```bash
-ss -tulpen | grep -E ':2929|:8888'
+ss -tulpen | grep -E ':(22|2929|8888)\s'
+```
+
+**Salud Loki** (esperado `healthy`)
+```bash
+docker inspect -f '{{.State.Health.Status}}' asir_loki
 ```
 
 **Promtail posiciones**
