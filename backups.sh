@@ -176,7 +176,7 @@ create_backup() {
         rm -rf "$staging"
         exit 1
     fi
-    if ! MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "${COMPOSE[@]}" exec -T mysql sh -c 'mysqldump -uroot --single-transaction --routines --triggers asir_defense' > "$staging/db/asir_defense.sql"; then
+    if ! "${COMPOSE[@]}" exec -T -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql sh -c 'mysqldump -uroot --single-transaction --routines --triggers asir_defense' > "$staging/db/asir_defense.sql"; then
         echo "Fallo al generar mysqldump" >&2
         rm -rf "$staging"
         exit 1
