@@ -1318,6 +1318,7 @@ ensure_backup_volume() {
     if mount "$BACKUP_MOUNTPOINT"; then
         log_success "Volumen de backups montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
         chmod 750 "$BACKUP_MOUNTPOINT"
+        mark_step_done "backups_prepared"
     else
         log_error "No se pudo montar $BACKUP_MOUNTPOINT"
         return 1
@@ -1376,7 +1377,12 @@ main() {
             load_env_if_present
             print_section "BACKUPS PENDIENTES"
             ensure_backup_volume || log_warn "Backups no configurados (puedes reejecutar tras preparar un disco)"
-            prompt_initial_backup "$PROJECT_DIR"
+            if ! is_step_done "backups_prepared"; then
+                log_warn "Backups siguen pendientes: prepara un disco y reejecuta si es necesario"
+            else
+                prompt_initial_backup "$PROJECT_DIR"
+                mark_step_done "backups_done"
+            fi
             print_section "AUDITORÍA DE PERMISOS"
             log_info "Instalación completa detectada. Ejecutando auditoría y finalizando..."
             audit_permissions "$PROJECT_DIR"
