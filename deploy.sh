@@ -1372,6 +1372,10 @@ ensure_backup_volume() {
     uuid=$(blkid -o value -s UUID "$lv_path")
     if ! grep -q "$BACKUP_MOUNTPOINT" /etc/fstab; then
         echo "UUID=$uuid $BACKUP_MOUNTPOINT ext4 defaults,nofail 0 2" >> /etc/fstab
+        if command -v systemctl >/dev/null 2>&1; then
+            log_info "Recargando systemd tras actualizar fstab"
+            systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
     fi
 
     if mount "$BACKUP_MOUNTPOINT"; then
