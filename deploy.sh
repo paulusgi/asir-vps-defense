@@ -1702,7 +1702,12 @@ main() {
         echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CONFIGURACIÓN DE PUERTO SSH${NC}                          ${CYAN}│${NC}"
         echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
-        echo -e "  ${DIM}Puerto SSH por defecto: 22 (se recomienda cambiar)${NC}"
+        echo -e "  ${DIM}Puerto SSH actual: 22${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Opciones:${NC}"
+        echo -e "    • ${WHITE}Puerto 22${NC}  → Máxima captura de ataques (honeypot más efectivo)"
+        echo -e "    • ${WHITE}Otro puerto${NC} → Más seguridad, menos ruido de bots"
+        echo ""
         echo -n -e "  ${CYAN}Nuevo puerto SSH (ENTER para usar 2929):${NC} "
         read -r SSH_PORT < /dev/tty
         if [ -z "$SSH_PORT" ]; then
