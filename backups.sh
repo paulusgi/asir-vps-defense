@@ -9,6 +9,32 @@ BACKUP_RETENTION="${BACKUP_RETENTION:-7}"
 LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
 
+pause() {
+    echo ""
+    read -r -p "Pulsa ENTER para continuar... " _
+}
+
+render_header() {
+    clear
+    echo "=============================="
+    echo "     BACKUP MANAGER"
+    echo "=============================="
+    local mount_state="no montado"
+    if mountpoint -q "$BACKUP_ROOT"; then
+        mount_state="montado"
+        local usage
+        usage=$(df -h "$BACKUP_ROOT" 2>/dev/null | awk 'NR==2 {print $4" libres / "$2" tot"}')
+        echo "Destino : $BACKUP_ROOT ($mount_state)"
+        echo "Espacio : ${usage:-desconocido}"
+    else
+        echo "Destino : $BACKUP_ROOT ($mount_state)"
+    fi
+    local count
+    count=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" 2>/dev/null | wc -l || echo 0)
+    echo "Backups : $count (retención por defecto $BACKUP_RETENTION)"
+    echo "=============================="
+}
+
 usage() {
     cat <<EOF
 Uso: $0 <comando> [opciones]
@@ -175,8 +201,7 @@ EOF
 
 menu_loop() {
     while true; do
-        echo ""
-        echo "==== Backup Manager ===="
+        render_header
         echo "1) Crear backup ahora"
         echo "2) Listar backups"
         echo "3) Eliminar backup"
@@ -193,9 +218,11 @@ menu_loop() {
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                 create_backup "$keep"
+                pause
                 ;;
             2)
                 list_backups
+                pause
                 ;;
             3)
                 ensure_mount
@@ -203,6 +230,7 @@ menu_loop() {
                 mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
                 if [ ${#files[@]} -eq 0 ]; then
                     echo "No hay backups para borrar"
+                    pause
                     continue
                 fi
                 echo "Selecciona backup a borrar:"
@@ -217,12 +245,14 @@ menu_loop() {
                 else
                     echo "Selección inválida"
                 fi
+                pause
                 ;;
             4)
                 echo -n "Mantener cuántos backups (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                 prune_backups "$keep"
+                pause
                 ;;
             5)
                 echo -n "Hora diaria (HH:MM): "
@@ -231,15 +261,18 @@ menu_loop() {
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                 schedule_backup "$hhmm" "$keep"
+                pause
                 ;;
             6)
                 download_hint
+                pause
                 ;;
             7)
                 exit 0
                 ;;
             *)
                 echo "Opción inválida"
+                pause
                 ;;
         esac
     done

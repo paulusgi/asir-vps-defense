@@ -588,10 +588,10 @@ install_dependencies() {
     fi
 
     # Instalar con reintento y verificación
-    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog, lvm2, xz-utils, cron)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron; then
+    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog, lvm2, xz-utils, cron, rsync)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron rsync; then
         log_warn "Fallo en la instalación. Reintentando tras espera..."
         wait_for_apt_locks
-        run_quiet "Instalando paquetes base (reintento)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron
+        run_quiet "Instalando paquetes base (reintento)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron rsync
     fi
 
     # Comprobación crítica: Fail2Ban debe estar presente
