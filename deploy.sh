@@ -1114,6 +1114,67 @@ EOF
 }
 
 # =============================================================================
+# LIMPIEZA DE CREDENCIALES SENSIBLES DEL .env
+# =============================================================================
+# Las credenciales de MySQL solo son necesarias durante el primer
+# `docker compose up`. Una vez que MySQL arranca, las guarda internamente
+# en su datadir. Mantenerlas en texto plano es mala práctica.
+#
+# Esta función:
+#   1. Reemplaza MYSQL_ROOT_PASSWORD y MYSQL_PASSWORD por placeholders
+#   2. Preserva las demás variables necesarias para operación normal
+#   3. Se ejecuta ANTES del primer backup para que los backups no
+#      contengan credenciales en texto plano
+# =============================================================================
+
+sanitize_env() {
+    local env_file="${1:-.env}"
+    if [ ! -f "$env_file" ]; then
+        log_warn "No se encontró $env_file para sanitizar"
+        return 1
+    fi
+
+    log_step "Limpiando credenciales sensibles del .env"
+
+    # Variables sensibles a limpiar (regex compatible con sed)
+    local sensitive_vars=(
+        "MYSQL_ROOT_PASSWORD"
+        "MYSQL_PASSWORD"
+    )
+
+    local changed=0
+    for var in "${sensitive_vars[@]}"; do
+        if grep -qE "^${var}=.+" "$env_file"; then
+            # Reemplazar el valor por un placeholder indicativo
+            sed -i "s|^${var}=.*|${var}=<REDACTED_AFTER_DEPLOY>|" "$env_file"
+            changed=1
+        fi
+    done
+
+    if [ "$changed" -eq 1 ]; then
+        # Añadir comentario explicativo si no existe
+        if ! grep -q "SECURITY NOTE" "$env_file"; then
+            cat >> "$env_file" <<'SECURITY_EOF'
+
+# ==============================================================================
+# SECURITY NOTE
+# ==============================================================================
+# Las credenciales de MySQL han sido eliminadas de este archivo por seguridad.
+# MySQL ya las tiene almacenadas internamente en su datadir.
+# Los backups utilizan copia física del datadir (no requieren password).
+# Si necesitas las credenciales originales, consulta:
+#   - El archivo de credenciales cifrado del admin
+#   - O regenera con: docker compose down -v && ./deploy.sh
+# ==============================================================================
+SECURITY_EOF
+        fi
+        log_success "Credenciales sensibles eliminadas del .env"
+    else
+        log_info ".env ya está sanitizado o no contiene credenciales"
+    fi
+}
+
+# =============================================================================
 # DESCARGA DE BASE DE DATOS GEOLITE2
 # =============================================================================
 
@@ -1660,9 +1721,10 @@ main() {
     # =========================================================================
     # PASO 5: Backups y Acciones Finales
     # =========================================================================
-    print_section "PASO 5/5: BACKUPS Y AJUSTES FINALES"
+    print_section "PASO 5/5: CONFIGURACIÓN DE BACKUPS"
+
+    # Preparar volumen de backups (pero NO crear backup aún - se hará al final)
     ensure_backup_volume || log_warn "Backups no configurados (puedes ejecutar ./deploy.sh tras preparar el VG 'backups')"
-    prompt_initial_backup "$PROJECT_DIR"
     if is_step_done "final_done"; then
         log_info "Acciones finales ya aplicadas"
     else
@@ -1843,6 +1905,21 @@ main() {
     log_info "Limpiando variables sensibles del entorno..."
     unset MYSQL_ROOT_PASS MYSQL_APP_PASS WEB_ADMIN_PASS WEB_ADMIN_HASH ADMIN_PASS ADMIN_PASS_CONFIRM \
         HONEYPOT_TARGET_PASS SSH_KEY CREDENTIALS_MODE DOMAIN_NAME HOST_HINT SSH_PORT
+
+    # =========================================================================
+    # SANITIZACIÓN DEL .env Y BACKUP INICIAL
+    # =========================================================================
+    # Ahora que las credenciales ya se mostraron al usuario, podemos:
+    # 1. Limpiar el .env de passwords en texto plano
+    # 2. Crear el backup inicial (que ya NO contendrá credenciales)
+    echo ""
+    print_section "BACKUP INICIAL"
+    
+    # Sanitizar .env ANTES del backup
+    sanitize_env "$PROJECT_DIR/.env"
+    
+    # Crear backup inicial si el volumen está disponible
+    prompt_initial_backup "$PROJECT_DIR"
 
     echo ""
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
