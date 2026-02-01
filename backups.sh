@@ -12,14 +12,17 @@ COPY_CMD=()
 WARN_COPY=0
 BACKUP_PROTECT_DEFAULT="${BACKUP_PROTECT_DEFAULT:-ask}"
 
-# Estilo mínimo (ANSI)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-DIM='\033[2m'
-NC='\033[0m'
+# Estilo (ANSI con $'...' para compatibilidad con printf)
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+CYAN=$'\033[0;36m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+NC=$'\033[0m'
+BLUE=$'\033[0;34m'
+MAGENTA=$'\033[0;35m'
+WHITE=$'\033[1;37m'
 
 copy_tree() {
     local src="$1"
@@ -79,38 +82,53 @@ detect_host_ip() {
 
 pause() {
     echo ""
-    read -r -p "${DIM}Pulsa ENTER para continuar...${NC} " _
+    echo -n "  ${DIM}[Pulsa ENTER para continuar]${NC} "
+    read -r _
 }
 
 render_header() {
     clear
-    echo -e "${BOLD}══════════════════════════════════════════${NC}"
-    echo -e "${BOLD}        BACKUP MANAGER${NC}"
-    echo -e "${BOLD}══════════════════════════════════════════${NC}"
+    echo ""
+    echo "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
+    echo "${CYAN}║${NC}           ${BOLD}${WHITE}🗄️  BACKUP MANAGER${NC}                        ${CYAN}║${NC}"
+    echo "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
+    echo ""
 
-    local mount_state="${RED}DESMONTADO${NC}"
+    local mount_icon mount_state mount_color
     local usage="desconocido"
     if mountpoint -q "$BACKUP_ROOT"; then
-        mount_state="${GREEN}MONTADO${NC}"
-        usage=$(df -h "$BACKUP_ROOT" 2>/dev/null | awk 'NR==2 {print $4" libres / "$2" tot"}')
+        mount_icon="●"
+        mount_state="MONTADO"
+        mount_color="$GREEN"
+        usage=$(df -h "$BACKUP_ROOT" 2>/dev/null | awk 'NR==2 {print $4" libres / "$2" total"}')
+    else
+        mount_icon="○"
+        mount_state="DESMONTADO"
+        mount_color="$RED"
     fi
 
     local total protected last_entry last_name last_date
     total=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" 2>/dev/null | wc -l || echo 0)
     protected=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz.keep" 2>/dev/null | wc -l || echo 0)
     last_entry=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%T@ %f\n' 2>/dev/null | sort -nr | head -1 || true)
+    last_name=""
+    last_date=""
     if [ -n "$last_entry" ]; then
         last_name=$(echo "$last_entry" | awk '{print $2}')
-        last_date=$(echo "$last_entry" | awk '{print $1}' | xargs -I{} date -d @{} '+%Y-%m-%d %H:%M')
+        last_date=$(echo "$last_entry" | awk '{print $1}' | xargs -I{} date -d @{} '+%Y-%m-%d %H:%M' 2>/dev/null || echo "?")
     fi
 
-    printf "%s %-28s %s\n" "${CYAN}Destino:${NC}" "$BACKUP_ROOT" "(${mount_state})"
-    printf "%s %-28s\n" "${CYAN}Espacio:${NC}" "${usage}"
-    printf "%s %-28s\n" "${CYAN}Backups:${NC}" "${total} (protegidos: ${protected}, keep=${BACKUP_RETENTION})"
+    echo "  ${DIM}┌─ Estado ─────────────────────────────────────────┐${NC}"
+    echo "  ${DIM}│${NC}  ${CYAN}Destino:${NC}  $BACKUP_ROOT"
+    echo "  ${DIM}│${NC}  ${CYAN}Estado:${NC}   ${mount_color}${mount_icon} ${mount_state}${NC}"
+    echo "  ${DIM}│${NC}  ${CYAN}Espacio:${NC}  ${usage}"
+    echo "  ${DIM}│${NC}  ${CYAN}Backups:${NC}  ${WHITE}${total}${NC} total  ${GREEN}${protected}${NC} protegidos  ${YELLOW}keep=${BACKUP_RETENTION}${NC}"
     if [ -n "$last_name" ]; then
-        printf "%s %-28s\n" "${CYAN}Último:${NC}" "${last_name} @ ${last_date}"
+        echo "  ${DIM}│${NC}  ${CYAN}Último:${NC}   ${last_name}"
+        echo "  ${DIM}│${NC}            ${DIM}${last_date}${NC}"
     fi
-    echo -e "${BOLD}──────────────────────────────────────────${NC}"
+    echo "  ${DIM}└──────────────────────────────────────────────────┘${NC}"
+    echo ""
 }
 
 usage() {
@@ -184,7 +202,7 @@ prune_backups() {
     local count_total=${#files[@]}
     local count_cand=${#candidates[@]}
     if [ "$count_cand" -le "$keep" ]; then
-        echo "Prune: nada que borrar (total=$count_total, protegidos=$((count_total-count_cand)), keep=$keep)"
+        echo "  ${GREEN}✔${NC} Prune: nada que borrar (total=$count_total, protegidos=$((count_total-count_cand)), keep=$keep)"
         return
     fi
     local to_delete=$((count_cand-keep))
@@ -194,7 +212,7 @@ prune_backups() {
         log "Backup eliminado por rotación: $fname"
         deleted=$((deleted+1))
     done
-    echo "Prune completado: eliminados $deleted (protegidos intactos)"
+    echo "  ${GREEN}✔${NC} Prune completado: ${YELLOW}$deleted eliminados${NC} (protegidos intactos)"
 }
 
 create_backup() {
@@ -224,19 +242,20 @@ create_backup() {
         exit 1
     fi
 
-    echo "Deteniendo MySQL para copia física del datadir..."
+    echo "  ${DIM}Deteniendo MySQL para copia física del datadir...${NC}"
     local mysql_stopped=false
     if "${COMPOSE[@]}" stop mysql >/dev/null 2>&1; then
         mysql_stopped=true
     else
-        echo -e "${RED}No se pudo detener MySQL${NC}" >&2
+        echo "  ${RED}✗ No se pudo detener MySQL${NC}" >&2
         rm -rf "$staging"
         exit 1
     fi
 
     # Copiar datadir desde el volumen del contenedor detenido
+    echo "  ${DIM}Copiando datadir...${NC}"
     if ! docker run --rm --volumes-from asir_mysql -v "$staging/db":/backup busybox sh -c 'cd /var/lib/mysql && cp -a . /backup'; then
-        echo -e "${RED}Fallo al copiar el datadir de MySQL${NC}" >&2
+        echo "  ${RED}✗ Fallo al copiar el datadir de MySQL${NC}" >&2
         rm -rf "$staging"
         if [ "$mysql_stopped" = true ]; then
             "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || true
@@ -244,7 +263,7 @@ create_backup() {
         exit 1
     fi
 
-    echo "Iniciando MySQL..."
+    echo "  ${DIM}Iniciando MySQL...${NC}"
     if [ "$mysql_stopped" = true ]; then
         "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || echo "MySQL no se pudo iniciar automáticamente" >&2
     fi
@@ -267,7 +286,10 @@ EOF
     local archive_size
     archive_size=$(du -h "$archive" | awk '{print $1}')
     log "Backup creado: $archive ($archive_size)"
-    echo -e "${GREEN}✔${NC} Backup creado: $archive (${archive_size})"
+    echo ""
+    echo "  ${GREEN}✔ Backup creado:${NC} $archive"
+    echo "  ${DIM}Tamaño: ${archive_size}${NC}"
+    echo ""
 
     if [ -z "$protect_flag" ]; then
         protect_flag="$BACKUP_PROTECT_DEFAULT"
@@ -275,10 +297,10 @@ EOF
     # Si es el primer backup, protégelo siempre
     if [ "$existing_count" -eq 0 ]; then
         protect_flag="yes"
-        echo -e "${YELLOW}Primer backup detectado: marcado como protegido${NC}"
+        echo "  ${YELLOW}🔒 Primer backup detectado: marcado como protegido automáticamente${NC}"
     fi
     if [ "$protect_flag" = "ask" ]; then
-        echo -n "¿Proteger este backup para excluirlo de prune? (S/n): "
+        echo -n "  ¿Proteger este backup para excluirlo de prune? (${GREEN}S${NC}/n): "
         read -r ans
         if [ -z "$ans" ] || [[ "$ans" =~ ^[Ss]$ ]]; then
             protect_flag="yes"
@@ -288,7 +310,7 @@ EOF
     fi
     if [ "$protect_flag" = "yes" ]; then
         touch "$archive.keep"
-        echo "Backup marcado como protegido"
+        echo "  ${GREEN}🔒 Backup marcado como protegido${NC}"
     fi
 
     prune_backups "$retention"
@@ -297,17 +319,34 @@ EOF
 list_backups() {
     ensure_mount
     local output
-    output=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\t%TY-%Tm-%Td %TH:%TM\t%k KB\n' | sort)
+    output=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\t%TY-%Tm-%Td %TH:%TM\t%k\n' | sort)
     if [ -z "$output" ]; then
-        echo "No hay backups disponibles"
+        echo ""
+        echo "  ${YELLOW}No hay backups disponibles${NC}"
+        echo ""
     else
-        printf "%-36s  %-16s  %-8s  %-10s\n" "Nombre" "Fecha" "Tamaño" "Protegido"
-        printf "%-36s  %-16s  %-8s  %-10s\n" "------------------------------------" "----------------" "--------" "----------"
-        while IFS=$'\t' read -r name date size; do
-            local protected="no"
-            [ -f "$BACKUP_ROOT/$name.keep" ] && protected="sí"
-            printf "%-36s  %-16s  %-8s  %-10s\n" "$name" "$date" "$size" "$protected"
+        echo ""
+        echo "  ${BOLD}${CYAN}📋 Lista de backups${NC}"
+        echo "  ${DIM}────────────────────────────────────────────────────────────────────${NC}"
+        printf "  ${BOLD}%-38s  %-18s  %10s  %s${NC}\n" "Nombre" "Fecha" "Tamaño" "Estado"
+        echo "  ${DIM}────────────────────────────────────────────────────────────────────${NC}"
+        while IFS=$'\t' read -r name date size_kb; do
+            local protected_icon="  "
+            local protected_color="$NC"
+            if [ -f "$BACKUP_ROOT/$name.keep" ]; then
+                protected_icon="🔒"
+                protected_color="$GREEN"
+            fi
+            local size_human
+            if [ "$size_kb" -ge 1024 ]; then
+                size_human="$(( size_kb / 1024 )) MB"
+            else
+                size_human="${size_kb} KB"
+            fi
+            printf "  ${protected_color}%-38s${NC}  ${DIM}%-18s${NC}  %10s  %s\n" "$name" "$date" "$size_human" "$protected_icon"
         done <<< "$output"
+        echo "  ${DIM}────────────────────────────────────────────────────────────────────${NC}"
+        echo ""
     fi
 }
 
@@ -315,26 +354,29 @@ delete_backup() {
     ensure_mount
     local file="$1"
     if [ -z "$file" ]; then
-        echo "Debes indicar el nombre del backup (.tar.xz)" >&2
+        echo "  ${RED}✗ Debes indicar el nombre del backup (.tar.xz)${NC}" >&2
         exit 1
     fi
-    echo -n "Confirma eliminación de '$file' (escribe YES): "
+    echo ""
+    echo -n "  ${YELLOW}⚠ Confirma eliminación de '$file'${NC} (escribe ${WHITE}YES${NC}): "
     read -r confirm
     if [ "$confirm" != "YES" ]; then
-        echo "Operación cancelada"
+        echo "  ${DIM}Operación cancelada${NC}"
         return
     fi
     if [ -f "$BACKUP_ROOT/$file.keep" ]; then
-        echo -n "${RED}ATENCIÓN:${NC} backup protegido. Escribe DELETE para eliminarlo igualmente: "
+        echo ""
+        echo -n "  ${RED}⚠⚠ ATENCIÓN: backup PROTEGIDO.${NC} Escribe ${WHITE}DELETE${NC} para eliminar: "
         read -r confirm2
         if [ "$confirm2" != "DELETE" ]; then
-            echo "Operación cancelada"
+            echo "  ${DIM}Operación cancelada${NC}"
             return
         fi
     fi
     if rm -f "$BACKUP_ROOT/$file"; then
         log "Backup eliminado manualmente: $file"
-        echo -e "${YELLOW}Backup eliminado:${NC} $file"
+        echo ""
+        echo "  ${GREEN}✔${NC} Backup eliminado: $file"
         rm -f "$BACKUP_ROOT/$file.keep"
     fi
 }
@@ -344,20 +386,32 @@ download_hint() {
     local host port latest
     host=$(detect_host_ip)
     port=$(detect_ssh_port)
+    latest=""
 
     mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%T@ %f\n' | sort -nr)
     if [ ${#files[@]} -gt 0 ]; then
         latest=$(echo "${files[0]}" | awk '{print $2}')
     fi
 
-    echo "${BOLD}Descarga rápida desde tu máquina local:${NC}"
+    echo ""
+    echo "  ${BOLD}${CYAN}📥 Descarga de backups${NC}"
+    echo "  ${DIM}────────────────────────────────────────${NC}"
+    echo ""
+    echo "  ${YELLOW}Desde tu máquina local, ejecuta:${NC}"
+    echo ""
     if [ -n "$latest" ]; then
-        echo "  scp -P ${port} <usuario>@${host:-<host>}:$BACKUP_ROOT/${latest} ."
-        echo "${DIM}(Usando el backup más reciente)${NC}"
+        echo "  ${GREEN}scp -P ${port} <usuario>@${host:-<IP>}:${BACKUP_ROOT}/${latest} .${NC}"
+        echo ""
+        echo "  ${DIM}↑ Comando para el backup más reciente${NC}"
     else
-        echo "  scp -P ${port} <usuario>@${host:-<host>}:$BACKUP_ROOT/<backup>.tar.xz ."
+        echo "  ${GREEN}scp -P ${port} <usuario>@${host:-<IP>}:${BACKUP_ROOT}/<backup>.tar.xz .${NC}"
     fi
-    echo "${DIM}Sustituye <usuario> por tu admin SSH y ajusta la ruta si cambiaste BACKUP_ROOT.${NC}"
+    echo ""
+    echo "  ${DIM}Notas:${NC}"
+    echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
+    echo "  ${DIM}  • Puerto SSH detectado: ${WHITE}${port}${NC}"
+    echo "  ${DIM}  • IP detectada: ${WHITE}${host:-desconocida}${NC}"
+    echo ""
 }
 
 schedule_backup() {
@@ -377,29 +431,35 @@ ${minute} ${hour} * * * root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT}
 EOF
     chmod 644 "$cron_file"
     log "Cron diario configurado a las ${hour}:${minute} con retención ${keep}"
-    echo "Programado backup diario a las ${hour}:${minute} (keep=${keep})"
+    echo "  ${GREEN}✔${NC} Backup diario programado a las ${WHITE}${hour}:${minute}${NC} (keep=${keep})"
 }
 
 menu_loop() {
     while true; do
         render_header
-        echo "${BOLD}Acciones:${NC}"
-        echo "  1) Crear backup ahora"
-        echo "  2) Listar backups"
-        echo "  3) Eliminar backup"
-        echo "  4) Proteger/Desproteger backup"
-        echo "  5) Prune (mantener N últimos)"
-        echo "  6) Programar backup diario"
-        echo "  7) Cómo descargar (scp)"
-        echo "  8) Salir"
-        echo -n "${CYAN}Opción:${NC} "
+        echo "  ${BOLD}Acciones disponibles:${NC}"
+        echo ""
+        echo "    ${GREEN}1${NC})  📦  Crear backup ahora"
+        echo "    ${GREEN}2${NC})  📋  Listar backups"
+        echo "    ${GREEN}3${NC})  🗑️   Eliminar backup"
+        echo "    ${GREEN}4${NC})  🔒  Proteger/Desproteger backup"
+        echo "    ${GREEN}5${NC})  🧹  Prune (mantener N últimos)"
+        echo "    ${GREEN}6${NC})  ⏰  Programar backup diario"
+        echo "    ${GREEN}7${NC})  📥  Cómo descargar (scp)"
+        echo "    ${RED}8${NC})  🚪  Salir"
+        echo ""
+        echo -n "  ${CYAN}➤ Selecciona opción [1-8]:${NC} "
         read -r opt
 
         case "$opt" in
             1)
-                echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
+                echo ""
+                echo "  ${BOLD}${CYAN}📦 Crear backup${NC}"
+                echo ""
+                echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                echo ""
                 # Manuales: proteger por defecto, pero preguntar si desea cambiar
                 create_backup "$keep" "ask"
                 pause
@@ -413,21 +473,30 @@ menu_loop() {
                 local files
                 mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
                 if [ ${#files[@]} -eq 0 ]; then
-                    echo "${YELLOW}No hay backups para borrar${NC}"
+                    echo ""
+                    echo "  ${YELLOW}⚠ No hay backups para borrar${NC}"
                     pause
                     continue
                 fi
-                echo "${BOLD}Selecciona backup a borrar:${NC}"
+                echo ""
+                echo "  ${BOLD}${CYAN}🗑️  Eliminar backup${NC}"
+                echo "  ${DIM}────────────────────────────────────────${NC}"
+                echo ""
                 local i=1
                 for f in "${files[@]}"; do
-                    echo "  $i) $f"; i=$((i+1))
+                    local prot=""
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒${NC}"
+                    echo "    ${GREEN}$i${NC})  $f$prot"
+                    i=$((i+1))
                 done
-                echo -n "Número: "
+                echo ""
+                echo -n "  ${CYAN}➤ Número a eliminar:${NC} "
                 read -r sel
                 if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
                     delete_backup "${files[$((sel-1))]}"
                 else
-                    echo "Selección inválida"
+                    echo ""
+                    echo "  ${RED}✗ Selección inválida${NC}"
                 fi
                 pause
                 ;;
@@ -436,46 +505,63 @@ menu_loop() {
                 local files
                 mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
                 if [ ${#files[@]} -eq 0 ]; then
-                    echo "${YELLOW}No hay backups para gestionar${NC}"
+                    echo ""
+                    echo "  ${YELLOW}⚠ No hay backups para gestionar${NC}"
                     pause
                     continue
                 fi
-                echo "${BOLD}Selecciona backup para alternar protección:${NC}"
+                echo ""
+                echo "  ${BOLD}${CYAN}🔐 Proteger/Desproteger backup${NC}"
+                echo "  ${DIM}────────────────────────────────────────${NC}"
+                echo ""
                 local i=1
                 for f in "${files[@]}"; do
-                    local tag=""
-                    [ -f "$BACKUP_ROOT/$f.keep" ] && tag="[PROTEGIDO]"
-                    echo "  $i) $f $tag"; i=$((i+1))
+                    local tag="${DIM}(sin protección)${NC}"
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && tag="${GREEN}🔒 PROTEGIDO${NC}"
+                    echo "    ${GREEN}$i${NC})  $f  $tag"
+                    i=$((i+1))
                 done
-                echo -n "Número: "
+                echo ""
+                echo -n "  ${CYAN}➤ Número para alternar:${NC} "
                 read -r sel
                 if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
                     local target="${files[$((sel-1))]}"
                     if [ -f "$BACKUP_ROOT/$target.keep" ]; then
                         rm -f "$BACKUP_ROOT/$target.keep"
-                        echo "Backup desprotegido: $target"
+                        echo ""
+                        echo "  ${YELLOW}🔓 Backup desprotegido:${NC} $target"
                     else
                         touch "$BACKUP_ROOT/$target.keep"
-                        echo "Backup protegido: $target"
+                        echo ""
+                        echo "  ${GREEN}🔒 Backup protegido:${NC} $target"
                     fi
                 else
-                    echo "Selección inválida"
+                    echo ""
+                    echo "  ${RED}✗ Selección inválida${NC}"
                 fi
                 pause
                 ;;
             5)
-                echo -n "Mantener cuántos backups (ENTER=${BACKUP_RETENTION}): "
+                echo ""
+                echo "  ${BOLD}${CYAN}🧹 Prune (limpieza)${NC}"
+                echo ""
+                echo -n "  Mantener cuántos backups (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                echo ""
                 prune_backups "$keep"
                 pause
                 ;;
             6)
-                echo -n "Hora diaria (HH:MM): "
+                echo ""
+                echo "  ${BOLD}${CYAN}⏰ Programar backup diario${NC}"
+                echo ""
+                echo -n "  Hora diaria (HH:MM): "
                 read -r hhmm
-                echo -n "Retención (ENTER=${BACKUP_RETENTION}): "
+                echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
+                echo ""
                 schedule_backup "$hhmm" "$keep"
                 pause
                 ;;
@@ -487,7 +573,8 @@ menu_loop() {
                 exit 0
                 ;;
             *)
-                echo "Opción inválida"
+                echo ""
+                echo "  ${RED}✗ Opción inválida${NC}"
                 pause
                 ;;
         esac
