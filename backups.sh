@@ -167,13 +167,10 @@ require_root() {
 load_env() {
     if [ -f "$PROJECT_DIR/.env" ]; then
         # shellcheck source=/dev/null
-        . "$PROJECT_DIR/.env"
-    else
-        echo "No se encontró .env en $PROJECT_DIR" >&2
-        exit 1
+        . "$PROJECT_DIR/.env" 2>/dev/null || true
     fi
     # Nota: MYSQL_ROOT_PASSWORD ya no es necesario porque usamos copia física
-    # del datadir (stop MySQL → copy → start). Si está redactado, es correcto.
+    # del datadir (stop MySQL → copy → start). Si está redactado o no existe, es correcto.
     if [ -z "${MYSQL_ROOT_PASSWORD:-}" ] || [[ "${MYSQL_ROOT_PASSWORD:-}" == *REDACTED* ]]; then
         # Password no disponible o sanitizada - OK para backup físico
         MYSQL_ROOT_PASSWORD=""
