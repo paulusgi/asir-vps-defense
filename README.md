@@ -19,6 +19,7 @@ Panel de auditoría SSH para VPS Debian/Ubuntu. Monitoriza intentos de acceso y 
 | **GeoIP Local** | Base GeoLite2-City.mmdb sin API externa |
 | **Panel Seguro** | CSRF en login, rate-limit Nginx, cookies hardened |
 | **Observabilidad** | Loki + Promtail con retención 31 días |
+| **Backups** | Script interactivo con restauración completa, protección y cron |
 
 ---
 
@@ -85,12 +86,36 @@ Ver [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) para comandos de verificación:
 | Cifrado credenciales (age) | ✅ Activo |
 | Fail2Ban (maxretry 2, ban 35d) | ✅ Activo |
 | Healthchecks Docker | ✅ Loki + Promtail |
+| Sanitización credenciales .env | ✅ Post-deploy |
+| Backups con restauración | ✅ backups.sh |
 
 **Limitaciones conocidas:**
 - Sin roles admin/viewer diferenciados
 - Sin MFA
-- Sin backup automático de MySQL
-- Proyecto en modo demo/formativo
+
+---
+
+## 💾 Gestión de Backups
+
+El script `backups.sh` proporciona un menú interactivo para gestión completa:
+
+```bash
+sudo ./backups.sh          # Menú interactivo
+sudo ./backups.sh create   # Crear backup (CLI)
+sudo ./backups.sh list     # Listar backups
+sudo ./backups.sh restore <archivo.tar.xz>  # Restaurar
+```
+
+**Contenido del backup:**
+- Configuración: `docker-compose.yml`, `.env`, `nginx/`, `php/`
+- Datos: `src/`, `mysql/init/`, datadir MySQL completo
+- Logs: `promtail/`, `loki/`
+
+**Características:**
+- Protección de backups críticos (excluidos del prune automático)
+- Programación de backups diarios vía cron
+- Transferencia fácil con comandos `scp` generados
+- Restauración completa con un comando
 
 ---
 
