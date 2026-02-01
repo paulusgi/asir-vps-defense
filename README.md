@@ -15,7 +15,7 @@ Panel de auditoría SSH para VPS Debian/Ubuntu. Monitoriza intentos de acceso y 
 | Función | Descripción |
 |---------|-------------|
 | **SSH Honeypot** | `PasswordAuthentication yes` global para capturar ataques; admin real solo por clave pública |
-| **Fail2Ban** | 2 oportunidades (ban al 3er fallo) → ban 35 días; eventos visibles en el panel |
+| **Fail2Ban** | 2 intentos reales → ban 35 días; eventos visibles en el panel |
 | **GeoIP Local** | Base GeoLite2-City.mmdb sin API externa |
 | **Panel Seguro** | CSRF en login, rate-limit Nginx, cookies hardened |
 | **Observabilidad** | Loki + Promtail con retención 31 días |
@@ -84,7 +84,7 @@ Ver [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) para comandos de verificación:
 | Rate-limit Nginx | ✅ 5 req/min |
 | Cookies httponly/samesite | ✅ Activo |
 | Cifrado credenciales (age) | ✅ Activo |
-| Fail2Ban (maxretry 3, ban 35d) | ✅ Activo |
+| Fail2Ban (2 intentos, ban 35d) | ✅ Activo |
 | Healthchecks Docker | ✅ Loki + Promtail |
 | Sanitización credenciales .env | ✅ Post-deploy |
 | Backups con restauración | ✅ backups.sh |
