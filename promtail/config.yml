@@ -63,3 +63,52 @@ scrape_configs:
           source: timestamp
           format: 'Jan 02 15:04:05'
           location: Local
+
+  # ===========================================================================
+  # COWRIE SSH HONEYPOT - Log de texto (eventos legibles)
+  # Formato: 2024-01-31T14:23:45+0000 [cowrie.ssh.transport...] mensaje
+  # ===========================================================================
+  - job_name: cowrie
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: cowrie
+          __path__: /var/log/host/cowrie/cowrie.log*
+    pipeline_stages:
+      # Extraer timestamp ISO 8601 del inicio de la línea
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})'
+      - timestamp:
+          source: timestamp
+          format: '2006-01-02T15:04:05'
+          location: UTC
+
+  # ===========================================================================
+  # COWRIE SSH HONEYPOT - Log JSON (eventos estructurados para métricas avanzadas)
+  # Cowrie emite eventos JSON en cowrie.json: conexiones, logins, comandos ejecutados
+  # ===========================================================================
+  - job_name: cowrie_json
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: cowrie_json
+          __path__: /var/log/host/cowrie/cowrie.json*
+    pipeline_stages:
+      # Parsear campos del JSON de Cowrie
+      - json:
+          expressions:
+            ts: timestamp
+            eventid: eventid
+            src_ip: src_ip
+            username: username
+            session: session
+      # Usar el timestamp del propio evento Cowrie
+      - timestamp:
+          source: ts
+          format: '2006-01-02T15:04:05.999999'
+          location: UTC
+      # Propagar campos como labels para facilitar filtrado en Loki
+      - labels:
+          eventid:

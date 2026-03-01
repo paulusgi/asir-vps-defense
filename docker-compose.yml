@@ -1,5 +1,39 @@
 services:
   # ============================================================================
+  # COWRIE SSH HONEYPOT (Puerto 22 - captura ataques reales)
+  # Real SSH está en puerto alternativo (default: 2929)
+  # ============================================================================
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: asir_cowrie
+    restart: always
+    ports:
+      - "0.0.0.0:22:2222"   # Honeypot en puerto 22 del host → 2222 en contenedor
+    volumes:
+      - ./cowrie/cowrie.cfg:/cowrie/etc/cowrie.cfg:ro
+      - ./cowrie/userdb.txt:/cowrie/etc/userdb.txt:ro
+      - /var/log/cowrie:/cowrie/var/log/cowrie   # Promtail lee /var/log/host/cowrie
+      - cowrie_data:/cowrie/var/data/cowrie       # Sesiones TTY grabadas
+    environment:
+      - TZ=Europe/Madrid
+    networks:
+      - frontend_net
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Cowrie no necesita NET_BIND_SERVICE: Docker mapea host:22→container:2222
+    # y el contenedor escucha en el puerto no-privilegiado 2222 internamente
+    mem_limit: "256m"
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD-SHELL", "ss -tlnp | grep -q ':2222' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ============================================================================
   # PRIVATE ADMIN PANEL (Accessible only via SSH Tunnel)
   # ============================================================================
   admin-nginx:
@@ -140,6 +174,7 @@ networks:
 volumes:
   mysql_data:
   loki_data:
+  cowrie_data:    # Sesiones TTY grabadas por el honeypot Cowrie
 
 # ==============================================================================
 # SECRETS (archivos con credenciales, permisos 600)
