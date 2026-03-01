@@ -679,16 +679,17 @@ setup_firewall() {
     ufw default deny incoming
     ufw default allow outgoing
     
-    # Solo permitir SSH inicialmente (el puerto se puede cambiar al final del deploy)
-    # Los puertos 80/443 no se abren porque el panel solo es accesible por túnel SSH
-    ufw allow 22/tcp comment 'SSH'
+    # Puerto 22: Cowrie honeypot SIEMPRE en puerto 22 (máxima captura de ataques)
+    # El SSH real irá en un puerto alternativo (default: 2929)
+    ufw allow 22/tcp comment 'Cowrie Honeypot'
     
     # Habilitar UFW de forma no interactiva y verificar
     ufw --force enable
     if ufw status | grep -q "Status: active"; then
         log_success "Firewall configurado y activo"
         echo -e "  ${DIM}Política: DENY incoming / ALLOW outgoing${NC}"
-        echo -e "  ${DIM}Puerto abierto: 22/tcp (SSH)${NC}"
+        echo -e "  ${DIM}Puerto abierto: 22/tcp (Cowrie honeypot)${NC}"
+        echo -e "  ${DIM}Nota: el puerto SSH real se abrirá en el paso siguiente${NC}"
     else
         log_warn "UFW no quedó activo; revisa configuración"
     fi
@@ -1723,10 +1724,14 @@ main() {
         fi
         log_info "Puerto SSH seleccionado: ${BOLD}$SSH_PORT${NC}"
         
-        # Abrir puerto en UFW antes de configurar SSH
+        # Abrir puerto SSH real en UFW
+        # Puerto 22 se mantiene siempre abierto para Cowrie (honeypot)
         if [ "$SSH_PORT" != "22" ]; then
-            ufw allow "$SSH_PORT"/tcp comment 'SSH custom' || log_warn "No se pudo abrir el puerto $SSH_PORT en UFW"
-            ufw delete allow 22/tcp >/dev/null 2>&1 || true
+            ufw allow "$SSH_PORT"/tcp comment 'SSH real (admin)' || log_warn "No se pudo abrir el puerto $SSH_PORT en UFW"
+            log_info "Puerto 22 mantenido abierto → Cowrie honeypot"
+            log_info "Puerto $SSH_PORT abierto → SSH real (admin)"
+        else
+            log_warn "SSH real en puerto 22 solapa con Cowrie. Se recomienda puerto alternativo (ej: 2929)"
         fi
     fi
     
@@ -1809,6 +1814,15 @@ main() {
     chown -R 65534:65534 "$PROJECT_DIR/promtail/positions" 2>/dev/null || chmod 777 "$PROJECT_DIR/promtail/positions"
     touch "$PROJECT_DIR/promtail/positions/positions.yaml"
     chown 65534:65534 "$PROJECT_DIR/promtail/positions/positions.yaml" 2>/dev/null || chmod 666 "$PROJECT_DIR/promtail/positions/positions.yaml"
+
+    # Preparar directorio de logs de Cowrie en el host
+    # Cowrie (UID 1000 en la imagen oficial) escribe aquí
+    # Promtail lo lee como /var/log/host/cowrie/ (ya monta /var/log:/var/log/host:ro)
+    log_info "Preparando directorio de logs de Cowrie en el host..."
+    mkdir -p /var/log/cowrie
+    chown 1000:1000 /var/log/cowrie 2>/dev/null || chmod 777 /var/log/cowrie
+    chmod 755 /var/log/cowrie
+    log_success "Directorio /var/log/cowrie listo (UID 1000, lectura por Promtail)"
 
     if is_step_done "seed_done"; then
         log_info "Semilla de base de datos ya generada"
@@ -1924,6 +1938,17 @@ main() {
         echo -e "  ${CYAN}Puede que los contenedores sigan iniciándose.${NC}"
         echo -e "  ${CYAN}Revisa los logs con:${NC} ${YELLOW}docker compose logs -f${NC}"
         echo ""
+    fi
+
+    # 3. Verificar Cowrie honeypot en puerto 22
+    log_info "Verificando Cowrie honeypot en puerto 22..."
+    sleep 3
+    if ss -tlnp 2>/dev/null | grep -q ':22 ' || docker compose ps 2>/dev/null | grep -q 'asir_cowrie.*Up'; then
+        log_success "Cowrie honeypot ${GREEN}ACTIVO${NC} — capturando ataques en puerto 22"
+    else
+        log_warn "Cowrie no detectado aún en puerto 22 (puede seguir iniciando)"
+        echo -e "  ${DIM}Verifica con:${NC} ${YELLOW}docker compose ps cowrie${NC}"
+        echo -e "  ${DIM}Logs:${NC} ${YELLOW}docker compose logs cowrie${NC}"
     fi
 
     echo ""

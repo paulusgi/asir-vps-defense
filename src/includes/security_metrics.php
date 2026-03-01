@@ -10,25 +10,29 @@ function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
 
     try {
         $fail2ban = fetchFail2BanMetrics($client, $pdo);
-        $ssh = fetchSshMetrics($client, $pdo);
+        $ssh      = fetchSshMetrics($client, $pdo);
+        $cowrie   = fetchCowrieMetrics($client, $pdo);
 
         $geoPoints = array_values(array_filter(array_merge(
             $fail2ban['events'] ?? [],
-            $ssh['events'] ?? []
+            $ssh['events']     ?? [],
+            $cowrie['events']  ?? []
         ), static function (array $row): bool {
             return isset($row['lat'], $row['lon']);
         }));
 
         if ($mode === 'lite') {
             $fail2ban['events'] = [];
-            $ssh['events'] = [];
+            $ssh['events']      = [];
+            $cowrie['events']   = [];
         }
 
         return [
             'generatedAt' => time(),
-            'fail2ban' => $fail2ban,
-            'ssh' => $ssh,
-            'geo' => array_slice($geoPoints, 0, 100),
+            'fail2ban'    => $fail2ban,
+            'ssh'         => $ssh,
+            'cowrie'      => $cowrie,
+            'geo'         => array_slice($geoPoints, 0, 100),
         ];
     } catch (Throwable $exception) {
         return [
@@ -147,6 +151,119 @@ function fetchSshMetrics(LokiClient $client, PDO $pdo): array
         'topUsers' => array_slice(normalizeCounts($userCounts), 0, 5),
         'topIps' => formatIpCountList($pdo, $ipCounts),
         'events' => array_slice($events, 0, 25),
+    ];
+}
+
+// =============================================================================
+// COWRIE HONEYPOT METRICS
+// =============================================================================
+
+/**
+ * Obtiene métricas del honeypot Cowrie desde Loki.
+ * Cowrie registra conexiones, intentos de login y comandos ejecutados.
+ * Los logs se leen desde /var/log/cowrie/cowrie.log (Promtail job=cowrie).
+ *
+ * @return array{totals:array,topIps:list<array>,topUsers:list<array>,events:list<array>}
+ */
+function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
+{
+    // Contar intentos de login capturados por Cowrie (tanto éxito como fallo)
+    // Cowrie acepta todo pero registra todo — los "succeeded" también son honeypot
+    $totals = [
+        'last1h'  => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [24h]))'),
+        'last7d'  => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [7d]))'),
+        'sessions_1h'  => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "New connection" [1h]))'),
+        'sessions_24h' => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "New connection" [24h]))'),
+    ];
+
+    // Obtener los últimos 7 días de logs de Cowrie para análisis
+    $logs = $client->queryRangeRaw(
+        '{job="cowrie"} |= "login attempt"',
+        time() - (7 * 86400),
+        time(),
+        '5m',
+        1500
+    );
+
+    $ipCounts   = [];
+    $userCounts = [];
+    $events     = [];
+
+    foreach ($logs as $entry) {
+        $parsed = parseCowrieLogin($entry['line']);
+        if (!$parsed) {
+            continue;
+        }
+
+        $ip       = $parsed['ip'];
+        $username = $parsed['username'];
+
+        $ipCounts[$ip]     = ($ipCounts[$ip] ?? 0) + 1;
+        $userCounts[$username] = ($userCounts[$username] ?? 0) + 1;
+
+        $geo = lookupGeoForIp($pdo, $ip);
+
+        $events[] = [
+            'timestamp'    => $entry['timestamp'],
+            'ip'           => $ip,
+            'username'     => $username,
+            'password'     => $parsed['password'],
+            'result'       => $parsed['result'],
+            'country'      => $geo['country_name'],
+            'country_code' => $geo['country_code'],
+            'lat'          => $geo['lat'],
+            'lon'          => $geo['lon'],
+            'type'         => 'cowrie',
+        ];
+    }
+
+    return [
+        'totals'    => $totals,
+        'topIps'    => formatIpCountList($pdo, $ipCounts, 10),
+        'topUsers'  => array_slice(normalizeCounts($userCounts), 0, 10),
+        'events'    => array_slice($events, 0, 25),
+    ];
+}
+
+/**
+ * Parsea una línea de log de Cowrie buscando intentos de login.
+ *
+ * Formato texto de Cowrie:
+ *   2024-01-31T14:23:47+0000 [cowrie.ssh.userauth...] login attempt [root/password123] failed
+ *   2024-01-31T14:23:47+0000 [cowrie.ssh.userauth...] login attempt [admin/] succeeded
+ *
+ * @return array{ip:string,username:string,password:string,result:string}|null
+ */
+function parseCowrieLogin(string $line): ?array
+{
+    if (!str_contains($line, 'login attempt')) {
+        return null;
+    }
+
+    // Extraer usuario y contraseña del bloque [user/pass]
+    if (!preg_match('/login attempt \[(?P<user>[^/\]]*)\/(?P<pass>[^\]]*)\]/', $line, $authMatch)) {
+        return null;
+    }
+
+    // Extraer IP de origen — Cowrie la escribe en "New connection: IP:port" o en la sesión
+    // En las líneas de login attempt, la IP aparece como "<IP:port>"
+    $ip = 'unknown';
+    if (preg_match('/\b(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+/', $line, $ipMatch)) {
+        $ip = $ipMatch['ip'];
+    } elseif (preg_match('/\b(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/', $line, $ipMatch)) {
+        if (filter_var($ipMatch['ip'], FILTER_VALIDATE_IP)) {
+            $ip = $ipMatch['ip'];
+        }
+    }
+
+    $result = str_contains($line, 'succeeded') ? 'ingresó al honeypot' : 'rechazado';
+
+    return [
+        'ip'       => $ip,
+        'username' => $authMatch['user'],
+        'password' => $authMatch['pass'],
+        'result'   => $result,
     ];
 }
 
