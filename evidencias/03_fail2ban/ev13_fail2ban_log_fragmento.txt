@@ -1,0 +1,6 @@
+# PEGAR AQUÍ el fragmento de fail2ban.log
+# Comando en el VPS:
+#   grep -E "Ban|Found|Restore" /var/log/fail2ban.log | tail -50
+#
+# Borrar este comentario y pegar la salida del comando a continuación:
+

