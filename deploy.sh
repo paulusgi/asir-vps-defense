@@ -1705,23 +1705,24 @@ main() {
     if ! is_step_done "users_done"; then
         echo ""
         echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-        echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CONFIGURACIÓN DE PUERTO SSH${NC}                          ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CONFIGURACIÓN DE PUERTO SSH REAL (Admin)${NC}              ${CYAN}│${NC}"
         echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
-        echo -e "  ${DIM}Puerto SSH actual: 22${NC}"
+        echo -e "  ${RED}⚠  Puerto 22 está reservado para Cowrie (honeypot) — NO lo uses aquí${NC}"
         echo ""
-        echo -e "  ${YELLOW}Opciones:${NC}"
-        echo -e "    • ${WHITE}Puerto 22${NC}  → Máxima captura de ataques (honeypot más efectivo)"
-        echo -e "    • ${WHITE}Otro puerto${NC} → Más seguridad, menos ruido de bots"
+        echo -e "  Elige el puerto de tu ${BOLD}SSH real${NC} (acceso de administrador):"
+        echo -e "    • ${WHITE}2929${NC}        → Recomendado: libre de bots, acceso exclusivo admin"
+        echo -e "    • ${WHITE}Otro número${NC} → Cualquier puerto libre entre 1024 y 65535"
+        echo -e "    • ${RED}NO uses 22${NC}  → Ocupado por el honeypot Cowrie"
         echo ""
-        echo -n -e "  ${CYAN}Nuevo puerto SSH (ENTER para usar 2929):${NC} "
+        echo -n -e "  ${CYAN}Puerto SSH real (ENTER para usar 2929):${NC} "
         read -r SSH_PORT < /dev/tty
         if [ -z "$SSH_PORT" ]; then
             SSH_PORT="2929"
         fi
         if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
-            log_warn "Puerto no válido. Se usará el puerto 22 por defecto."
-            SSH_PORT="22"
+            log_warn "Puerto no válido. Se usará el puerto 2929 por defecto."
+            SSH_PORT="2929"
         fi
         log_info "Puerto SSH seleccionado: ${BOLD}$SSH_PORT${NC}"
         
@@ -1913,7 +1914,7 @@ main() {
         fi
         printf "\r  ${CYAN}⏳${NC} Esperando healthchecks... [%02d/30]" "$retries"
         sleep 2
-        ((retries++))
+        retries=$((retries + 1))
     done
     echo ""
 
@@ -1929,7 +1930,7 @@ main() {
         fi
         printf "\r  ${CYAN}⏳${NC} Esperando respuesta HTTP... [%02d/20]" "$retries"
         sleep 3
-        ((retries++))
+        retries=$((retries + 1))
     done
     echo ""
 
