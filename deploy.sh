@@ -1851,6 +1851,16 @@ main() {
     # Hay que volver a aplicar el chown después del up para que sean escribibles
     chown -R 999:999 /var/log/cowrie 2>/dev/null || true
 
+    # El directorio tty/ dentro del volumen nombrado nace con owner root.
+    # Cowrie (UID 999) no puede crearlo → hay que pre-crearlo manualmente.
+    local cowrie_vol
+    cowrie_vol=$(docker volume inspect asir-vps-defense_cowrie_data --format '{{.Mountpoint}}' 2>/dev/null || true)
+    if [ -n "$cowrie_vol" ]; then
+        mkdir -p "$cowrie_vol/tty"
+        chown -R 999:999 "$cowrie_vol"
+        log_success "Directorio tty/ del volumen Cowrie listo (UID 999)"
+    fi
+
     if [ $up_status -ne 0 ]; then
         log_error "docker compose up falló"
         echo ""
