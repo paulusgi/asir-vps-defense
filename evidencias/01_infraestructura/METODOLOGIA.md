@@ -38,87 +38,9 @@ Se consultó el estado del firewall UFW con `ufw status numbered` para documenta
 
 ## EV-05 — `ev05_banner_ssh_22.png`
 
-Se realizó un escaneo con `nmap -sV` contra el puerto 22 del servidor. El banner devuelto correspondía al configurado en `cowrie.cfg` (`SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.11`), distinto al del SSH real del host, confirmando que cualquier conexión entrante al puerto estándar era atendida por el honeypot y no por el servicio de administración.
+Se conectó al puerto 22 del servidor mediante `nc` para obtener el banner SSH raw. La cadena devuelta correspondía al banner configurado en `cowrie.cfg` (`SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.11`), distinto al del SSH real del host, confirmando que cualquier conexión entrante al puerto estándar era atendida por el honeypot y no por el servicio de administración.
 
 ```bash
-nmap -Pn -sV -p 22 <IP_VPS>
+nc -w3 <IP_VPS> 22
 ```
-
----
-
-## EV-01 — `ev01_ss_puertos.png`
-
-**Qué demuestra:** Cowrie escucha en :22, sshd real en :2929.
-
-**Comando en el VPS:**
-```bash
-sudo ss -tlnp
-```
-
-**Qué debe aparecer en la captura:**
-- Una línea con `:22` y proceso `docker-proxy` → Cowrie
-- Una línea con `:2929` y proceso `sshd` → SSH real
-
-> **Nota:** Sin `sudo` la columna `Process` aparece vacía. Es necesario ejecutar como root para que el kernel devuelva la información del proceso propietario de cada socket.
-
----
-
-## EV-02 — `ev02_docker_ps.png`
-
-**Qué demuestra:** Todos los contenedores están running y healthy.
-
-**Comando en el VPS:**
-```bash
-sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-```
-
-**Qué debe aparecer:**
-- `asir_cowrie` → Up X hours (healthy)
-- `asir_admin_nginx` → Up X hours
-- `asir_php` → Up X hours
-- `asir_mysql` → Up X hours (healthy)
-- `asir_loki` → Up X hours (healthy)
-- `asir_promtail` → Up X hours (healthy)
-
----
-
-## EV-03 — `ev03_docker_inspect_cowrie.png`
-
-**Qué demuestra:** El healthcheck de Cowrie pasa correctamente.
-
-**Comando en el VPS:**
-```bash
-docker inspect --format='{{json .State.Health}}' asir_cowrie | python3 -m json.tool
-```
-
-**Qué debe aparecer:** `"Status": "healthy"` y el historial de checks con `ExitCode: 0`.
-
----
-
-## EV-04 — `ev04_ufw_status.png`
-
-**Qué demuestra:** Firewall configurado correctamente (solo puertos necesarios abiertos, 8888 bloqueado).
-
-**Comando en el VPS:**
-```bash
-ufw status numbered
-```
-
-**Qué debe aparecer:**
-- Puerto 22 → ALLOW
-- Puerto 2929 → ALLOW (SSH real)
-- Puerto 8888 → NO debe aparecer (no expuesto)
-- Puerto 80/443 → ALLOW si hay servicio público
-
----
-
-## EV-05 — `ev05_banner_ssh_22.png`
-
-**Qué demuestra:** El banner que responde en :22 es el del honeypot Cowrie, no el SSH real.
-
-**Comando desde máquina externa:**
-```bash
-nmap -Pn -sV -p 22 <IP_VPS>
-```
-
-**Qué debe aparecer:** El banner `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.11` configurado en `cowrie.cfg`, confirmando que el puerto 22 lo atiende el honeypot.
+![alt text](ev05_banner_ssh_22.png)
