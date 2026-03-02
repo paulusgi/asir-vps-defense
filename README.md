@@ -166,7 +166,6 @@ age -d -i ~/.ssh/<clave_privada> -o credenciales.txt ~/admin_credentials.txt.age
 ├── deploy.sh                    # Instalador interactivo automatizado
 ├── backups.sh                   # Gestor de copias de seguridad
 ├── docker-compose.yml           # Orquestación de contenedores
-├── MEMORIA_ASIR_VPS_DEFENSE_FINAL.md  # Memoria técnica del proyecto
 ├── POSTDEPLOY_CHECKS.md         # Checklist de verificación post-despliegue
 ├── LICENSE                      # Licencia de uso no comercial
 │
@@ -303,7 +302,6 @@ docker exec asir_loki wget -qO- http://localhost:3100/ready
 
 | Documento | Descripción |
 |-----------|-------------|
-| [MEMORIA_ASIR_VPS_DEFENSE_FINAL.md](MEMORIA_ASIR_VPS_DEFENSE_FINAL.md) | Memoria técnica completa del proyecto |
 | [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) | Checklist de verificación post-despliegue |
 | [evidencias/README.md](evidencias/README.md) | Índice de 28 evidencias técnicas con relación a objetivos |
 | [LICENSE](LICENSE) | Licencia de uso no comercial |
