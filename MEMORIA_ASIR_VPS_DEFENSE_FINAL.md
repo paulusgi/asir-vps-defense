@@ -1,87 +1,30 @@
-# Memoria ASIR VPS Defense
+# MEMORIA ASIR VPS DEFENSE FINAL
 
-Esto es un documento de muestra que detalla el proyecto de defensa del sistema ASIR VPS.
+## Índice
 
-1. Introducción
+1. **Introducción** (redacción en pasado)  
+2. **Objetivos**  
+3. **Desarrollo del Proyecto**  
+4. **Conclusiones**  
 
-   Este proyecto se llevó a cabo para la implementación de un sistema de gestión basado en VPS.
+## Introducción 
 
-2. Objetivos
+En este documento se presentan los detalles del proyecto realizado en el marco de la asignatura de ASIR.
 
-   - Mejorar la eficiencia del sistema.
-   - Proveer un entorno seguro para los usuarios.
+## Objetivos 
 
-3. Alcance
+El principal objetivo de este trabajo es mostrar las competencias adquiridas.
 
-   El alcance del proyecto incluye la implementación de un sistema que...
+## Desarrollo del Proyecto 
 
-4. Metodología
+### Sección 1
 
-   Se utilizó la metodología ágil para desarrollar este proyecto...
+Detalles de la implementación.
 
-5. Resultados esperados
+### Sección 2  
 
-   Los resultados esperados son un sistema optimizado que...
+Resultados obtenidos y evaluación.
 
-6. Desarrollo e implementación
+## Conclusiones
 
-   El proceso de desarrollo se llevó a cabo a través de varias fases...
-
-   - Planificación
-   - Desarrollo
-   - Pruebas
-
-7. Conclusiones
-
-   Este proyecto ha demostrado que...
-
-8. Recomendaciones
-
-   Se recomienda seguir trabajando en...
-
-## 1. Resumen
-
-   Este documento proporciona un resumen de...
-
-## 2. Antecedentes
-
-   Se detallan los antecedentes necesarios para entender...
-
-## 3. Revisión de literatura
-
-   En esta sección se revisan los estudios previos sobre...
-
-## 4. Propuesta de solución
-
-   Se propone un enfoque que...
-
-## 5. Implementación
-
-   La implementación incluyó...
-
-## 6. Desarrollo e implementación
-
-   Este apartado se explicará en detalle...
-
-## 7. Evaluación
-
-   Se evaluó el sistema mediante...
-
-## 8. Futuras líneas de investigación
-
-   Se sugiere investigar...
-
-## 9. Agradecimientos
-
-   Agradecemos a todos los que colaboraron...
-
-## 10. Bibliografía
-
-   - Fuente 1
-   - Fuente 2
-
-## Anexos
-
-   - Anexo A: Detalles técnicos
-
-   - Anexo B: Documentación adicional
+Un resumen de los aprendizajes y experiencias recolectadas en el proyecto.
