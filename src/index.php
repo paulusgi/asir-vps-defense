@@ -393,6 +393,35 @@ function h($value) {
         .legend-dot.fail2ban { background: #10b981; }
         .legend-dot.ssh { background: #f59e0b; }
         .legend-dot.cowrie { background: #8b5cf6; }
+        .pager {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 10px 0 2px;
+            border-top: 1px solid var(--panel-border);
+            margin-top: 6px;
+        }
+        .pager-btn {
+            background: transparent;
+            border: 1px solid var(--panel-border);
+            color: var(--text-muted);
+            border-radius: 6px;
+            padding: 3px 9px;
+            font-size: 0.78rem;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            line-height: 1.5;
+        }
+        .pager-btn:hover:not(:disabled) { background: var(--panel-border); color: var(--text-primary); }
+        .pager-btn.active { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+        .pager-btn:disabled { opacity: 0.35; cursor: default; }
+        .pager-info {
+            margin-left: auto;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -546,36 +575,39 @@ function h($value) {
 
         <div class="tab-content" data-tab="honeypot">
             <section class="grid">
-                <div class="panel table-scroll">
+                <div class="panel">
                     <h3>Top IP atacantes (Honeypot)</h3>
-                    <table>
+                    <div class="table-scroll"><table>
                         <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
                         <tbody id="cowrieIpsBody"></tbody>
-                    </table>
+                    </table></div>
+                    <div class="pager" id="cowrieIpsPager"></div>
                 </div>
-                <div class="panel table-scroll">
+                <div class="panel">
                     <h3>Credenciales más probadas</h3>
-                    <table>
+                    <div class="table-scroll"><table>
                         <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
                         <tbody id="cowrieUsersBody"></tbody>
-                    </table>
+                    </table></div>
+                    <div class="pager" id="cowrieUsersPager"></div>
                 </div>
             </section>
             <section class="grid">
-                <div class="panel table-scroll">
+                <div class="panel">
                     <h3>Intentos recientes en honeypot</h3>
-                    <table>
+                    <div class="table-scroll"><table>
                         <thead><tr><th>Fecha</th><th>IP</th><th>Usuario</th><th>Contraseña</th><th>Resultado</th></tr></thead>
                         <tbody id="cowrieEventsBody"></tbody>
-                    </table>
-                    <button type="button" class="load-more" id="cowrieLoadMore" aria-label="Cargar más eventos honeypot">Cargar más</button>
+                    </table></div>
+                    <div class="pager" id="cowrieEventsPager"></div>
                 </div>
-                <div class="panel table-scroll">
+                <div class="panel">
                     <h3>Comandos ejecutados en honeypot</h3>
-                    <table>
+                    <div class="table-scroll"><table>
                         <thead><tr><th>Comando</th><th>Veces</th></tr></thead>
                         <tbody id="cowrieCmdsBody"></tbody>
-                    </table>
+                    </table></div>
+                    <div class="pager" id="cowrieCmdsPager"></div>
                 </div>
             </section>
         </div>
@@ -819,7 +851,62 @@ function h($value) {
         let paused = false;
         let banVisible = 15;
         let sshVisible = 20;
-        let cowrieVisible = 20;
+
+        const COWRIE_PAGE_SIZE = 10;
+        const cowriePages = { ips: 0, users: 0, events: 0, cmds: 0 };
+
+        // Renderiza un paginador numérico compacto.
+        // onPage(n) se llama con el número de página (0-indexed) al hacer clic.
+        const renderPager = (containerId, currentPage, total, onPage) => {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            el.innerHTML = '';
+            if (total <= COWRIE_PAGE_SIZE) return;          // sin paginación si cabe en 1 página
+            const pages = Math.ceil(total / COWRIE_PAGE_SIZE);
+            const mkBtn = (label, page, active = false, disabled = false) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'pager-btn' + (active ? ' active' : '');
+                b.textContent = label;
+                b.disabled = disabled;
+                if (!disabled && !active) b.addEventListener('click', () => onPage(page));
+                return b;
+            };
+            el.appendChild(mkBtn('←', currentPage - 1, false, currentPage === 0));
+            // Ventana de páginas: siempre primera, última y hasta 3 alrededor de la actual
+            const show = new Set([0, pages - 1]);
+            for (let i = Math.max(0, currentPage - 1); i <= Math.min(pages - 1, currentPage + 1); i++) show.add(i);
+            let prev = -1;
+            [...show].sort((a, b) => a - b).forEach((p) => {
+                if (p - prev > 1) {
+                    const dots = document.createElement('span');
+                    dots.className = 'pager-btn';
+                    dots.textContent = '…';
+                    dots.style.cursor = 'default';
+                    dots.style.border = 'none';
+                    el.appendChild(dots);
+                }
+                el.appendChild(mkBtn(String(p + 1), p, p === currentPage));
+                prev = p;
+            });
+            el.appendChild(mkBtn('→', currentPage + 1, false, currentPage >= pages - 1));
+            const info = document.createElement('span');
+            info.className = 'pager-info';
+            info.textContent = `Pág. ${currentPage + 1} / ${pages} · ${total} registros`;
+            el.appendChild(info);
+        };
+
+        const renderCowrieTables = () => {
+            const slice = (arr, page) => arr.slice(page * COWRIE_PAGE_SIZE, (page + 1) * COWRIE_PAGE_SIZE);
+            updateTable('cowrieIpsBody', slice(state.cowrieIps, cowriePages.ips), 3, [1], -1);
+            renderPager('cowrieIpsPager', cowriePages.ips, state.cowrieIps.length, (p) => { cowriePages.ips = p; renderCowrieTables(); });
+            updateTable('cowrieUsersBody', slice(state.cowrieUsers, cowriePages.users), 2, [], 0);
+            renderPager('cowrieUsersPager', cowriePages.users, state.cowrieUsers.length, (p) => { cowriePages.users = p; renderCowrieTables(); });
+            updateTable('cowrieEventsBody', slice(state.cowrieEvents, cowriePages.events), 5, [0, 1, 4], 2);
+            renderPager('cowrieEventsPager', cowriePages.events, state.cowrieEvents.length, (p) => { cowriePages.events = p; renderCowrieTables(); });
+            updateTable('cowrieCmdsBody', slice(state.cowrieCmds, cowriePages.cmds), 2, [], -1);
+            renderPager('cowrieCmdsPager', cowriePages.cmds, state.cowrieCmds.length, (p) => { cowriePages.cmds = p; renderCowrieTables(); });
+        };
 
         const showToast = (msg) => {
             const toast = document.getElementById('toast');
@@ -920,12 +1007,7 @@ function h($value) {
             const sshBtn = document.getElementById('sshLoadMore');
             if (sshBtn) sshBtn.disabled = sshVisible >= state.sshEvents.length;
 
-            updateTable('cowrieIpsBody', state.cowrieIps, 3, [1], -1);
-            updateTable('cowrieUsersBody', state.cowrieUsers, 2, [], 0);
-            updateTable('cowrieEventsBody', state.cowrieEvents.slice(0, cowrieVisible), 5, [0, 1, 4], 2);
-            const cowrieBtn = document.getElementById('cowrieLoadMore');
-            if (cowrieBtn) cowrieBtn.disabled = cowrieVisible >= state.cowrieEvents.length;
-            updateTable('cowrieCmdsBody', state.cowrieCmds, 2, [], -1);
+            renderCowrieTables();
         };
 
         const refreshLoop = async () => {
@@ -997,6 +1079,8 @@ function h($value) {
                         const badgeCowrie  = (result) => `<span class="badge-result ${result === 'ingresó al honeypot' ? 'ok' : 'warn'}">${result}</span>`;
                         state.cowrieEvents = ((data.cowrie && data.cowrie.events) || []).map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.ip), r.username, r.password, badgeCowrie(r.result)]);
                         state.cowrieCmds   = ((data.cowrie && data.cowrie.topCommands) || []).map((r) => [r.label, r.count]);
+                        // Resetear páginas al actualizar datos para que no queden en páginas inexistentes
+                        Object.keys(cowriePages).forEach(k => { cowriePages[k] = 0; });
                         state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
 
                         renderTables();
@@ -1078,11 +1162,6 @@ function h($value) {
 
         document.getElementById('sshLoadMore').addEventListener('click', () => {
             sshVisible += 15;
-            renderTables();
-        });
-
-        document.getElementById('cowrieLoadMore').addEventListener('click', () => {
-            cowrieVisible += 20;
             renderTables();
         });
 
