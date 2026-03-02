@@ -15,14 +15,14 @@
 | EV-05 | `01_infraestructura/ev05_banner_ssh_22.png` | Banner honeypot en puerto 22 | Banner falso OpenSSH 8.2p1 Ubuntu |
 | EV-06 | `02_honeypot_cowrie/ev06_cowrie_log_ataques.png` | Login attempts capturados | Líneas `login attempt` con IP/usuario/password |
 | EV-07 | `02_honeypot_cowrie/ev07_cowrie_log_fragmento.txt` | Log texto para memoria | Fragmento pegado directamente en memoria |
-| EV-08 | `02_honeypot_cowrie/ev08_sesion_tty_lista.png` | Sesiones TTY grabadas | Archivos `.tty` listados en contenedor |
+| EV-08 | `02_honeypot_cowrie/ev08_sesion_tty_lista.png` | Sesiones TTY grabadas | Archivos `.log` listados en volumen del host |
 | EV-09 | `02_honeypot_cowrie/ev09_sesion_tty_replay.png` | Replay de sesión de atacante | Comandos del atacante reproducidos |
 | EV-10 | `02_honeypot_cowrie/ev10_hydra_result.txt` | Resultado prueba controlada hydra | Conexiones al honeypot registradas |
 | EV-11 | `03_fail2ban/ev11_fail2ban_status.png` | IPs baneadas actualmente | `Currently banned > 0` |
 | EV-12 | `03_fail2ban/ev12_fail2ban_log_bans.png` | Entradas Ban en el log | Líneas `Ban <IP>` con timestamp |
 | EV-13 | `03_fail2ban/ev13_fail2ban_log_fragmento.txt` | Log texto para memoria | Fragmento pegado directamente en memoria |
 | EV-14 | `04_observabilidad/ev14_loki_ready.png` | Loki operativo | Respuesta `ready` |
-| EV-15 | `04_observabilidad/ev15_promtail_targets.png` | Promtail recopilando logs | Jobs `cowrie`, `fail2ban`, `auth` en estado `up` |
+| EV-15 | `04_observabilidad/ev15_promtail_targets.png` | Promtail recopilando logs | Jobs `auth`, `cowrie`, `cowrie_json` presentes en Loki |
 | EV-16 | `04_observabilidad/ev16_loki_query_cowrie.png` | Datos cowrie llegando a Loki | Query devuelve líneas con eventos |
 | EV-17 | `04_observabilidad/ev17_loki_query_fail2ban.png` | Datos fail2ban llegando a Loki | Query devuelve líneas con bans |
 | EV-18 | `05_panel_privado/ev18_panel_bloqueado_ext.png` | Panel no accesible sin túnel | `Connection refused` o timeout desde exterior |
@@ -35,7 +35,7 @@
 | EV-26 | `06_ssh_real/ev26_ssh_password_rechazado.png` | Contraseña rechazada en :2929 | `Permission denied (publickey)` |
 | EV-27 | `06_ssh_real/ev27_nmap_puertos.png` | Separación de puertos confirmada | nmap distingue :22 (honeypot) vs :2929 (real) |
 | EV-28 | `07_pipeline_completo/ev28_pipeline_ataque.png` | Ciclo ataque → cowrie.log → Loki | 3 ventanas simultáneas con el flujo |
-| EV-29 | `07_pipeline_completo/ev29_pipeline_ban.png` | Ciclo intento → fail2ban.log → ban | 3 ventanas mostrando detección y ban |
+| EV-29 | `07_pipeline_completo/ev29_pipeline_ban.png` | Ciclo intento → fail2ban.log → ban | 2 ventanas mostrando detección y ban |
 
 ---
 
