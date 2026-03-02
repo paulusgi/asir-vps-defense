@@ -392,6 +392,7 @@ function h($value) {
         }
         .legend-dot.fail2ban { background: #10b981; }
         .legend-dot.ssh { background: #f59e0b; }
+        .legend-dot.cowrie { background: #8b5cf6; }
     </style>
 </head>
 <body>
@@ -465,11 +466,17 @@ function h($value) {
                 <strong id="ssh24h">--</strong>
                 <small>Última hora: <span id="ssh1h">--</span> | 5 min: <span id="ssh5m">--</span></small>
             </div>
+            <div class="card">
+                <span class="label">Honeypot Cowrie (24h)</span>
+                <strong id="cowrie24h">--</strong>
+                <small>1h: <span id="cowrie1h">--</span> | 7d: <span id="cowrie7d">--</span> | Sesiones: <span id="cowrieSessions">--</span></small>
+            </div>
         </div>
 
         <div class="tab-bar" role="tablist">
             <button class="tab-button active" data-tab="ban" aria-selected="true">Baneos</button>
             <button class="tab-button" data-tab="ssh" aria-selected="false">SSH</button>
+            <button class="tab-button" data-tab="honeypot" aria-selected="false">Honeypot</button>
             <button class="tab-button" data-tab="map" aria-selected="false">Mapa</button>
             <button class="tab-button" data-tab="audit" aria-selected="false">Auditoría</button>
         </div>
@@ -531,7 +538,44 @@ function h($value) {
                 <div class="map-legend">
                     <div class="legend-item"><span class="legend-dot fail2ban"></span> Fail2Ban (IPs baneadas)</div>
                     <div class="legend-item"><span class="legend-dot ssh"></span> SSH (intentos fallidos)</div>
+                    <div class="legend-item"><span class="legend-dot cowrie"></span> Honeypot (Cowrie)</div>
                     <span style="margin-left:auto;color:var(--text-muted)" id="mapStats">0 ubicaciones</span>
+                </div>
+            </section>
+        </div>
+
+        <div class="tab-content" data-tab="honeypot">
+            <section class="grid">
+                <div class="panel table-scroll">
+                    <h3>Top IP atacantes (Honeypot)</h3>
+                    <table>
+                        <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
+                        <tbody id="cowrieIpsBody"></tbody>
+                    </table>
+                </div>
+                <div class="panel table-scroll">
+                    <h3>Credenciales más probadas</h3>
+                    <table>
+                        <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
+                        <tbody id="cowrieUsersBody"></tbody>
+                    </table>
+                </div>
+            </section>
+            <section class="grid">
+                <div class="panel table-scroll">
+                    <h3>Intentos recientes en honeypot</h3>
+                    <table>
+                        <thead><tr><th>Fecha</th><th>IP</th><th>Usuario</th><th>Contraseña</th><th>Resultado</th></tr></thead>
+                        <tbody id="cowrieEventsBody"></tbody>
+                    </table>
+                    <button type="button" class="load-more" id="cowrieLoadMore" aria-label="Cargar más eventos honeypot">Cargar más</button>
+                </div>
+                <div class="panel table-scroll">
+                    <h3>Comandos ejecutados en honeypot</h3>
+                    <table>
+                        <thead><tr><th>Comando</th><th>Veces</th></tr></thead>
+                        <tbody id="cowrieCmdsBody"></tbody>
+                    </table>
                 </div>
             </section>
         </div>
@@ -599,6 +643,10 @@ function h($value) {
             sshIpsBody: { icon: 'lock', title: 'Sin ataques SSH', desc: 'No hay intentos de acceso no autorizados', positive: true },
             sshUsersBody: { icon: 'users', title: 'Sin usuarios atacados', desc: 'No se detectaron intentos de login sospechosos', positive: true },
             sshEventsBody: { icon: 'activity', title: 'Sin actividad SSH', desc: 'No hay eventos de autenticación en este período', neutral: true },
+            cowrieIpsBody: { icon: 'lock', title: 'Sin atacantes en honeypot', desc: 'No hay IPs registradas atacando el honeypot', positive: true },
+            cowrieUsersBody: { icon: 'users', title: 'Sin credenciales probadas', desc: 'No se han registrado intentos de login en el honeypot', positive: true },
+            cowrieEventsBody: { icon: 'activity', title: 'Sin intentos en honeypot', desc: 'No hay eventos recientes en el honeypot', neutral: true },
+            cowrieCmdsBody: { icon: 'activity', title: 'Sin comandos ejecutados', desc: 'Ningún atacante ha ejecutado comandos', positive: true },
         };
         const emptyIcon = (type) => {
             const icons = {
@@ -749,6 +797,10 @@ function h($value) {
             banIps: [],
             sshIps: [],
             sshUsers: [],
+            cowrieEvents: [],
+            cowrieIps: [],
+            cowrieUsers: [],
+            cowrieCmds: [],
             geo: [],
             system: {
                 cpu: [],
@@ -767,6 +819,7 @@ function h($value) {
         let paused = false;
         let banVisible = 15;
         let sshVisible = 20;
+        let cowrieVisible = 20;
 
         const showToast = (msg) => {
             const toast = document.getElementById('toast');
@@ -784,10 +837,12 @@ function h($value) {
         const renderMap = (points) => {
             geoLayer.clearLayers();
             const valid = points.filter(p => p.lat !== null && p.lon !== null);
-            let f2bCount = 0, sshCount = 0;
+            let f2bCount = 0, sshCount = 0, cowrieCount = 0;
             valid.forEach((p) => {
-                const color = p.type === 'fail2ban' ? '#10b981' : '#f59e0b';
-                if (p.type === 'fail2ban') f2bCount++; else sshCount++;
+                const color = p.type === 'fail2ban' ? '#10b981' : p.type === 'cowrie' ? '#8b5cf6' : '#f59e0b';
+                if (p.type === 'fail2ban') f2bCount++;
+                else if (p.type === 'cowrie') cowrieCount++;
+                else sshCount++;
                 L.circleMarker([p.lat, p.lon], {
                     radius: 5,
                     color,
@@ -798,7 +853,7 @@ function h($value) {
             });
             // Actualizar estadísticas del mapa
             const mapStats = document.getElementById('mapStats');
-            if (mapStats) mapStats.textContent = `${valid.length} ubicaciones (${f2bCount} bans, ${sshCount} SSH)`;
+            if (mapStats) mapStats.textContent = `${valid.length} ubicaciones (${f2bCount} bans, ${sshCount} SSH, ${cowrieCount} honeypot)`;
             if (valid.length && typeof geoLayer.getBounds === 'function') {
                 map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
             } else {
@@ -855,15 +910,22 @@ function h($value) {
 
         const renderTables = () => {
             updateTable('banIpsBody', state.banIps, 3, [1], -1);
-            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [0, 2], -1); // col 0: timestamp, col 2: IP+bandera
+            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [0, 2], -1);
             const banBtn = document.getElementById('banLoadMore');
             if (banBtn) banBtn.disabled = banVisible >= state.banEvents.length;
 
             updateTable('sshIpsBody', state.sshIps, 3, [1], -1);
-            updateTable('sshUsersBody', state.sshUsers, 2, [], 0); // columna 0 tiene usuarios
-            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [0, 2, 3], 1); // col 0: timestamp, col 2: IP+bandera, col 3: badge resultado
+            updateTable('sshUsersBody', state.sshUsers, 2, [], 0);
+            updateTable('sshEventsBody', state.sshEvents.slice(0, sshVisible), 4, [0, 2, 3], 1);
             const sshBtn = document.getElementById('sshLoadMore');
             if (sshBtn) sshBtn.disabled = sshVisible >= state.sshEvents.length;
+
+            updateTable('cowrieIpsBody', state.cowrieIps, 3, [1], -1);
+            updateTable('cowrieUsersBody', state.cowrieUsers, 2, [], 0);
+            updateTable('cowrieEventsBody', state.cowrieEvents.slice(0, cowrieVisible), 5, [0, 1, 4], 2);
+            const cowrieBtn = document.getElementById('cowrieLoadMore');
+            if (cowrieBtn) cowrieBtn.disabled = cowrieVisible >= state.cowrieEvents.length;
+            updateTable('cowrieCmdsBody', state.cowrieCmds, 2, [], -1);
         };
 
         const refreshLoop = async () => {
@@ -924,6 +986,17 @@ function h($value) {
                         state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
                         state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, flagLabel(r.country_code, r.ip), badgeResult(r.result)]);
+
+                        const cowrieTotals = (data.cowrie && data.cowrie.totals) || {};
+                        setText('cowrie24h', cowrieTotals.last24h ?? 0);
+                        setText('cowrie1h', cowrieTotals.last1h ?? 0);
+                        setText('cowrie7d', cowrieTotals.last7d ?? 0);
+                        setText('cowrieSessions', cowrieTotals.sessions_24h ?? 0);
+                        state.cowrieIps    = ((data.cowrie && data.cowrie.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
+                        state.cowrieUsers  = ((data.cowrie && data.cowrie.topUsers) || []).map((r) => [r.label, r.count]);
+                        const badgeCowrie  = (result) => `<span class="badge-result ${result === 'ingresó al honeypot' ? 'ok' : 'warn'}">${result}</span>`;
+                        state.cowrieEvents = ((data.cowrie && data.cowrie.events) || []).map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.ip), r.username, r.password, badgeCowrie(r.result)]);
+                        state.cowrieCmds   = ((data.cowrie && data.cowrie.topCommands) || []).map((r) => [r.label, r.count]);
                         state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
 
                         renderTables();
@@ -1008,12 +1081,21 @@ function h($value) {
             renderTables();
         });
 
+        document.getElementById('cowrieLoadMore').addEventListener('click', () => {
+            cowrieVisible += 20;
+            renderTables();
+        });
+
         // Initial skeletons
         setSkeleton('banIpsBody', 3, 3);
         setSkeleton('banEventsBody', 4, 3);
         setSkeleton('sshIpsBody', 3, 3);
         setSkeleton('sshUsersBody', 3, 2);
         setSkeleton('sshEventsBody', 5, 4);
+        setSkeleton('cowrieIpsBody', 3, 3);
+        setSkeleton('cowrieUsersBody', 3, 2);
+        setSkeleton('cowrieEventsBody', 5, 5);
+        setSkeleton('cowrieCmdsBody', 5, 2);
 
         scheduleRefresh(0);
     </script>
