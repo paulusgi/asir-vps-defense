@@ -22,7 +22,6 @@ root:0:123456
 root:0:1234
 root:0:12345678
 root:0:admin
-root:0:
 admin:0:x
 admin:0:admin
 admin:0:admin123
