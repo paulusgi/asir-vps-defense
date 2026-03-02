@@ -6,16 +6,16 @@ Este bloque recoge el estado real del sistema en el momento de la validación, c
 
 ## EV-01 — `ev01_ss_puertos.png`
 
-Se ejecutó `ss -tlnp` en el host para verificar los bindings de red activos. La salida confirmó que el proceso `docker-proxy` ocupaba el puerto 22, correspondiente al contenedor Cowrie, y que el demonio `sshd` del sistema escuchaba en el puerto alternativo configurado durante el despliegue.
-
+Se ejecutó `sudo ss -tlnp` en el host para verificar los bindings de red activos. La salida confirmó que el proceso `docker-proxy` ocupaba el puerto 22, correspondiente al contenedor Cowrie, y que el demonio `sshd` del sistema escuchaba en el puerto alternativo configurado durante el despliegue. El uso de `sudo` es necesario para que la columna `Process` muestre los nombres de los procesos propietarios de cada socket.
+![alt text](ev01_ss_puertos.png)
 ---
 
 ## EV-02 — `ev02_docker_ps.png`
 
-Se ejecutó `docker ps` con formato extendido para obtener el estado de todos los contenedores. Todos presentaban estado `Up` con healthcheck `healthy`, indicando que los controles de salud configurados en el `docker-compose.yml` se superaban correctamente.
+Se ejecutó `docker ps` con formato extendido para obtener el estado de todos los contenedores. Los contenedores con healthcheck configurado (`asir_cowrie`, `asir_mysql`, `asir_loki`, `asir_promtail`) presentaban estado `Up (healthy)`, confirmando que los controles de salud definidos en el `docker-compose.yml` se superaban correctamente.
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
 ---
@@ -48,12 +48,14 @@ Se realizó un escaneo con `nmap -sV` contra el puerto 22 del servidor. El banne
 
 **Comando en el VPS:**
 ```bash
-ss -tlnp
+sudo ss -tlnp
 ```
 
 **Qué debe aparecer en la captura:**
 - Una línea con `:22` y proceso `docker-proxy` → Cowrie
 - Una línea con `:2929` y proceso `sshd` → SSH real
+
+> **Nota:** Sin `sudo` la columna `Process` aparece vacía. Es necesario ejecutar como root para que el kernel devuelva la información del proceso propietario de cada socket.
 
 ---
 
@@ -63,7 +65,7 @@ ss -tlnp
 
 **Comando en el VPS:**
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
 
 **Qué debe aparecer:**
