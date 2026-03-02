@@ -168,7 +168,7 @@ Se implementó un gestor de backups en Bash capaz de crear, listar, restaurar y 
 
 ## 7. Pruebas, validación y evidencias
 
-La validación se documentó mediante evidencias numeradas (EV-01…EV-29), organizadas por bloques: infraestructura, honeypot, Fail2Ban, observabilidad, panel privado, SSH real y pipeline completo.
+La validación se documentó mediante evidencias numeradas, organizadas por bloques: infraestructura, honeypot, Fail2Ban, observabilidad, panel privado, SSH real y pipeline completo.
 
 ### 7.1 Infraestructura
 
@@ -320,7 +320,7 @@ Se cerró el MVP al haberse desplegado y validado un sistema completo que:
 
 [3] Fail2Ban Project, “Fail2Ban Manual,” *Fail2Ban Wiki*. [En línea]. Disponible: https://www.fail2ban.org/wiki/index.php/MANUAL_0_8. [Accedido: 02-mar-2026].
 
-[4] F. Sottile, “age: A simple, modern and secure file encryption tool,” *GitHub repository*. [En línea]. Disponible: https://github.com/FiloSottile/age. [Accedido: 02-mar-2026].
+[4] F. Valsorda, "age: A simple, modern and secure file encryption tool," *GitHub repository*. [En línea]. Disponible: https://github.com/FiloSottile/age. [Accedido: 02-mar-2026].
 
 [5] Cowrie Project, “Cowrie SSH/Telnet Honeypot,” *GitHub repository*. [En línea]. Disponible: https://github.com/cowrie/cowrie. [Accedido: 02-mar-2026].
 
@@ -372,6 +372,36 @@ Se cerró el MVP al haberse desplegado y validado un sistema completo que:
   - Configuración FastCGI hacia PHP-FPM.
   - Zona de rate-limit definida como base de control anti-fuerza-bruta HTTP (pendiente de aplicar de forma estricta al login en el ajuste final).
 
+### Anexo B — Scripts
+
+**B.1 — Instalador**  
+- Fichero: `deploy.sh`  
+- Descripción: script interactivo que automatizó instalación y configuración (Docker, UFW, Fail2Ban, separación SSH, despliegue de contenedores y cifrado de credenciales).
+
+**B.2 — Gestor de backups**  
+- Fichero: `backups.sh`  
+- Descripción: script de operación para crear/restaurar/rotar backups (configuración, secretos, código, inicialización SQL y datadir MySQL).
+
+### Anexo C — Checklist de verificación
+
+**C.1 — Checklist post-despliegue**  
+- Fichero: `POSTDEPLOY_CHECKS.md`  
+- Descripción: conjunto de verificaciones reproducibles de contenedores, healthchecks, puertos, Fail2Ban y pipeline de logs.
+
+### Anexo D — Logs y evidencias
+
+**D.1 — Fragmento log Cowrie**  
+- Fichero: `evidencias/02_honeypot_cowrie/ev07_cowrie_log_fragmento.txt`  
+- Contenido: intentos de login y conexiones capturadas.
+
+**D.2 — Fragmento log Fail2Ban**  
+- Fichero: `evidencias/03_fail2ban/ev13_fail2ban_log_fragmento.txt`  
+- Contenido: eventos Found y Ban con timestamps.
+
+**D.3 — Evidencias gráficas (capturas)**  
+- Carpeta: `evidencias/`  
+- Contenido: capturas EV-01…EV-29 que acreditaron el estado y funcionamiento del MVP.
+
 ### Anexo E — Pruebas reproducibles (sin herramientas de fuerza bruta)
 
 > Estas pruebas se orientaron a verificar el MVP sin introducir herramientas de ataque automatizado. Para el checklist completo de operación se utilizó el documento post-despliegue.
@@ -412,34 +442,3 @@ ssh -p 22 -o StrictHostKeyChecking=no test@<IP_VPS>
 # SSH real (puerto alternativo): debe requerir clave pública
 ssh -p 2929 <admin_user>@<IP_VPS>
 ```
-
-
-### Anexo B — Scripts
-
-**B.1 — Instalador**  
-- Fichero: `deploy.sh`  
-- Descripción: script interactivo que automatizó instalación y configuración (Docker, UFW, Fail2Ban, separación SSH, despliegue de contenedores y cifrado de credenciales).
-
-**B.2 — Gestor de backups**  
-- Fichero: `backups.sh`  
-- Descripción: script de operación para crear/restaurar/rotar backups (configuración, secretos, código, inicialización SQL y datadir MySQL).
-
-### Anexo C — Checklist de verificación
-
-**C.1 — Checklist post-despliegue**  
-- Fichero: `POSTDEPLOY_CHECKS.md`  
-- Descripción: conjunto de verificaciones reproducibles de contenedores, healthchecks, puertos, Fail2Ban y pipeline de logs.
-
-### Anexo D — Logs y evidencias
-
-**D.1 — Fragmento log Cowrie**  
-- Fichero: `evidencias/02_honeypot_cowrie/ev07_cowrie_log_fragmento.txt`  
-- Contenido: intentos de login y conexiones capturadas.
-
-**D.2 — Fragmento log Fail2Ban**  
-- Fichero: `evidencias/03_fail2ban/ev13_fail2ban_log_fragmento.txt`  
-- Contenido: eventos Found y Ban con timestamps.
-
-**D.3 — Evidencias gráficas (capturas)**  
-- Carpeta: `evidencias/`  
-- Contenido: capturas EV-01…EV-29 que acreditaron el estado y funcionamiento del MVP.
