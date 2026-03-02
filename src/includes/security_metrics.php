@@ -13,13 +13,33 @@ function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
         $ssh      = fetchSshMetrics($client, $pdo);
         $cowrie   = fetchCowrieMetrics($client, $pdo);
 
-        $geoPoints = array_values(array_filter(array_merge(
+        // Merge events + topIps para mayor cobertura en el mapa, deduplicado por IP.
+        // Los eventos tienen prioridad (llevan timestamp); los topIps sirven de respaldo
+        // para IPs que tienen coords pero cuyos eventos no se incluyeron por el límite de 25.
+        $geoSources = array_merge(
             $fail2ban['events'] ?? [],
             $ssh['events']     ?? [],
-            $cowrie['events']  ?? []
-        ), static function (array $row): bool {
-            return isset($row['lat'], $row['lon']);
-        }));
+            $cowrie['events']  ?? [],
+            array_map(static fn($r) => $r + ['type' => 'fail2ban'], $fail2ban['topIps'] ?? []),
+            array_map(static fn($r) => $r + ['type' => 'ssh'],      $ssh['topIps']      ?? []),
+            array_map(static fn($r) => $r + ['type' => 'cowrie'],   $cowrie['topIps']   ?? []),
+        );
+        $ipSeen    = [];
+        $geoPoints = [];
+        foreach ($geoSources as $row) {
+            if (!isset($row['lat'], $row['lon'])) {
+                continue;
+            }
+            $ip = $row['ip'] ?? '';
+            if ($ip !== '' && isset($ipSeen[$ip])) {
+                continue;
+            }
+            if ($ip !== '') {
+                $ipSeen[$ip] = true;
+            }
+            $geoPoints[] = $row;
+        }
+        $geoPoints = array_values($geoPoints);
 
         if ($mode === 'lite') {
             $fail2ban['events'] = [];
@@ -221,11 +241,47 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         ];
     }
 
+    // Obtener comandos ejecutados por los atacantes dentro del honeypot.
+    // Cowrie los registra en cowrie.json con eventid="cowrie.command.input".
+    $cmdLogs = [];
+    try {
+        $cmdLogs = $client->queryRangeRaw(
+            '{job="cowrie_json"} |= "cowrie.command.input"',
+            time() - (7 * 86400),
+            time(),
+            '5m',
+            600
+        );
+    } catch (Throwable $ignored) {
+    }
+
+    $commandCounts = [];
+    $commands      = [];
+    foreach ($cmdLogs as $entry) {
+        $data = json_decode($entry['line'], true);
+        if (!is_array($data) || ($data['eventid'] ?? '') !== 'cowrie.command.input') {
+            continue;
+        }
+        $cmd = trim((string) ($data['input'] ?? ''));
+        if ($cmd === '') {
+            continue;
+        }
+        $commandCounts[$cmd] = ($commandCounts[$cmd] ?? 0) + 1;
+        $commands[] = [
+            'timestamp' => $entry['timestamp'],
+            'ip'        => $data['src_ip'] ?? 'unknown',
+            'command'   => $cmd,
+            'session'   => substr((string) ($data['session'] ?? ''), 0, 8),
+        ];
+    }
+
     return [
-        'totals'    => $totals,
-        'topIps'    => formatIpCountList($pdo, $ipCounts, 10),
-        'topUsers'  => array_slice(normalizeCounts($userCounts), 0, 10),
-        'events'    => array_slice($events, 0, 25),
+        'totals'      => $totals,
+        'topIps'      => formatIpCountList($pdo, $ipCounts, 10),
+        'topUsers'    => array_slice(normalizeCounts($userCounts), 0, 10),
+        'topCommands' => array_slice(normalizeCounts($commandCounts), 0, 15),
+        'events'      => array_slice($events, 0, 50),
+        'commands'    => array_slice($commands, 0, 50),
     ];
 }
 
