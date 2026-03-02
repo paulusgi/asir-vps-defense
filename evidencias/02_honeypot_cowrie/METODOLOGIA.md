@@ -6,32 +6,36 @@ Este bloque documenta la capacidad de Cowrie para registrar conexiones, intentos
 
 ## EV-06 — `ev06_cowrie_log_ataques.png`
 
-Se consultó el log principal de Cowrie en tiempo real mediante `docker exec` sobre el contenedor `asir_cowrie`. El log reflejó conexiones entrantes con IP de origen, puerto efímero, usuario y contraseña utilizados en cada intento, así como el resultado de la autenticación. Cowrie aceptó todas las credenciales conforme a la configuración del archivo `userdb.txt`.
+Se consultó el log principal de Cowrie. El volumen `/var/log/cowrie` está montado directamente en el host, por lo que el log es accesible sin necesidad de `docker exec` (la imagen de Cowrie es distroless y no dispone de herramientas de shell). Cowrie solo crea el archivo de log en el primer evento, por lo que es necesario haber generado tráfico previo contra el puerto 22. El log reflejó conexiones entrantes con IP de origen, puerto efímero, usuario y contraseña utilizados en cada intento, así como el resultado de la autenticación. Cowrie aceptó todas las credenciales conforme a la configuración del archivo `userdb.txt`.
 
 ```bash
-docker exec asir_cowrie tail -100 /cowrie/var/log/cowrie/cowrie.log \
+# Generar tráfico previo (desde máquina externa):
+ssh -o StrictHostKeyChecking=no root@<IP_VPS> -p 22
+
+# Ver log en el host:
+sudo tail -100 /var/log/cowrie/cowrie.log \
   | grep -E "New connection|login attempt|login failed"
 ```
-
+![alt text](ev06_cowrie_log_ataques.png)
 ---
 
 ## EV-07 — `ev07_cowrie_log_fragmento.txt`
 
-Se extrajo un fragmento representativo del log de texto de Cowrie para su inclusión literal en la memoria técnica. Se seleccionaron líneas que cubren el ciclo completo: nueva conexión, intento de login y ejecución de comandos.
+Se extrajo un fragmento representativo del log de texto de Cowrie para su inclusión literal en la memoria técnica. Se seleccionaron líneas que cubren el ciclo completo: nueva conexión, intento de login y ejecución de comandos. El log es accesible directamente en el host a través del volumen montado.
 
 ```bash
-docker exec asir_cowrie grep -E "login attempt|New connection|Command found" \
-  /cowrie/var/log/cowrie/cowrie.log | tail -30
+sudo grep -E "login attempt|New connection|Command found" \
+  /var/log/cowrie/cowrie.log | tail -30
 ```
 
 ---
 
 ## EV-08 — `ev08_sesion_tty_lista.png`
 
-Se listó el directorio de sesiones TTY dentro del contenedor para confirmar que Cowrie había grabado las sesiones interactivas de los atacantes. Cada archivo `.tty` corresponde a una sesión completa con timestamp de inicio.
+Se listó el directorio de sesiones TTY para confirmar que Cowrie había grabado las sesiones interactivas de los atacantes. Cada archivo `.tty` corresponde a una sesión completa con timestamp de inicio. El volumen Docker `cowrie_data` almacena los datos de sesión; Docker Compose lo crea con prefijo del proyecto, por lo que el nombre real es `asir-vps-defense_cowrie_data`.
 
 ```bash
-docker exec asir_cowrie ls -lh /cowrie/var/lib/cowrie/tty/
+ls -lh $(docker volume inspect asir-vps-defense_cowrie_data --format '{{.Mountpoint}}')/tty/
 ```
 
 ---
