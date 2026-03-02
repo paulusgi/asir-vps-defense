@@ -103,7 +103,7 @@ Admin ────► :2929 ──────┼──► OpenSSH real (solo cl
 El despliegue se realiza mediante un instalador interactivo que automatiza todas las fases:
 
 ```bash
-sudo bash -c 'git clone https://github.com/paulusgi/asir-vps-defense.git /opt/asir-vps-defense && cd /opt/asir-vps-defense && ./deploy.sh'
+sudo bash -c 'apt-get update && apt-get install -y git && git clone https://github.com/paulusgi/asir-vps-defense.git /opt/asir-vps-defense && cd /opt/asir-vps-defense && ./deploy.sh'
 ```
 
 El instalador ejecuta los siguientes pasos:
