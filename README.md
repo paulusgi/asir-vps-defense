@@ -52,7 +52,7 @@ Internet                         VPS Host
                             │                                  │         │
                             │                                Loki        │
                             │                                  │         │
-                            │   127.0.0.1:8888 ──► Nginx ──► PHP ───┘   │
+                            │   127.0.0.1:8888 ──► Nginx ──► PHP ───┘    │
                             │       Panel privado (túnel SSH)    │       │
                             │                                  MySQL     │
                             └────────────────────────────────────────────┘
@@ -103,7 +103,7 @@ Internet                         VPS Host
 El despliegue se realiza mediante un instalador interactivo que automatiza todas las fases:
 
 ```bash
-sudo ./deploy.sh
+sudo bash -c 'git clone https://github.com/paulusgi/asir-vps-defense.git /opt/asir-vps-defense && cd /opt/asir-vps-defense && ./deploy.sh'
 ```
 
 El instalador ejecuta los siguientes pasos:
