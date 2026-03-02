@@ -100,15 +100,17 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
 
 function fetchSshMetrics(LokiClient $client, PDO $pdo): array
 {
+    // Filtramos con |~ "sshd\[" para excluir líneas de auditoría de sudo
+    // que también contienen "Failed password" en el texto del comando ejecutado.
     $totals = [
-        'last5m' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [5m]))'),
-        'last1h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [1h]))'),
-        'last24h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" [24h]))'),
+        'last5m' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" |~ "sshd\\\\[" [5m]))'),
+        'last1h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" |~ "sshd\\\\[" [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" |~ "sshd\\\\[" [24h]))'),
     ];
 
     // Query last 24 hours for better historical view
     $logs = $client->queryRangeRaw(
-        '{job="auth"} |= "Failed password"',
+        '{job="auth"} |= "Failed password" |~ "sshd\\["',
         time() - 86400,
         time(),
         '60s',
