@@ -17,7 +17,7 @@ Se ejecutó `docker ps` con formato extendido para obtener el estado de todos lo
 ```bash
 sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 ```
-
+![alt text](ev02_docker_ps.png)
 ---
 
 ## EV-03 — `ev03_docker_inspect_cowrie.png`
@@ -27,18 +27,22 @@ Se inspeccionó el estado de salud del contenedor Cowrie mediante `docker inspec
 ```bash
 docker inspect --format='{{json .State.Health}}' asir_cowrie | python3 -m json.tool
 ```
-
+![alt text](ev03_docker_inspect_cowrie.png)
 ---
 
 ## EV-04 — `ev04_ufw_status.png`
 
 Se consultó el estado del firewall UFW con `ufw status numbered` para documentar las reglas activas. Se comprobó que únicamente los puertos necesarios para la operación del sistema estaban abiertos, y que el puerto 8888 del panel de administración no figuraba en las reglas de exposición pública.
-
+![alt text](ev04_ufw_status.png)
 ---
 
 ## EV-05 — `ev05_banner_ssh_22.png`
 
 Se realizó un escaneo con `nmap -sV` contra el puerto 22 del servidor. El banner devuelto correspondía al configurado en `cowrie.cfg` (`SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.11`), distinto al del SSH real del host, confirmando que cualquier conexión entrante al puerto estándar era atendida por el honeypot y no por el servicio de administración.
+
+```bash
+nmap -Pn -sV -p 22 <IP_VPS>
+```
 
 ---
 
@@ -112,11 +116,9 @@ ufw status numbered
 
 **Qué demuestra:** El banner que responde en :22 es el del honeypot Cowrie, no el SSH real.
 
-**Comando desde cualquier máquina:**
+**Comando desde máquina externa:**
 ```bash
-nmap -sV -p 22 <IP_VPS>
-# o también:
-nc -w3 <IP_VPS> 22
+nmap -Pn -sV -p 22 <IP_VPS>
 ```
 
-**Qué debe aparecer:** `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.11` (el banner falso de cowrie.cfg, no la versión real del servidor).
+**Qué debe aparecer:** El banner `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.11` configurado en `cowrie.cfg`, confirmando que el puerto 22 lo atiende el honeypot.
