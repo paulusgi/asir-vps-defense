@@ -10,8 +10,8 @@ services:
     ports:
       - "0.0.0.0:22:2222"   # Honeypot en puerto 22 del host → 2222 en contenedor
     volumes:
-      - ./cowrie/cowrie.cfg:/cowrie/etc/cowrie.cfg:ro
-      - ./cowrie/userdb.txt:/cowrie/etc/userdb.txt:ro
+      - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
       - /var/log/cowrie:/cowrie/var/log/cowrie   # Promtail lee /var/log/host/cowrie
       - cowrie_data:/cowrie/var/data/cowrie       # Sesiones TTY grabadas
     environment:
