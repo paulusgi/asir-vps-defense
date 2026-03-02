@@ -33,12 +33,13 @@ Con el túnel activo, se accedió al panel mediante el navegador en `http://loca
 ## EV-21 — `ev21_panel_tabla_ataques.png`
 
 Se capturó la sección de listado detallado del panel, que mostraba cada intento de conexión registrado por Cowrie con sus metadatos completos: IP de origen, usuario empleado, contraseña utilizada, timestamp y geolocalización del atacante.
-![alt text](image.png)
+![alt text](ev21_panel_tabla_ataques.png)
 ---
 
-## EV-22 — `ev21_panel_tabla_ataques.png`
+## EV-22 — `ev22_panel_mapa_geo.png`
 
 El panel incorpora un mapa de geolocalización que sitúa geográficamente las IPs atacantes utilizando la base de datos GeoLite2-City de MaxMind. La captura muestra la distribución geográfica real de los ataques recibidos durante el período de actividad del honeypot.
+![alt text](ev22_panel_mapa_geo.png)
 
 ---
 
