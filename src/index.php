@@ -212,7 +212,6 @@ if (!isset($_SESSION['user_id'])) {
             <button type="submit">Entrar</button>
         </form>
         <small>Panel accesible solo vía túnel SSH</small>
-        <small style="color:#9ca3af;">Máx 5 req/min por IP (rate-limit)</small>
     </div>
 </body>
 </html>
