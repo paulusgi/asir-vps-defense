@@ -1822,7 +1822,7 @@ main() {
     # Promtail lo lee como /var/log/host/cowrie/ (ya monta /var/log:/var/log/host:ro)
     log_info "Preparando directorio de logs de Cowrie en el host..."
     mkdir -p /var/log/cowrie
-    chown 1000:1000 /var/log/cowrie 2>/dev/null || chmod 777 /var/log/cowrie
+    chown -R 1000:1000 /var/log/cowrie
     chmod 755 /var/log/cowrie
     log_success "Directorio /var/log/cowrie listo (UID 1000, lectura por Promtail)"
 
@@ -1846,6 +1846,10 @@ main() {
     run_quiet "Construyendo y levantando contenedores" docker compose up -d --build
     local up_status=$?
     set -e
+
+    # Cowrie crea subdirectorios al arrancar (cowrie.log, cowrie.json, tty/...)
+    # Hay que volver a aplicar el chown después del up para que sean escribibles
+    chown -R 1000:1000 /var/log/cowrie 2>/dev/null || true
 
     if [ $up_status -ne 0 ]; then
         log_error "docker compose up falló"
