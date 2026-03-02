@@ -34,18 +34,24 @@ scrape_configs:
           job: auth
           __path__: /var/log/host/auth.log*
     pipeline_stages:
-      # auth.log format: "Jan 31 14:23:45 hostname sshd[1234]: ..."
+      # Formato systemd journal (Debian 11+/Ubuntu 20.04+):
+      #   "2026-03-02T17:11:41.406523+01:00 hostname sshd[1234]: ..."
+      # Formato syslog clásico (sistemas más antiguos):
+      #   "Jan 31 14:23:45 hostname sshd[1234]: ..."
       - regex:
-          expression: '^(?P<month>\w{3})\s+(?P<day>\d{1,2})\s+(?P<time>\d{2}:\d{2}:\d{2})'
+          expression: '^(?P<ts_iso>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})|^(?P<ts_syslog>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})'
       - template:
           source: timestamp
-          template: '{{ .month }} {{ .day }} {{ .time }}'
+          template: '{{ if .ts_iso }}{{ .ts_iso }}{{ else }}{{ .ts_syslog }}{{ end }}'
       - timestamp:
           source: timestamp
-          format: 'Jan 02 15:04:05'
+          format: '2006-01-02T15:04:05.999999-07:00'
+          fallback_formats:
+            - 'Jan 02 15:04:05'
+            - 'Jan  2 15:04:05'
           location: Local
 
-  # RHEL/CentOS use /var/log/secure for SSH auth failures
+  # RHEL/CentOS/AlmaLinux usan /var/log/secure (formato syslog clásico)
   - job_name: system_auth_secure
     static_configs:
       - targets:
@@ -62,6 +68,8 @@ scrape_configs:
       - timestamp:
           source: timestamp
           format: 'Jan 02 15:04:05'
+          fallback_formats:
+            - 'Jan  2 15:04:05'
           location: Local
 
   # ===========================================================================
