@@ -247,6 +247,8 @@ Gestor interactivo con las siguientes operaciones:
 | `schedule <HH:MM>` | Programa backup automático (diario, semanal o mensual) |
 | `delete <fichero>` | Elimina un backup concreto |
 
+![alt text](backup_manager.png)
+
 El contenido de cada backup incluye: `docker-compose.yml`, `.env`, configuraciones de servicios (`nginx/`, `php/`, `promtail/`, `loki/`), código fuente (`src/`), inicialización SQL (`mysql/init/`) y copia física del datadir de MySQL.
 
 ---
