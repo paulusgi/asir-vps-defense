@@ -13,7 +13,7 @@ services:
       - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
       - ./cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
       - /var/log/cowrie:/cowrie/var/log/cowrie   # Promtail lee /var/log/host/cowrie
-      - cowrie_data:/cowrie/var/data/cowrie       # Sesiones TTY grabadas
+      - cowrie_data:/cowrie/var/lib/cowrie         # Sesiones TTY grabadas
     environment:
       - TZ=Europe/Madrid
     networks:
