@@ -37,6 +37,7 @@ limits_config:
   retention_period: 744h # 31 days
   max_query_length: 744h
   max_query_lookback: 744h
+  creation_grace_period: 2h  # Allow entries up to 2h in the future (handles UTC+1 TZ offset)
 
 query_range:
   results_cache:
