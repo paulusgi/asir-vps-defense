@@ -1,7 +1,32 @@
-# PEGAR AQUÍ el fragmento de cowrie.log
-# Comando en el VPS:
-#   docker exec asir_cowrie grep -E "login attempt|New connection|Command found" \
-#     /cowrie/var/log/cowrie/cowrie.log | tail -30
-#
-# Borrar este comentario y pegar la salida del comando a continuación:
-
+sys_ops@vmi3052655:~/asir-vps-defense$ sudo grep -E "login attempt|New connection|Command found" \
+  /var/log/cowrie/cowrie.log | tail -30
+2026-03-02T15:16:14.048038Z 8556c1480052 login attempt [oracle/changeme] succeeded
+2026-03-02T15:16:14.166063Z ff9c8dc07c31 New connection: 134.199.153.188:43264 (172.18.0.2:2222) [session: ff9c8dc07c31]
+2026-03-02T15:16:15.508235Z 1dac4f6c220d New connection: 127.0.0.1:49732 (127.0.0.1:2222) [session: 1dac4f6c220d]
+2026-03-02T15:16:15.639369Z ff9c8dc07c31 login attempt [s9aboubacar/123456] succeeded
+2026-03-02T15:16:18.082721Z 838122dac6e8 New connection: 64.227.140.142:39066 (172.18.0.2:2222) [session: 838122dac6e8]
+2026-03-02T15:16:18.453472Z 3c93a567f334 New connection: 134.199.153.188:43266 (172.18.0.2:2222) [session: 3c93a567f334]
+2026-03-02T15:16:18.761579Z 838122dac6e8 login attempt [mysql/111111] succeeded
+2026-03-02T15:16:19.870738Z 3c93a567f334 login attempt [forge/forge] succeeded
+2026-03-02T15:16:23.312379Z 5472f4b6721c New connection: 134.199.153.188:33174 (172.18.0.2:2222) [session: 5472f4b6721c]
+2026-03-02T15:16:25.122901Z 5472f4b6721c login attempt [ctf/1qaz@WSX] succeeded
+2026-03-02T15:16:27.612415Z f8569143f85f New connection: 134.199.153.188:33178 (172.18.0.2:2222) [session: f8569143f85f]
+2026-03-02T15:16:28.799205Z 66352d2dc9cd New connection: 134.199.145.130:46328 (172.18.0.2:2222) [session: 66352d2dc9cd]
+2026-03-02T15:16:29.423759Z f8569143f85f login attempt [esuser/esuser@1234] succeeded
+2026-03-02T15:16:30.435123Z 66352d2dc9cd login attempt [postgres/password] succeeded
+2026-03-02T15:16:32.410772Z ae75115cf306 New connection: 134.199.153.188:44684 (172.18.0.2:2222) [session: ae75115cf306]
+2026-03-02T15:16:33.928062Z ae75115cf306 login attempt [root/LeitboGi0ro] succeeded
+2026-03-02T15:16:34.809398Z 39d762fe8b94 New connection: 167.71.224.60:56812 (172.18.0.2:2222) [session: 39d762fe8b94]
+2026-03-02T15:16:35.400269Z 39d762fe8b94 login attempt [test/!@#$%^&*] succeeded
+2026-03-02T15:16:36.773767Z ea3006bc8c74 New connection: 134.199.153.188:44698 (172.18.0.2:2222) [session: ea3006bc8c74]
+2026-03-02T15:16:37.858903Z 9e8873feb9af New connection: 181.23.107.93:49277 (172.18.0.2:2222) [session: 9e8873feb9af]
+2026-03-02T15:16:38.334443Z 304200521fa1 New connection: 152.42.202.77:59440 (172.18.0.2:2222) [session: 304200521fa1]
+2026-03-02T15:16:38.671690Z ea3006bc8c74 login attempt [root/wq123] succeeded
+2026-03-02T15:16:39.166570Z 9e8873feb9af login attempt [root/Zz123456.] succeeded
+2026-03-02T15:16:40.279938Z 304200521fa1 login attempt [ubuntu/1234567] succeeded
+2026-03-02T15:16:41.018243Z b61b88b8f1ab New connection: 181.23.107.93:50022 (172.18.0.2:2222) [session: b61b88b8f1ab]
+2026-03-02T15:16:41.189713Z 7d8e5ed7dbb1 New connection: 134.199.153.188:46308 (172.18.0.2:2222) [session: 7d8e5ed7dbb1]
+2026-03-02T15:16:42.287308Z b61b88b8f1ab login attempt [345gs5662d34/345gs5662d34] succeeded
+2026-03-02T15:16:42.571533Z 7d8e5ed7dbb1 login attempt [root/2345wert] succeeded
+2026-03-02T15:16:42.764491Z 79dffac1555a New connection: 181.23.107.93:50429 (172.18.0.2:2222) [session: 79dffac1555a]
+2026-03-02T15:16:42.852082Z d0f5dfe1b761 New connection: 138.68.179.207:48324 (172.18.0.2:2222) [session: d0f5dfe1b761]

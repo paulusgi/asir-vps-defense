@@ -9,9 +9,9 @@ Este bloque verifica la separación efectiva entre el servicio SSH de administra
 Se realizó una conexión SSH al puerto alternativo del servidor utilizando la clave pública de administración. La sesión se estableció correctamente mediante autenticación por clave, sin que el servidor solicitara contraseña, conforme a la directiva `PasswordAuthentication no` aplicada por el script de despliegue en `sshd_config`.
 
 ```bash
-ssh -p 2929 adminuser@<IP_VPS>
+ssh -p 2929 sys_ops@<IP_VPS>
 ```
-
+![alt text](ev25_ssh_real_clave.png)
 ---
 
 ## EV-26 — `ev26_ssh_password_rechazado.png`
@@ -23,7 +23,7 @@ ssh -o PreferredAuthentications=password \
     -o PubkeyAuthentication=no \
     -p 2929 adminuser@<IP_VPS>
 ```
-
+![alt text](ev26_ssh_password_rechazado.png)
 ---
 
 ## EV-27 — `ev27_nmap_puertos.png`
@@ -31,5 +31,6 @@ ssh -o PreferredAuthentications=password \
 Se realizó un escaneo con detección de versiones sobre los puertos 22, 2929 y 8888 del servidor. Los resultados mostraron que el puerto 22 respondía con el banner configurado en Cowrie y el puerto 2929 con el banner real del demonio SSH del host, evidenciando la separación de servicios. El puerto 8888 no respondió, confirmando su ausencia de exposición pública.
 
 ```bash
-nmap -sV -p 22,2929,8888 <IP_VPS>
+nmap -Pn -sV -p 22,2929,8888 <IP_VPS>
 ```
+![alt text](ev27_nmap_puertos.png)

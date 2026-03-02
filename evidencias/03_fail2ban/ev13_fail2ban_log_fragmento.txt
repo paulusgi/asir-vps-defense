@@ -1,6 +1,28 @@
-# PEGAR AQUÍ el fragmento de fail2ban.log
-# Comando en el VPS:
-#   grep -E "Ban|Found|Restore" /var/log/fail2ban.log | tail -50
-#
-# Borrar este comentario y pegar la salida del comando a continuación:
-
+sys_ops@vmi3052655:~$ grep -E "Ban|Found|Restore" /var/log/fail2ban.log | tail -50grep -E "Ban|Found|Restore" /var/log/fail2ban.l
+2026-03-02 00:08:01,111 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.122.26 - 2026-03-02 00:06:49
+2026-03-02 00:08:01,111 fail2ban.filter         [26951]: INFO    [sshd] Found 167.172.163.173 - 2026-03-02 00:06:59
+2026-03-02 00:08:01,112 fail2ban.filter         [26951]: INFO    [sshd] Found 167.172.163.173 - 2026-03-02 00:07:01
+2026-03-02 00:08:01,112 fail2ban.filter         [26951]: INFO    [sshd] Found 159.223.226.93 - 2026-03-02 00:07:20
+2026-03-02 00:08:01,112 fail2ban.filter         [26951]: INFO    [sshd] Found 159.223.226.93 - 2026-03-02 00:07:23
+2026-03-02 00:08:01,113 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.122.26 - 2026-03-02 00:07:25
+2026-03-02 00:08:01,114 fail2ban.filter         [26951]: INFO    [sshd] Found 167.172.163.173 - 2026-03-02 00:07:28
+2026-03-02 00:08:01,114 fail2ban.filter         [26951]: INFO    [sshd] Found 167.172.163.173 - 2026-03-02 00:07:30
+2026-03-02 00:08:01,115 fail2ban.filter         [26951]: INFO    [sshd] Found 141.11.182.126 - 2026-03-02 00:07:40
+2026-03-02 00:08:01,115 fail2ban.filter         [26951]: INFO    [sshd] Found 141.11.182.126 - 2026-03-02 00:07:42
+2026-03-02 00:08:01,116 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.121.25 - 2026-03-02 00:07:52
+2026-03-02 00:08:01,116 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.121.25 - 2026-03-02 00:07:54
+2026-03-02 00:08:01,116 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.121.25 - 2026-03-02 00:07:57
+2026-03-02 00:08:01,116 fail2ban.filter         [26951]: INFO    [sshd] Found 167.172.163.173 - 2026-03-02 00:07:57
+2026-03-02 00:08:01,116 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.122.26 - 2026-03-02 00:07:59
+2026-03-02 00:08:01,117 fail2ban.filter         [26951]: INFO    [sshd] Found 92.118.39.87 - 2026-03-02 00:07:59
+2026-03-02 00:08:01,117 fail2ban.filter         [26951]: INFO    [sshd] Found 167.172.163.173 - 2026-03-02 00:07:59
+2026-03-02 00:08:01,117 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.121.25 - 2026-03-02 00:08:00
+2026-03-02 00:08:01,117 fail2ban.filter         [26951]: INFO    [sshd] Found 159.223.226.93 - 2026-03-02 00:08:00
+2026-03-02 00:08:01,308 fail2ban.actions        [26951]: NOTICE  [sshd] Ban 167.172.163.173
+2026-03-02 00:08:01,497 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.122.26 - 2026-03-02 00:08:01
+2026-03-02 00:08:01,602 fail2ban.filter         [26951]: INFO    [sshd] Found 92.118.39.87 - 2026-03-02 00:08:01
+2026-03-02 00:08:02,305 fail2ban.filter         [26951]: INFO    [sshd] Found 159.223.226.93 - 2026-03-02 00:08:02
+2026-03-02 00:08:02,494 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.121.25 - 2026-03-02 00:08:02
+2026-03-02 00:08:05,977 fail2ban.filter         [26951]: INFO    [sshd] Found 2.57.121.25 - 2026-03-02 00:08:05
+2026-03-02 00:08:06,560 fail2ban.actions        [26951]: NOTICE  [sshd] Ban 2.57.121.25
+sys_ops@vmi3052655:~$

