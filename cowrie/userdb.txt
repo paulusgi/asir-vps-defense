@@ -1,18 +1,18 @@
 # ==============================================================================
 # ASIR VPS Defense - Cowrie UserDB (Honeypot Credential Database)
 #
-# Formato: username:uid:password
-#   * = wildcard (cualquier valor)
-#   uid no se usa en autenticación, es solo metadato
+# Format: username:uid:password
+#   * = wildcard (any value)
+#   uid is metadata only, not used for auth
 #
-# ESTRATEGIA DE ESTE HONEYPOT:
-#   - Aceptar TODOS los intentos de login (para capturar máxima telemetría)
-#   - Los atacantes creen que consiguen acceso real
-#   - En realidad entran en el entorno falso de Cowrie
-#   - Cada sesión se registra completamente en cowrie.log / cowrie.json
+# STRATEGY:
+#   - Accept ALL login attempts (capture maximum telemetry)
+#   - Attackers believe they get real access
+#   - They enter Cowrie's fake environment
+#   - Every session is logged in cowrie.log / cowrie.json
 # ==============================================================================
 
-# Credenciales específicas comunes que intentan los bots (acepta todo)
+# Common credentials tried by bots (accepts all)
 root:0:x
 root:0:root
 root:0:toor
@@ -46,6 +46,5 @@ test:0:test
 guest:0:x
 guest:0:guest
 
-# Wildcard final: acepta CUALQUIER usuario con CUALQUIER contraseña
-# Esto garantiza captura de todas las combinaciones no listadas arriba
+# Wildcard final: accept ANY user with ANY password
 *:x:*
