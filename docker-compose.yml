@@ -164,11 +164,10 @@ services:
 
 networks:
   frontend_net:
-    # External access required for WAF
+    # Bridge network for Cowrie (port 22) and Nginx (loopback panel)
     driver: bridge
   backend_net:
-    # Internal set to false to allow Grafana port binding to host
-    # Security is maintained by not exposing ports for MySQL/Loki
+    # Internal network: MySQL, Loki and PHP-FPM without host-exposed ports
     internal: true
 
 volumes:

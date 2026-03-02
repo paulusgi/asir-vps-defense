@@ -24,7 +24,7 @@
 #   • Instalación de Docker y Docker Compose
 #   • Hardening del Firewall (UFW)
 #   • Configuración SSH segura (Split Auth: Admin=clave, Honeypot=contraseña)
-#   • Configuración WAF (Nginx + ModSecurity)
+#   • Panel privado (Nginx + PHP-FPM + MySQL) accesible solo por túnel SSH
 #   • Pila de Observabilidad (Loki + Promtail)
 #   • Fail2Ban con políticas estrictas (35d ban, 2 intentos)
 #
