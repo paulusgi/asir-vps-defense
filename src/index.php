@@ -271,9 +271,14 @@ function h($value) {
         .status-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(16,185,129,0.15); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); padding: 8px 12px; border-radius: 999px; font-size: 0.95rem; }
         .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--text-muted); }
         .controls select, .controls button { background: #111827; color: var(--text); border: 1px solid var(--panel-border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
-        .badge-result { padding: 4px 8px; border-radius: 10px; font-size: 0.85rem; }
+        .badge-result { padding: 3px 8px; border-radius: 10px; font-size: 0.8rem; white-space: nowrap; display: inline-block; }
         .badge-result.ok { background: rgba(16,185,129,0.18); color: var(--accent); border: 1px solid rgba(16,185,129,0.35); }
         .badge-result.warn { background: rgba(245,158,11,0.18); color: var(--accent-warm); border: 1px solid rgba(245,158,11,0.35); }
+        .badge-result.honeypot-ok { background: rgba(139,92,246,0.18); color: #a78bfa; border: 1px solid rgba(139,92,246,0.35); }
+        .seg-control { display: flex; gap: 0; margin-bottom: 10px; border: 1px solid var(--panel-border); border-radius: 8px; overflow: hidden; width: fit-content; }
+        .seg-btn { background: transparent; border: none; color: var(--text-muted); padding: 5px 14px; font-size: 0.8rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
+        .seg-btn:not(:last-child) { border-right: 1px solid var(--panel-border); }
+        .seg-btn.active { background: var(--accent); color: #000; font-weight: 600; }
         #geoMap { height: 380px; width: 100%; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
         #geoSkeleton { height: 380px; width: 100%; }
         .system-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; width: 100%; }
@@ -603,8 +608,12 @@ function h($value) {
                 </div>
                 <div class="panel">
                     <h3>Comandos ejecutados en honeypot</h3>
-                    <div class="table-scroll"><table>
-                        <thead><tr><th>Comando</th><th>Veces</th></tr></thead>
+                    <div class="seg-control">
+                        <button type="button" class="seg-btn active" id="cmdsModeRecent">Recientes</button>
+                        <button type="button" class="seg-btn" id="cmdsModeTop">Más ejecutados</button>
+                    </div>
+                    <div class="table-scroll"><table id="cowrieCmdsTable">
+                        <thead id="cowrieCmdsHead"><tr><th>Fecha</th><th>IP</th><th>Comando</th></tr></thead>
                         <tbody id="cowrieCmdsBody"></tbody>
                     </table></div>
                     <div class="pager" id="cowrieCmdsPager"></div>
@@ -833,6 +842,7 @@ function h($value) {
             cowrieIps: [],
             cowrieUsers: [],
             cowrieCmds: [],
+            cowrieCmdsTop: [],
             geo: [],
             system: {
                 cpu: [],
@@ -854,6 +864,7 @@ function h($value) {
 
         const COWRIE_PAGE_SIZE = 10;
         const cowriePages = { ips: 0, users: 0, events: 0, cmds: 0 };
+        let cowrieCmdsMode = 'recent'; // 'recent' | 'top'
 
         // Renderiza un paginador numérico compacto.
         // onPage(n) se llama con el número de página (0-indexed) al hacer clic.
@@ -904,8 +915,17 @@ function h($value) {
             renderPager('cowrieUsersPager', cowriePages.users, state.cowrieUsers.length, (p) => { cowriePages.users = p; renderCowrieTables(); });
             updateTable('cowrieEventsBody', slice(state.cowrieEvents, cowriePages.events), 5, [0, 1, 4], 2);
             renderPager('cowrieEventsPager', cowriePages.events, state.cowrieEvents.length, (p) => { cowriePages.events = p; renderCowrieTables(); });
-            updateTable('cowrieCmdsBody', slice(state.cowrieCmds, cowriePages.cmds), 2, [], -1);
-            renderPager('cowrieCmdsPager', cowriePages.cmds, state.cowrieCmds.length, (p) => { cowriePages.cmds = p; renderCowrieTables(); });
+            // Comandos: modo recientes (fecha+IP+cmd, 3 cols) o top (cmd+veces, 2 cols)
+            const head = document.getElementById('cowrieCmdsHead');
+            if (cowrieCmdsMode === 'recent') {
+                if (head) head.innerHTML = '<tr><th>Fecha</th><th>IP</th><th>Comando</th></tr>';
+                updateTable('cowrieCmdsBody', slice(state.cowrieCmds, cowriePages.cmds), 3, [0, 1], -1);
+                renderPager('cowrieCmdsPager', cowriePages.cmds, state.cowrieCmds.length, (p) => { cowriePages.cmds = p; renderCowrieTables(); });
+            } else {
+                if (head) head.innerHTML = '<tr><th>Comando</th><th>Veces</th></tr>';
+                updateTable('cowrieCmdsBody', slice(state.cowrieCmdsTop, cowriePages.cmds), 2, [], -1);
+                renderPager('cowrieCmdsPager', cowriePages.cmds, state.cowrieCmdsTop.length, (p) => { cowriePages.cmds = p; renderCowrieTables(); });
+            }
         };
 
         const showToast = (msg) => {
@@ -1076,9 +1096,13 @@ function h($value) {
                         setText('cowrieSessions', cowrieTotals.sessions_24h ?? 0);
                         state.cowrieIps    = ((data.cowrie && data.cowrie.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.cowrieUsers  = ((data.cowrie && data.cowrie.topUsers) || []).map((r) => [r.label, r.count]);
-                        const badgeCowrie  = (result) => `<span class="badge-result ${result === 'ingresó al honeypot' ? 'ok' : 'warn'}">${result}</span>`;
+                        const badgeCowrie  = (result) => `<span class="badge-result ${result === 'ingresó al honeypot' ? 'honeypot-ok' : 'warn'}">${result === 'ingresó al honeypot' ? '🍯 Honeypot' : 'Rechazado'}</span>`;
                         state.cowrieEvents = ((data.cowrie && data.cowrie.events) || []).map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.ip), r.username, r.password, badgeCowrie(r.result)]);
-                        state.cowrieCmds   = ((data.cowrie && data.cowrie.topCommands) || []).map((r) => [r.label, r.count]);
+                        state.cowrieCmds      = ((data.cowrie && data.cowrie.commands) || [])
+                            .sort((a, b) => b.timestamp - a.timestamp)
+                            .map((r) => [formatTs(r.timestamp), flagLabel('', r.ip), r.command]);
+                        state.cowrieCmdsTop   = ((data.cowrie && data.cowrie.topCommands) || [])
+                            .map((r) => [r.label, r.count]);
                         // Resetear páginas al actualizar datos para que no queden en páginas inexistentes
                         Object.keys(cowriePages).forEach(k => { cowriePages[k] = 0; });
                         state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
@@ -1165,6 +1189,21 @@ function h($value) {
             renderTables();
         });
 
+        document.getElementById('cmdsModeRecent').addEventListener('click', () => {
+            cowrieCmdsMode = 'recent';
+            cowriePages.cmds = 0;
+            document.getElementById('cmdsModeRecent').classList.add('active');
+            document.getElementById('cmdsModeTop').classList.remove('active');
+            renderCowrieTables();
+        });
+        document.getElementById('cmdsModeTop').addEventListener('click', () => {
+            cowrieCmdsMode = 'top';
+            cowriePages.cmds = 0;
+            document.getElementById('cmdsModeTop').classList.add('active');
+            document.getElementById('cmdsModeRecent').classList.remove('active');
+            renderCowrieTables();
+        });
+
         // Initial skeletons
         setSkeleton('banIpsBody', 3, 3);
         setSkeleton('banEventsBody', 4, 3);
@@ -1174,7 +1213,7 @@ function h($value) {
         setSkeleton('cowrieIpsBody', 3, 3);
         setSkeleton('cowrieUsersBody', 3, 2);
         setSkeleton('cowrieEventsBody', 5, 5);
-        setSkeleton('cowrieCmdsBody', 5, 2);
+        setSkeleton('cowrieCmdsBody', 5, 3);
 
         scheduleRefresh(0);
     </script>
