@@ -52,7 +52,7 @@ Admin ────► :2929 ──────┼──► OpenSSH real (solo cl
                         │                             │            │
                         │                           Loki           │
                         │                           / │            │
-                        │  127.0.0.1:8888 → Nginx → PHP           │
+                        │  127.0.0.1:8888 → Nginx → PHP            │
                         │  Panel privado (túnel SSH)  │            │
                         │                           MySQL          │
                         └──────────────────────────────────────────┘
