@@ -297,7 +297,7 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         'topUsers'    => array_slice(normalizeCounts($userCounts), 0, 10),
         'topCommands' => array_slice(normalizeCounts($commandCounts), 0, 15),
         'events'      => array_slice($events, 0, 200),
-        'commands'    => array_slice($commands, 0, 50),
+        'commands'    => array_slice($commands, 0, 200),
     ];
 }
 
