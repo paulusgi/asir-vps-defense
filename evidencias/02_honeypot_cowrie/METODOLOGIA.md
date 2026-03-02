@@ -37,7 +37,7 @@ Se listó el directorio de sesiones TTY para confirmar que Cowrie había grabado
 ```bash
 ls -lh $(docker volume inspect asir-vps-defense_cowrie_data --format '{{.Mountpoint}}')/tty/
 ```
-
+![alt text](ev08_sesion_tty_lista.png)
 ---
 
 ## EV-09 — `ev09_sesion_tty_replay.png`
@@ -45,10 +45,10 @@ ls -lh $(docker volume inspect asir-vps-defense_cowrie_data --format '{{.Mountpo
 Se reprodujo una de las sesiones grabadas mediante la herramienta `playlog` incluida en Cowrie. La reproducción mostró en tiempo real los comandos ejecutados por el atacante dentro del entorno simulado, incluyendo reconocimiento del sistema y lectura de ficheros sensibles.
 
 ```bash
-docker exec asir_cowrie python3 /cowrie/bin/playlog \
-  /cowrie/var/lib/cowrie/tty/<archivo>.tty
+docker exec asir_cowrie python3 /cowrie/cowrie-git/src/cowrie/scripts/playlog.py \
+  /cowrie/var/lib/cowrie/tty/<archivo>.log
 ```
-
+![alt text](ev09_sesion_tty_replay.png)
 ---
 
 ## EV-10 — `ev10_hydra_result.txt`

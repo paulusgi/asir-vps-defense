@@ -11,7 +11,7 @@ Se consultó el estado de la jail `sshd` de Fail2Ban en el momento de la validac
 ```bash
 fail2ban-client status sshd
 ```
-
+![alt text](ev11_fail2ban_status.png)
 ---
 
 ## EV-12 — `ev12_fail2ban_log_bans.png`
@@ -21,7 +21,7 @@ Se inspeccionó el log de Fail2Ban filtrando por las entradas de tipo `NOTICE` c
 ```bash
 grep -E "Ban|Unban|NOTICE" /var/log/fail2ban.log | tail -30
 ```
-
+![alt text](ev12_fail2ban_log_bans.png)
 ---
 
 ## EV-13 — `ev13_fail2ban_log_fragmento.txt`

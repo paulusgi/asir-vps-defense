@@ -31,7 +31,6 @@
 | EV-21 | `05_panel_privado/ev21_panel_tabla_ataques.png` | Tabla de intentos en panel | IPs, usuarios, contraseñas, timestamps |
 | EV-22 | `05_panel_privado/ev22_panel_mapa_geo.png` | Mapa de geolocalización | Pines en IPs atacantes |
 | EV-23 | `05_panel_privado/ev23_panel_grafica_tiempo.png` | Gráfica de actividad temporal | Pico visible durante prueba controlada |
-| EV-24 | `05_panel_privado/ev24_panel_url_localhost.png` | URL del panel es localhost | Barra de dirección muestra `localhost:9999` |
 | EV-25 | `06_ssh_real/ev25_ssh_real_clave.png` | Conexión con clave a :2929 | Login exitoso, sin contraseña |
 | EV-26 | `06_ssh_real/ev26_ssh_password_rechazado.png` | Contraseña rechazada en :2929 | `Permission denied (publickey)` |
 | EV-27 | `06_ssh_real/ev27_nmap_puertos.png` | Separación de puertos confirmada | nmap distingue :22 (honeypot) vs :2929 (real) |
@@ -49,7 +48,7 @@
 | Fail2Ban baneando automáticamente | EV-11, EV-12, EV-13 |
 | Loki/Promtail recogiendo logs | EV-14, EV-15, EV-16, EV-17 |
 | Panel con métricas reales | EV-20, EV-21, EV-22, EV-23 |
-| Panel solo accesible por túnel | EV-18, EV-19, EV-24 |
+| Panel solo accesible por túnel | EV-18, EV-19 |
 | Separación honeypot / SSH real | EV-05, EV-25, EV-26, EV-27 |
 | Pipeline completo demostrado | EV-28, EV-29 |
 
