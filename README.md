@@ -36,26 +36,26 @@ El enfoque se basa en el principio de **mínima exposición**: el único servici
 ## Arquitectura del sistema
 
 ```
-Internet                         VPS Host
-────────                    ┌────────────────────────────────────────────┐
-                            │                                            │
-  Atacante ──► :22 ─────────┼──► Cowrie (honeypot SSH)                   │
-                            │       └─► /var/log/cowrie/ ──► Promtail    │
-                            │                                  │         │
-  Admin ────► :2929 ────────┼──► OpenSSH real (solo clave)     │         │
-                            │       └─► /var/log/auth.log ──►  │         │
-                            │                                  │         │
-                            │   Fail2Ban ──► ban IPs           │         │
-                            │       └─► /var/log/fail2ban.log ─┘         │
-                            │                                  │         │
-                            │                              Promtail      │
-                            │                                  │         │
-                            │                                Loki        │
-                            │                                  │         │
-                            │   127.0.0.1:8888 ──► Nginx ──► PHP ───┘    │
-                            │       Panel privado (túnel SSH)    │       │
-                            │                                  MySQL     │
-                            └────────────────────────────────────────────┘
+Internet                     VPS Host
+────────                ┌──────────────────────────────────────────┐
+                        │                                          │
+Atacante ──► :22 ───────┼──► Cowrie (honeypot SSH)                 │
+                        │     └► /var/log/cowrie/ ────┐            │
+                        │                             │            │
+Admin ────► :2929 ──────┼──► OpenSSH real (solo clave)│            │
+                        │     └► /var/log/auth.log ───┤            │
+                        │                             │            │
+                        │  Fail2Ban ──► ban IPs       │            │
+                        │     └► /var/log/fail2ban.log┘            │
+                        │                             │            │
+                        │                         Promtail         │
+                        │                             │            │
+                        │                           Loki           │
+                        │                           / │            │
+                        │  127.0.0.1:8888 → Nginx → PHP           │
+                        │  Panel privado (túnel SSH)  │            │
+                        │                           MySQL          │
+                        └──────────────────────────────────────────┘
 ```
 
 ### Componentes
