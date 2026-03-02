@@ -52,9 +52,6 @@ Se capturó la gráfica de actividad temporal del panel, que refleja la distribu
 
 Se capturó el panel con la barra de dirección del navegador visible, mostrando la URL `http://localhost:9999`. Esta evidencia acredita que el acceso se realizó a través del túnel SSH local y no mediante exposición directa del servicio a Internet.
 
----
-
-## Antes de empezar: establecer el túnel
 
 ```bash
 # Ejecutar en tu máquina LOCAL (no en el VPS):
