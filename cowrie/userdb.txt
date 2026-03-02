@@ -46,4 +46,4 @@ guest:0:x
 guest:0:guest
 
 # Wildcard final: accept ANY user with ANY password
-*:0:x
+*:0:*
