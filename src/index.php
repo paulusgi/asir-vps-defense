@@ -538,7 +538,7 @@ function h($value) {
             <section class="panel">
                 <h3>Baneos Cowrie <span class="legend-dot cowrie" style="margin-left:6px;vertical-align:middle;width:10px;height:10px;display:inline-block;border-radius:50%;"></span></h3>
                 <div class="table-scroll"><table>
-                    <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
+                    <thead><tr><th>Fecha</th><th>Pa&iacute;s</th><th>IP</th></tr></thead>
                     <tbody id="cowrieBanBody"></tbody>
                 </table></div>
                 <div class="pager" id="cowrieBanPager"></div>
@@ -1130,7 +1130,7 @@ function h($value) {
                         state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         const allBanEvents = ((data.fail2ban && data.fail2ban.events) || []);
                         state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
-                        state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
+                        state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         banPages.events = 0;
                         banPages.cowrie = 0;
                         state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
