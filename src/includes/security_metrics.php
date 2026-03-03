@@ -80,9 +80,10 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
         1500
     );
 
-    $ipCounts = [];
-    $jailCounts = [];
-    $events = [];
+    $ipCounts      = [];
+    $sshIpCounts   = [];
+    $jailCounts    = [];
+    $events        = [];
 
     foreach ($logs as $entry) {
         $parsed = parseFail2BanEvent($entry['line']);
@@ -94,6 +95,9 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
         $jail = $parsed['jail'];
 
         $ipCounts[$ip] = ($ipCounts[$ip] ?? 0) + 1;
+        if ($jail === 'sshd') {
+            $sshIpCounts[$ip] = ($sshIpCounts[$ip] ?? 0) + 1;
+        }
         $jailCounts[$jail] = ($jailCounts[$jail] ?? 0) + 1;
 
         $geo = lookupGeoForIp($pdo, $ip);
@@ -115,10 +119,11 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
     usort($events, static fn($a, $b) => $b['timestamp'] <=> $a['timestamp']);
 
     return [
-        'totals' => $totals,
-        'topIps' => formatIpCountList($pdo, $ipCounts),
-        'topJails' => array_slice(normalizeCounts($jailCounts), 0, 5),
-        'events' => array_slice($events, 0, 500),
+        'totals'     => $totals,
+        'topIps'     => formatIpCountList($pdo, $ipCounts),
+        'topIpsSSH'  => formatIpCountList($pdo, $sshIpCounts),
+        'topJails'   => array_slice(normalizeCounts($jailCounts), 0, 5),
+        'events'     => array_slice($events, 0, 500),
     ];
 }
 
