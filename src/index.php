@@ -519,13 +519,6 @@ function h($value) {
 
         <div class="tab-content active" data-tab="ban">
             <section class="grid">
-                <div class="panel table-scroll">
-                    <h3>Top IPs baneadas</h3>
-                    <table>
-                        <thead><tr><th>IP</th><th>País</th><th>Baneos</th></tr></thead>
-                        <tbody id="banIpsBody"></tbody>
-                    </table>
-                </div>
                 <div class="panel">
                     <h3>Baneos SSH real</h3>
                     <div class="table-scroll"><table>
@@ -534,14 +527,22 @@ function h($value) {
                     </table></div>
                     <div class="pager" id="banEventsPager"></div>
                 </div>
+                <div class="panel">
+                    <h3>Baneos Cowrie <span class="legend-dot cowrie" style="margin-left:6px;vertical-align:middle;width:10px;height:10px;display:inline-block;border-radius:50%;"></span></h3>
+                    <div class="table-scroll"><table>
+                        <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
+                        <tbody id="cowrieBanBody"></tbody>
+                    </table></div>
+                    <div class="pager" id="cowrieBanPager"></div>
+                </div>
             </section>
             <section class="panel">
-                <h3>Baneos Cowrie <span class="legend-dot cowrie" style="margin-left:6px;vertical-align:middle;width:10px;height:10px;display:inline-block;border-radius:50%;"></span></h3>
+                <h3>Top IPs baneadas</h3>
                 <div class="table-scroll"><table>
-                    <thead><tr><th>Fecha</th><th>Pa&iacute;s</th><th>IP</th></tr></thead>
-                    <tbody id="cowrieBanBody"></tbody>
+                    <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
+                    <tbody id="banIpsBody"></tbody>
                 </table></div>
-                <div class="pager" id="cowrieBanPager"></div>
+                <div class="pager" id="banIpsPager"></div>
             </section>
         </div>
 
@@ -687,7 +688,7 @@ function h($value) {
 
         const CRITICAL_USERS = ['root', 'admin', 'administrator', 'ubuntu', 'pi', 'postgres', 'mysql', 'oracle'];
         const EMPTY_STATES = {
-            banIpsBody: { icon: 'shield', title: '¡Sin IPs baneadas!', desc: 'El sistema no ha detectado amenazas recientes', positive: true },
+            banIpsBody: { icon: 'shield', title: '¡Sin IPs baneadas!', desc: 'No hay baneos registrados de ninguna fuente', positive: true },
             banEventsBody: { icon: 'shield', title: 'Sin baneos SSH', desc: 'Fail2Ban no ha registrado baneos SSH en este período', positive: true },
             cowrieBanBody: { icon: 'shield', title: 'Sin baneos Cowrie', desc: 'Ninguna IP baneada por actividad en el honeypot', positive: true },
             sshIpsBody: { icon: 'lock', title: 'Sin ataques SSH', desc: 'No hay intentos de acceso no autorizados', positive: true },
@@ -873,7 +874,7 @@ function h($value) {
 
         const COWRIE_PAGE_SIZE = 10;
         const cowriePages = { ips: 0, users: 0, events: 0, cmds: 0 };
-        const banPages = { events: 0, cowrie: 0 };
+        const banPages = { events: 0, cowrie: 0, ips: 0 };
         let cowrieCmdsMode = 'recent'; // 'recent' | 'top'
 
         // Renderiza un paginador numérico compacto.
@@ -1059,11 +1060,12 @@ function h($value) {
         };
 
         const renderTables = () => {
-            updateTable('banIpsBody', state.banIps, 3, [1], -1);
-            updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [1], -1);
+            updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [0, 1], -1);
             renderPagerBan('banEventsPager', banPages.events, state.banEvents.length, banPages, 'events');
             updateTable('cowrieBanBody', sliceBan(state.cowrieBanEvents, banPages.cowrie), 3, [0, 1], -1);
             renderPagerBan('cowrieBanPager', banPages.cowrie, state.cowrieBanEvents.length, banPages, 'cowrie');
+            updateTable('banIpsBody', sliceBan(state.banIps, banPages.ips), 3, [0, 1], -1);
+            renderPagerBan('banIpsPager', banPages.ips, state.banIps.length, banPages, 'ips');
 
             updateTable('sshIpsBody', state.sshIps, 3, [1], -1);
             updateTable('sshUsersBody', state.sshUsers, 2, [], 0);
@@ -1129,10 +1131,10 @@ function h($value) {
                         const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${name || cc || ''}`.trim();
                         state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         const allBanEvents = ((data.fail2ban && data.fail2ban.events) || []);
+                        state.banIps         = allBanEvents.map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
-                        banPages.events = 0;
-                        banPages.cowrie = 0;
+                        banPages.events = 0; banPages.cowrie = 0; banPages.ips = 0;
                         state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
                         state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, flagLabel(r.country_code, r.ip), badgeResult(r.result)]);
@@ -1248,9 +1250,9 @@ function h($value) {
         });
 
         // Initial skeletons
-        setSkeleton('banIpsBody', 3, 3);
         setSkeleton('banEventsBody', 4, 3);
         setSkeleton('cowrieBanBody', 3, 3);
+        setSkeleton('banIpsBody', 3, 3);
         setSkeleton('sshIpsBody', 3, 3);
         setSkeleton('sshUsersBody', 3, 2);
         setSkeleton('sshEventsBody', 5, 4);
