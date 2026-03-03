@@ -526,14 +526,22 @@ function h($value) {
                         <tbody id="banIpsBody"></tbody>
                     </table>
                 </div>
-                <div class="panel table-scroll">
-                    <h3>Baneos recientes (Fail2Ban)</h3>
-                    <table>
+                <div class="panel">
+                    <h3>Baneos SSH recientes</h3>
+                    <div class="table-scroll"><table>
                         <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
                         <tbody id="banEventsBody"></tbody>
-                    </table>
-                    <button type="button" class="load-more" id="banLoadMore" aria-label="Cargar más baneos">Cargar más</button>
+                    </table></div>
+                    <div class="pager" id="banEventsPager"></div>
                 </div>
+            </section>
+            <section class="panel">
+                <h3>Baneos Cowrie <span class="legend-dot cowrie" style="margin-left:6px;vertical-align:middle;width:10px;height:10px;display:inline-block;border-radius:50%;"></span></h3>
+                <div class="table-scroll"><table>
+                    <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
+                    <tbody id="cowrieBanBody"></tbody>
+                </table></div>
+                <div class="pager" id="cowrieBanPager"></div>
             </section>
         </div>
 
@@ -680,7 +688,8 @@ function h($value) {
         const CRITICAL_USERS = ['root', 'admin', 'administrator', 'ubuntu', 'pi', 'postgres', 'mysql', 'oracle'];
         const EMPTY_STATES = {
             banIpsBody: { icon: 'shield', title: '¡Sin IPs baneadas!', desc: 'El sistema no ha detectado amenazas recientes', positive: true },
-            banEventsBody: { icon: 'shield', title: 'Sin eventos de baneo', desc: 'Fail2Ban no ha registrado actividad en este período', positive: true },
+            banEventsBody: { icon: 'shield', title: 'Sin baneos SSH', desc: 'Fail2Ban no ha registrado baneos SSH en este período', positive: true },
+            cowrieBanBody: { icon: 'shield', title: 'Sin baneos Cowrie', desc: 'Ninguna IP baneada por actividad en el honeypot', positive: true },
             sshIpsBody: { icon: 'lock', title: 'Sin ataques SSH', desc: 'No hay intentos de acceso no autorizados', positive: true },
             sshUsersBody: { icon: 'users', title: 'Sin usuarios atacados', desc: 'No se detectaron intentos de login sospechosos', positive: true },
             sshEventsBody: { icon: 'activity', title: 'Sin actividad SSH', desc: 'No hay eventos de autenticación en este período', neutral: true },
@@ -834,6 +843,7 @@ function h($value) {
 
         let state = {
             banEvents: [],
+            cowrieBanEvents: [],
             sshEvents: [],
             banIps: [],
             sshIps: [],
@@ -859,11 +869,11 @@ function h($value) {
         let refreshTimer = null;
         let inFlight = false;
         let paused = false;
-        let banVisible = 15;
         let sshVisible = 20;
 
         const COWRIE_PAGE_SIZE = 10;
         const cowriePages = { ips: 0, users: 0, events: 0, cmds: 0 };
+        const banPages = { events: 0, cowrie: 0 };
         let cowrieCmdsMode = 'recent'; // 'recent' | 'top'
 
         // Renderiza un paginador numérico compacto.
@@ -1015,11 +1025,45 @@ function h($value) {
             renderDonut('diskDonut', sys.disk.usedPct, '#60a5fa');
         };
 
+        const PAGE_SIZE_BAN = 15;
+        const sliceBan = (arr, page) => arr.slice(page * PAGE_SIZE_BAN, (page + 1) * PAGE_SIZE_BAN);
+        const renderPagerBan = (containerId, currentPage, total, pages, key) => {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            el.innerHTML = '';
+            if (total <= PAGE_SIZE_BAN) return;
+            const numPages = Math.ceil(total / PAGE_SIZE_BAN);
+            const mkBtn = (label, page, active = false, disabled = false) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'pager-btn' + (active ? ' active' : '');
+                b.textContent = label;
+                b.disabled = disabled;
+                if (!disabled && !active) b.addEventListener('click', () => { pages[key] = page; renderTables(); });
+                return b;
+            };
+            el.appendChild(mkBtn('←', currentPage - 1, false, currentPage === 0));
+            const show = new Set([0, numPages - 1]);
+            for (let i = Math.max(0, currentPage - 1); i <= Math.min(numPages - 1, currentPage + 1); i++) show.add(i);
+            let prev = -1;
+            [...show].sort((a, b) => a - b).forEach((p) => {
+                if (p - prev > 1) { const d = document.createElement('span'); d.className = 'pager-btn'; d.textContent = '…'; d.style.cssText = 'cursor:default;border:none'; el.appendChild(d); }
+                el.appendChild(mkBtn(String(p + 1), p, p === currentPage));
+                prev = p;
+            });
+            el.appendChild(mkBtn('→', currentPage + 1, false, currentPage >= numPages - 1));
+            const info = document.createElement('span');
+            info.className = 'pager-info';
+            info.textContent = `Pág. ${currentPage + 1} / ${numPages} · ${total} registros`;
+            el.appendChild(info);
+        };
+
         const renderTables = () => {
             updateTable('banIpsBody', state.banIps, 3, [1], -1);
-            updateTable('banEventsBody', state.banEvents.slice(0, banVisible), 3, [0, 2], -1);
-            const banBtn = document.getElementById('banLoadMore');
-            if (banBtn) banBtn.disabled = banVisible >= state.banEvents.length;
+            updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [0, 2], -1);
+            renderPagerBan('banEventsPager', banPages.events, state.banEvents.length, banPages, 'events');
+            updateTable('cowrieBanBody', sliceBan(state.cowrieBanEvents, banPages.cowrie), 3, [0, 2], -1);
+            renderPagerBan('cowrieBanPager', banPages.cowrie, state.cowrieBanEvents.length, banPages, 'cowrie');
 
             updateTable('sshIpsBody', state.sshIps, 3, [1], -1);
             updateTable('sshUsersBody', state.sshUsers, 2, [], 0);
@@ -1084,7 +1128,11 @@ function h($value) {
 
                         const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${name || cc || ''}`.trim();
                         state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
-                        state.banEvents = ((data.fail2ban && data.fail2ban.events) || []).map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
+                        const allBanEvents = ((data.fail2ban && data.fail2ban.events) || []);
+                        state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
+                        state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
+                        banPages.events = 0;
+                        banPages.cowrie = 0;
                         state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
                         state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, flagLabel(r.country_code, r.ip), badgeResult(r.result)]);
@@ -1179,11 +1227,6 @@ function h($value) {
             });
         });
 
-        document.getElementById('banLoadMore').addEventListener('click', () => {
-            banVisible += 15;
-            renderTables();
-        });
-
         document.getElementById('sshLoadMore').addEventListener('click', () => {
             sshVisible += 15;
             renderTables();
@@ -1207,6 +1250,7 @@ function h($value) {
         // Initial skeletons
         setSkeleton('banIpsBody', 3, 3);
         setSkeleton('banEventsBody', 4, 3);
+        setSkeleton('cowrieBanBody', 3, 3);
         setSkeleton('sshIpsBody', 3, 3);
         setSkeleton('sshUsersBody', 3, 2);
         setSkeleton('sshEventsBody', 5, 4);
