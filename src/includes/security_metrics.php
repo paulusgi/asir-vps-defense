@@ -110,6 +110,10 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
         ];
     }
 
+    // Ordenar descendente para que los eventos más recientes (Cowrie recién activado)
+    // no queden fuera del slice cuando hay muchos eventos SSH históricos anteriores.
+    usort($events, static fn($a, $b) => $b['timestamp'] <=> $a['timestamp']);
+
     return [
         'totals' => $totals,
         'topIps' => formatIpCountList($pdo, $ipCounts),
