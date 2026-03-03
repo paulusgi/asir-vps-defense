@@ -114,7 +114,7 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
         'totals' => $totals,
         'topIps' => formatIpCountList($pdo, $ipCounts),
         'topJails' => array_slice(normalizeCounts($jailCounts), 0, 5),
-        'events' => array_slice($events, 0, 25),
+        'events' => array_slice($events, 0, 500),
     ];
 }
 
