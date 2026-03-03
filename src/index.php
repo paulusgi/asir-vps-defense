@@ -520,9 +520,9 @@ function h($value) {
         <div class="tab-content active" data-tab="ban">
             <section class="grid">
                 <div class="panel table-scroll">
-                    <h3>Top IP baneadas (Fail2Ban)</h3>
+                    <h3>Top IP baneadas (SSH real)</h3>
                     <table>
-                        <thead><tr><th>IP</th><th>País</th><th>Eventos</th></tr></thead>
+                        <thead><tr><th>IP</th><th>País</th><th>Baneos</th></tr></thead>
                         <tbody id="banIpsBody"></tbody>
                     </table>
                 </div>
@@ -1127,7 +1127,7 @@ function h($value) {
                         setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
                         const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${name || cc || ''}`.trim();
-                        state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
+                        state.banIps = ((data.fail2ban && data.fail2ban.topIpsSSH) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         const allBanEvents = ((data.fail2ban && data.fail2ban.events) || []);
                         state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
                         state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
