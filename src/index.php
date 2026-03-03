@@ -537,7 +537,7 @@ function h($value) {
                 </div>
             </section>
             <section class="panel">
-                <h3>Top IPs baneadas</h3>
+                <h3>Historial de baneos</h3>
                 <div class="table-scroll"><table>
                     <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
                     <tbody id="banIpsBody"></tbody>
@@ -688,7 +688,7 @@ function h($value) {
 
         const CRITICAL_USERS = ['root', 'admin', 'administrator', 'ubuntu', 'pi', 'postgres', 'mysql', 'oracle'];
         const EMPTY_STATES = {
-            banIpsBody: { icon: 'shield', title: '¡Sin IPs baneadas!', desc: 'No hay baneos registrados de ninguna fuente', positive: true },
+            banIpsBody: { icon: 'shield', title: 'Sin historial de baneos', desc: 'No hay baneos registrados de ninguna fuente', positive: true },
             banEventsBody: { icon: 'shield', title: 'Sin baneos SSH', desc: 'Fail2Ban no ha registrado baneos SSH en este período', positive: true },
             cowrieBanBody: { icon: 'shield', title: 'Sin baneos Cowrie', desc: 'Ninguna IP baneada por actividad en el honeypot', positive: true },
             sshIpsBody: { icon: 'lock', title: 'Sin ataques SSH', desc: 'No hay intentos de acceso no autorizados', positive: true },
