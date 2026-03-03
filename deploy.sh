@@ -784,10 +784,19 @@ configure_fail2ban() {
         chown syslog:adm /var/log/auth.log 2>/dev/null || true
         chmod 640 /var/log/auth.log
     fi
-    
+
+    # Asegurar que el log de Cowrie existe con permisos correctos
+    mkdir -p /var/log/cowrie
+    touch /var/log/cowrie/cowrie.log
+    chmod 644 /var/log/cowrie/cowrie.log
+
     # Asegurar que el log de Fail2Ban existe con permisos correctos
     touch /var/log/fail2ban.log
     chmod 644 /var/log/fail2ban.log
+
+    # Instalar filtro de Cowrie
+    cp "$(dirname "$0")/fail2ban/filter.d/cowrie.conf" /etc/fail2ban/filter.d/cowrie.conf
+    chmod 644 /etc/fail2ban/filter.d/cowrie.conf
 
     # Crear configuración de jaula personalizada
     cat > /etc/fail2ban/jail.local <<EOF
@@ -813,21 +822,31 @@ maxretry = 6
 ignoreip = 127.0.0.1/8 ::1
 
 [sshd]
-enabled = true
-port    = $SSH_PORT
-logpath = %(sshd_log)s
-backend = %(sshd_backend)s
-filter  = sshd
+enabled  = true
+port     = $SSH_PORT
+logpath  = %(sshd_log)s
+backend  = %(sshd_backend)s
+filter   = sshd
 maxretry = 6
+
+[cowrie]
+enabled  = true
+port     = 22
+filter   = cowrie
+logpath  = /var/log/cowrie/cowrie.log
+maxretry = 5
+findtime = 600
+bantime  = 604800
 EOF
 
     systemctl restart fail2ban
     systemctl is-active --quiet fail2ban
     systemctl enable fail2ban
-    
-    log_success "Fail2Ban configurado (puerto $SSH_PORT)"
-    echo -e "  ${DIM}Política: ${BOLD}35 días${NC}${DIM} de ban tras ${BOLD}2${NC}${DIM} intentos fallidos (ban al 3º)${NC}"
-    echo -e "  ${DIM}Ventana de detección: 10 minutos${NC}"
+
+    log_success "Fail2Ban configurado (puerto $SSH_PORT + honeypot Cowrie)"
+    echo -e "  ${DIM}Política SSH: ${BOLD}35 días${NC}${DIM} de ban tras ${BOLD}2${NC}${DIM} intentos fallidos${NC}"
+    echo -e "  ${DIM}Política Cowrie: ${BOLD}7 días${NC}${DIM} de ban tras ${BOLD}5${NC}${DIM} conexiones al honeypot${NC}"
+    echo -e "  ${DIM}Ventana de detección: 10 min (SSH) / 10 min (Cowrie)${NC}"
 }
 
 # =============================================================================
