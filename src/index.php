@@ -1062,7 +1062,7 @@ function h($value) {
             updateTable('banIpsBody', state.banIps, 3, [1], -1);
             updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [0, 2], -1);
             renderPagerBan('banEventsPager', banPages.events, state.banEvents.length, banPages, 'events');
-            updateTable('cowrieBanBody', sliceBan(state.cowrieBanEvents, banPages.cowrie), 3, [0, 2], -1);
+            updateTable('cowrieBanBody', sliceBan(state.cowrieBanEvents, banPages.cowrie), 3, [0, 1], -1);
             renderPagerBan('cowrieBanPager', banPages.cowrie, state.cowrieBanEvents.length, banPages, 'cowrie');
 
             updateTable('sshIpsBody', state.sshIps, 3, [1], -1);
