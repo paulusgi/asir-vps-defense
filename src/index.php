@@ -520,16 +520,16 @@ function h($value) {
         <div class="tab-content active" data-tab="ban">
             <section class="grid">
                 <div class="panel table-scroll">
-                    <h3>Top IP baneadas (SSH real)</h3>
+                    <h3>Top IPs baneadas</h3>
                     <table>
                         <thead><tr><th>IP</th><th>País</th><th>Baneos</th></tr></thead>
                         <tbody id="banIpsBody"></tbody>
                     </table>
                 </div>
                 <div class="panel">
-                    <h3>Baneos SSH recientes</h3>
+                    <h3>Baneos SSH real</h3>
                     <div class="table-scroll"><table>
-                        <thead><tr><th>Fecha</th><th>Jail</th><th>Origen</th></tr></thead>
+                        <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
                         <tbody id="banEventsBody"></tbody>
                     </table></div>
                     <div class="pager" id="banEventsPager"></div>
@@ -1060,7 +1060,7 @@ function h($value) {
 
         const renderTables = () => {
             updateTable('banIpsBody', state.banIps, 3, [1], -1);
-            updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [0, 2], -1);
+            updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [1], -1);
             renderPagerBan('banEventsPager', banPages.events, state.banEvents.length, banPages, 'events');
             updateTable('cowrieBanBody', sliceBan(state.cowrieBanEvents, banPages.cowrie), 3, [0, 1], -1);
             renderPagerBan('cowrieBanPager', banPages.cowrie, state.cowrieBanEvents.length, banPages, 'cowrie');
@@ -1127,9 +1127,9 @@ function h($value) {
                         setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
                         const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${name || cc || ''}`.trim();
-                        state.banIps = ((data.fail2ban && data.fail2ban.topIpsSSH) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
+                        state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         const allBanEvents = ((data.fail2ban && data.fail2ban.events) || []);
-                        state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), r.jail, flagLabel(r.country_code, r.ip)]);
+                        state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         banPages.events = 0;
                         banPages.cowrie = 0;
