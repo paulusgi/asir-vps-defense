@@ -6,3 +6,4 @@ mysql/init/02-seed.sql
 geoip/
 .vscode
 ignore/
+.github
