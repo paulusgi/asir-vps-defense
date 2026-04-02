@@ -39,4 +39,4 @@ for i in {1..6}; do ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -o Batch
 ```
 
 ![alt text](ev29_pipeline_ban.png)
-Es la evidencia de mayor valor técnico para la memoria.
+

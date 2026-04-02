@@ -45,6 +45,8 @@ El panel incorpora un mapa de geolocalización que sitúa geográficamente las I
 
 ## EV-23 — `ev23_panel_grafica_tiempo.png`
 
-Se capturó la gráfica de actividad temporal del panel, que refleja la distribución de intentos de conexión a lo largo del tiempo. 
+Se capturó la gráfica de actividad temporal del panel, que refleja la distribución de intentos de conexión a lo largo del tiempo.
+
 ![alt text](ev23_panel_grafica_tiempo.png)
+
 ---

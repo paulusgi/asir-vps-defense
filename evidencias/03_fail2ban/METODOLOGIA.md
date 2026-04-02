@@ -28,6 +28,8 @@ grep -E "Ban|Unban|NOTICE" /var/log/fail2ban.log | tail -30
 
 Se extrajo un fragmento del log de Fail2Ban para su inclusión en el anexo técnico de la memoria. El fragmento cubre el período de las pruebas controladas, mostrando la secuencia de detección de intentos fallidos y la aplicación subsiguiente de los bans correspondientes.
 
+- [ev13_fail2ban_log_fragmento.txt](ev13_fail2ban_log_fragmento.txt)
+
 ```bash
 grep -E "Ban|Found|Restore" /var/log/fail2ban.log | tail -50
 ```
