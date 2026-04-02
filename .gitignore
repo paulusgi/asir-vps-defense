@@ -1,8 +1,6 @@
 .env
 secrets/
 .DS_Store
-admin_credentials.txt
-mysql/init/02-seed.sql
 geoip/
 .vscode
 ignore/
