@@ -23,6 +23,8 @@ sudo tail -100 /var/log/cowrie/cowrie.log \
 
 Se extrajo un fragmento representativo del log de texto de Cowrie para su inclusión literal en la memoria técnica. Se seleccionaron líneas que cubren el ciclo completo: nueva conexión, intento de login y ejecución de comandos. El log es accesible directamente en el host a través del volumen montado.
 
+- [ev07_cowrie_log_fragmento.txt](ev07_cowrie_log_fragmento.txt)
+
 ```bash
 sudo grep -E "login attempt|New connection|Command found" \
   /var/log/cowrie/cowrie.log | tail -30
@@ -54,6 +56,8 @@ docker exec asir_cowrie python3 /cowrie/cowrie-git/src/cowrie/scripts/playlog.py
 ## EV-10 — `ev10_hydra_result.txt`
 
 Como prueba controlada, se lanzó un ataque de fuerza bruta con Hydra desde una máquina externa contra el puerto 22 del servidor. Hydra registró en su fichero de salida las credenciales con las que Cowrie concedió acceso, confirmando que el honeypot admitía cualquier combinación de usuario y contraseña sin restricción, a la vez que registraba cada intento en sus logs.
+
+- [ev10_hydra_result.txt](ev10_hydra_result.txt)
 
 ```bash
 hydra -l root -P /tmp/passwords.txt -t 4 -s 22 \
