@@ -113,7 +113,7 @@ El instalador ejecuta los siguientes pasos:
 3. **Honeypot Cowrie**: contenedor Docker escuchando en el puerto 22, captura credenciales y comandos de atacantes; logs reenviados a Loki vía Promtail.
 4. **Configuración SSH**: split authentication (admin = solo clave pública en puerto 2929, resto = contraseña para captura).
 5. **Firewall UFW**: política deny incoming, puertos 22 (Cowrie) y 2929 (SSH real) abiertos.
-6. **Fail2Ban**: jails `sshd` y `cowrie` con ban de 35 días, detección en 10 minutos.
+6. **Fail2Ban**: jails `sshd` (ban 35 días) y `cowrie` (ban 7 días), detección en 10 minutos.
 7. **Despliegue Docker**: construcción y arranque de contenedores con `docker compose up`.
 8. **Generación de credenciales**: contraseña del panel (bcrypt), Docker Secrets para MySQL, cifrado con `age`.
 9. **Preparación de backups**: volumen LVM o loop, primer backup opcional.
@@ -173,6 +173,10 @@ age -d -i ~/.ssh/<clave_privada> -o credenciales.txt ~/admin_credentials.txt.age
 ├── cowrie/
 │   ├── cowrie.cfg               # Configuración del honeypot (banner, backend, logs)
 │   └── userdb.txt               # Base de credenciales (wildcard: acepta todo)
+│
+├── fail2ban/
+│   └── filter.d/
+│       └── cowrie.conf           # Filtro Fail2Ban para logs de Cowrie (failregex)
 │
 ├── nginx/
 │   └── conf.d/
@@ -283,7 +287,7 @@ docker exec asir_loki wget -qO- http://localhost:3100/ready
 
 - Honeypot Cowrie operativo con captura de ataques reales en puerto 22.
 - SSH real en puerto alternativo con autenticación exclusiva por clave pública.
-- Fail2Ban con detección y ban automático (política de 35 días).
+- Fail2Ban con detección y ban automático (sshd: 35 días, cowrie: 7 días).
 - Loki y Promtail ingiriendo logs de auth, fail2ban, cowrie (texto y JSON).
 - Panel web con autenticación, métricas, tabla de ataques, mapa de geolocalización y gráfica temporal.
 - Panel accesible exclusivamente mediante túnel SSH (binding a loopback).
@@ -306,7 +310,7 @@ docker exec asir_loki wget -qO- http://localhost:3100/ready
 | Documento | Descripción |
 |-----------|-------------|
 | [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) | Checklist de verificación post-despliegue |
-| [evidencias/README.md](evidencias/README.md) | Índice de 28 evidencias técnicas con relación a objetivos |
+| [evidencias/README.md](evidencias/README.md) | Índice de 31 evidencias técnicas con relación a objetivos |
 | [LICENSE](LICENSE) | Licencia de uso no comercial |
 
 ---

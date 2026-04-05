@@ -28,6 +28,7 @@ docker inspect -f '{{.State.Health.Status}}' asir_mysql
 ```bash
 systemctl status fail2ban --no-pager
 fail2ban-client status sshd
+fail2ban-client status cowrie
 ```
 
 **Firewall UFW** (puerto 22 Cowrie + puerto SSH real deben aparecer)

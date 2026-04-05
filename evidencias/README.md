@@ -24,7 +24,7 @@
 | EV-13 | `03_fail2ban/ev13_fail2ban_log_fragmento.txt` | Log texto para memoria | Fragmento pegado directamente en memoria |
 | EV-13b | `03_fail2ban/ev13b_panel_baneos.png` | Pestaña Baneos del panel con IP baneada | Se visualiza al menos 1 IP baneada con timestamp y jail |
 | EV-14 | `04_observabilidad/ev14_loki_ready.png` | Loki operativo | Respuesta `ready` |
-| EV-15 | `04_observabilidad/ev15_promtail_targets.png` | Promtail recopilando logs | Jobs `auth`, `cowrie`, `cowrie_json` presentes en Loki |
+| EV-15 | `04_observabilidad/ev15_promtail_targets.png` | Promtail recopilando logs | Jobs `fail2ban`, `auth`, `cowrie`, `cowrie_json` presentes en Loki |
 | EV-16 | `04_observabilidad/ev16_loki_query_cowrie.png` | Datos cowrie llegando a Loki | Query devuelve líneas con eventos |
 | EV-17 | `04_observabilidad/ev17_loki_query_fail2ban.png` | Datos fail2ban llegando a Loki | Query devuelve líneas con bans |
 | EV-18 | `05_panel_privado/ev18_panel_bloqueado_ext.png` | Panel no accesible sin túnel | `Connection refused` o timeout desde exterior |
