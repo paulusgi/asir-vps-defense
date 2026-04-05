@@ -33,14 +33,12 @@
 | EV-21 | `05_panel_privado/ev21_panel_tabla_ataques.png` | Tabla de intentos en panel | IPs, usuarios, contraseñas, timestamps |
 | EV-22 | `05_panel_privado/ev22_panel_mapa_geo.png` | Mapa de geolocalización | Pines en IPs atacantes |
 | EV-23 | `05_panel_privado/ev23_panel_grafica_tiempo.png` | Gráfica de actividad temporal | Pico visible durante prueba controlada |
-| EV-24 | `05_panel_privado/ev24_panel_honeypot_comandos.png` | Pestaña Honeypot con comandos ejecutados | Se visualizan IPs, credenciales, intentos y comandos de la sesión controlada |
-| EV-24b | `05_panel_privado/ev24b_panel_auditoria.png` | Pestaña Auditoría del panel | Se visualizan LOGIN_SUCCESS y LOGIN_FAILED con IP, usuario y timestamp |
+| EV-24 | `05_panel_privado/ev24_panel_auditoria.png` | Pestaña Auditoría del panel | Se visualizan LOGIN_SUCCESS y LOGIN_FAILED con IP, usuario y timestamp |
 | EV-25 | `06_ssh_real/ev25_ssh_real_clave.png` | Conexión con clave a :2929 | Login exitoso, sin contraseña |
 | EV-26 | `06_ssh_real/ev26_ssh_password_rechazado.png` | Contraseña rechazada en :2929 | `Permission denied (publickey)` |
 | EV-27 | `06_ssh_real/ev27_nmap_puertos.png` | Separación de puertos confirmada | nmap distingue :22 (honeypot) vs :2929 (real) |
 | EV-28 | `07_pipeline_completo/ev28_pipeline_ataque.png` | Ciclo ataque → cowrie.log → Loki | 3 ventanas simultáneas con el flujo |
 | EV-29 | `07_pipeline_completo/ev29_pipeline_ban.png` | Ciclo intento → fail2ban.log → ban | 2 ventanas mostrando detección y ban |
-| EV-30 | `07_pipeline_completo/ev30_pipeline_honeypot_comandos.png` | Flujo completo de comandos en honeypot | Ataque, registro en Cowrie y visualización posterior en panel |
 
 ---
 
@@ -52,9 +50,9 @@
 | SSH real seguro en puerto alternativo | EV-01, EV-25, EV-26, EV-27 |
 | Fail2Ban baneando automáticamente | EV-11, EV-12, EV-13, EV-13b |
 | Loki/Promtail recogiendo logs | EV-14, EV-15, EV-16, EV-17 |
-| Panel con métricas reales | EV-20, EV-21, EV-22, EV-23, EV-24, EV-24b |
+| Panel con métricas reales | EV-20, EV-21, EV-22, EV-23, EV-24 |
 | Panel solo accesible por túnel | EV-18, EV-19 |
 | Separación honeypot / SSH real | EV-05, EV-25, EV-26, EV-27 |
-| Pipeline completo demostrado | EV-28, EV-29, EV-30 |
+| Pipeline completo demostrado | EV-28, EV-29 |
 
 
