@@ -15,7 +15,7 @@
 # NOMBRE:       deploy.sh
 # VERSIÓN:      2.1.0
 # AUTOR:        Equipo ASIR
-# LICENCIA:     MIT
+# LICENCIA:     Uso No Comercial 1.0.0
 #
 # DESCRIPCIÓN:
 #   Orquesta el despliegue de una infraestructura VPS segura (honeypot)
@@ -52,6 +52,7 @@ export NEEDRESTART_SUSPEND=1
 
 readonly SCRIPT_VERSION="2.1.0"
 readonly SCRIPT_NAME="ASIR VPS Defense"
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BACKUP_VG_NAME="backups"
 readonly BACKUP_LV_NAME="backups"
 readonly BACKUP_MOUNTPOINT="/srv/backups"
@@ -795,7 +796,17 @@ configure_fail2ban() {
     chmod 644 /var/log/fail2ban.log
 
     # Instalar filtro de Cowrie
-    cp "$(dirname "$0")/fail2ban/filter.d/cowrie.conf" /etc/fail2ban/filter.d/cowrie.conf
+    if [ -f "$SCRIPT_DIR/fail2ban/filter.d/cowrie.conf" ]; then
+        cp "$SCRIPT_DIR/fail2ban/filter.d/cowrie.conf" /etc/fail2ban/filter.d/cowrie.conf
+    else
+        log_warn "Filtro cowrie.conf no encontrado en $SCRIPT_DIR/fail2ban/filter.d/ — generando inline"
+        cat > /etc/fail2ban/filter.d/cowrie.conf <<'COWRIE_FILTER'
+[Definition]
+failregex = ^.*New connection: <HOST>:\d+ .*$
+ignoreregex =
+datepattern = %%Y-%%m-%%dT%%H:%%M:%%S
+COWRIE_FILTER
+    fi
     chmod 644 /etc/fail2ban/filter.d/cowrie.conf
 
     # Crear configuración de jaula personalizada

@@ -50,3 +50,25 @@ Se capturó la gráfica de actividad temporal del panel, que refleja la distribu
 ![alt text](ev23_panel_grafica_tiempo.png)
 
 ---
+
+## EV-24 — `ev24_panel_honeypot_comandos.png`
+
+Se accedió a la pestaña `Honeypot` del panel privado tras ejecutar una sesión controlada contra el puerto 22 del VPS. Durante dicha sesión se introdujeron comandos básicos de reconocimiento dentro del entorno señuelo, como `whoami`, `uname -a` y `cat /etc/passwd`. Tras el tiempo de ingesta necesario, el panel mostró en una misma vista las IPs atacantes, las credenciales utilizadas, los intentos recientes y la tabla de comandos ejecutados, validando la correlación entre la interacción registrada por Cowrie y su explotación visual posterior.
+
+```bash
+# Máquina atacante
+ssh -o StrictHostKeyChecking=no root@<IP_VPS> -p 22
+
+# Dentro de la sesión Cowrie
+whoami
+uname -a
+cat /etc/passwd
+exit
+
+# Máquina administradora
+ssh -L 9999:127.0.0.1:8888 -p 2929 adminuser@<IP_VPS> -N
+```
+
+![alt text](ev24_panel_honeypot_comandos.png)
+
+---
