@@ -110,12 +110,13 @@ El instalador ejecuta los siguientes pasos:
 
 1. **Preparación del sistema**: instalación de dependencias (Docker, UFW, Fail2Ban, rsyslog).
 2. **Creación de usuarios**: administrador seguro (clave SSH) y usuario honeypot.
-3. **Configuración SSH**: split authentication (admin = solo clave pública, resto = contraseña para captura).
-4. **Firewall UFW**: política deny incoming, puertos 22 y 2929 abiertos.
-5. **Fail2Ban**: jail `sshd` con ban de 35 días, detección en 10 minutos.
-6. **Despliegue Docker**: construcción y arranque de contenedores con `docker compose up`.
-7. **Generación de credenciales**: contraseña del panel (bcrypt), Docker Secrets para MySQL, cifrado con `age`.
-8. **Preparación de backups**: volumen LVM o loop, primer backup opcional.
+3. **Honeypot Cowrie**: contenedor Docker escuchando en el puerto 22, captura credenciales y comandos de atacantes; logs reenviados a Loki vía Promtail.
+4. **Configuración SSH**: split authentication (admin = solo clave pública en puerto 2929, resto = contraseña para captura).
+5. **Firewall UFW**: política deny incoming, puertos 22 (Cowrie) y 2929 (SSH real) abiertos.
+6. **Fail2Ban**: jails `sshd` y `cowrie` con ban de 35 días, detección en 10 minutos.
+7. **Despliegue Docker**: construcción y arranque de contenedores con `docker compose up`.
+8. **Generación de credenciales**: contraseña del panel (bcrypt), Docker Secrets para MySQL, cifrado con `age`.
+9. **Preparación de backups**: volumen LVM o loop, primer backup opcional.
 
 > El instalador es **idempotente**: si se interrumpe, puede re-ejecutarse sin duplicar pasos gracias a marcas de estado persistentes.
 
