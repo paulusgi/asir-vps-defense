@@ -26,7 +26,7 @@ El enfoque se basa en el principio de **mínima exposición**: el único servici
 |----|----------|-------------|
 | OE1 | Hardening SSH | Acceso administrativo por clave pública en puerto alternativo; rechazo de contraseña |
 | OE2 | Honeypot SSH | Cowrie en puerto 22, captura de intentos de autenticación y sesiones |
-| OE3 | Respuesta automática | Fail2Ban con política estricta (ban de 35 días) sobre el SSH real |
+| OE3 | Respuesta automática | Fail2Ban con política estricta: jail `sshd` (ban 35 días) sobre el SSH real y jail `cowrie` (ban 7 días) sobre el honeypot |
 | OE4 | Centralización de logs | Loki + Promtail para ingesta de auth.log, fail2ban.log y logs de Cowrie |
 | OE5 | Panel privado | Visualización de métricas con geolocalización offline, solo accesible por túnel SSH |
 | OE6 | Operación | Verificación post-despliegue y gestor de copias de seguridad |
@@ -127,10 +127,10 @@ El instalador ejecuta los siguientes pasos:
 El panel no está expuesto a Internet. Para acceder se establece un túnel SSH:
 
 ```bash
-ssh -p 2929 -L 8888:127.0.0.1:8888 <admin_user>@<IP_VPS> -N
+ssh -p 2929 -L 9999:127.0.0.1:8888 <admin_user>@<IP_VPS> -N
 ```
 
-Tras establecer el túnel, abrir `http://localhost:8888` en el navegador local.
+Tras establecer el túnel, abrir `http://localhost:9999` en el navegador local.
 
 Las credenciales de acceso se generan durante la instalación y se almacenan cifradas en `~/admin_credentials.txt.age`. Para descifrarlas:
 
@@ -197,7 +197,7 @@ age -d -i ~/.ssh/<clave_privada> -o credenciales.txt ~/admin_credentials.txt.age
 │   └── config.yml               # Configuración de Loki (retención 31d, caché)
 │
 ├── promtail/
-│   └── config.yml               # Configuración de Promtail (4 jobs: auth, fail2ban, cowrie, cowrie_json)
+│   └── config.yml               # Configuración de Promtail (5 scrape configs: fail2ban, system_auth, system_auth_secure, cowrie, cowrie_json)
 │
 ├── geoip/                       # Base de datos GeoLite2-City (descargada en deploy)
 │
@@ -206,24 +206,24 @@ age -d -i ~/.ssh/<clave_privada> -o credenciales.txt ~/admin_credentials.txt.age
     ├── 02_honeypot_cowrie/      # EV-06 a EV-10: logs, sesiones TTY, prueba controlada
     ├── 03_fail2ban/             # EV-11 a EV-13: estado jail, bans, fragmento de log
     ├── 04_observabilidad/       # EV-14 a EV-17: Loki ready, jobs Promtail, consultas LogQL
-    ├── 05_panel_privado/        # EV-18 a EV-23: túnel SSH, dashboard, mapa, gráfica
+    ├── 05_panel_privado/        # EV-18 a EV-24: túnel SSH, dashboard, mapa, gráfica, auditoría
     ├── 06_ssh_real/             # EV-25 a EV-27: acceso por clave, rechazo contraseña, nmap
-    └── 07_pipeline_completo/    # EV-28 a EV-29: ciclo ataque→Loki, ciclo intento→ban
+    └── 07_pipeline_completo/    # EV-28, EV-29: ciclo ataque→Loki, ciclo intento→ban
 ```
 
 ---
 
 ## Evidencias técnicas
 
-Se documentaron 28 evidencias numeradas (EV-01 a EV-29) organizadas en 7 bloques de validación. Cada evidencia incluye el comando ejecutado, la captura de pantalla y una descripción de lo que demuestra.
+Se documentaron 31 evidencias numeradas (EV-01 a EV-29 + EV-10b + EV-13b) organizadas en 7 bloques de validación. Cada evidencia incluye el comando ejecutado, la captura de pantalla y una descripción de lo que demuestra.
 
 | Bloque | Evidencias | Qué valida |
 |--------|------------|------------|
 | Infraestructura | EV-01 a EV-05 | Puertos, contenedores healthy, firewall, banner honeypot |
-| Honeypot Cowrie | EV-06 a EV-10 | Captura de ataques reales, sesiones TTY, prueba con Hydra |
-| Fail2Ban | EV-11 a EV-13 | Jail activa, IPs baneadas, fragmento de log con Found+Ban |
+| Honeypot Cowrie | EV-06 a EV-10, EV-10b | Captura de ataques reales, sesiones TTY, prueba con Hydra, panel honeypot |
+| Fail2Ban | EV-11 a EV-13, EV-13b | Jail activa, IPs baneadas, fragmento de log con Found+Ban, panel baneos |
 | Observabilidad | EV-14 a EV-17 | Loki ready, jobs Promtail, consultas LogQL para cowrie y fail2ban |
-| Panel privado | EV-18 a EV-23 | Bloqueo externo, túnel SSH, dashboard, tabla de ataques, mapa, gráfica |
+| Panel privado | EV-18 a EV-24 | Bloqueo externo, túnel SSH, dashboard, tabla de ataques, mapa, gráfica, auditoría |
 | SSH real | EV-25 a EV-27 | Login por clave, rechazo de contraseña, separación de servicios con nmap |
 | Pipeline completo | EV-28, EV-29 | Ciclo ataque→Cowrie→Promtail→Loki y ciclo intento→Fail2Ban→ban |
 

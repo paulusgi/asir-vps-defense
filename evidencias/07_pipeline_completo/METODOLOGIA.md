@@ -40,29 +40,3 @@ for i in {1..6}; do ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -o Batch
 
 ![alt text](ev29_pipeline_ban.png)
 
----
-
-## EV-30 — `ev30_pipeline_honeypot_comandos.png`
-
-Se validó el flujo completo de la nueva fase práctica centrada en comandos ejecutados dentro del honeypot. La primera ventana seguía el log de Cowrie en tiempo real desde el host; la segunda mostraba la sesión interactiva del atacante sobre el puerto 22, en la que se ejecutaron comandos de reconocimiento básicos; la tercera presentaba el panel privado accesible mediante túnel SSH, ya con la pestaña `Honeypot` mostrando la actividad registrada. La composición resultante acredita la cadena causal completa: interacción del atacante, persistencia en log y explotación visual posterior en la interfaz de administración.
-
-```bash
-# Ventana 1 — seguimiento del log Cowrie:
-sudo tail -f /var/log/cowrie/cowrie.log \
-  | grep --line-buffered -E "New connection|login attempt|Command found"
-
-# Ventana 2 — sesión controlada en el honeypot:
-ssh -o StrictHostKeyChecking=no root@<IP_VPS> -p 22
-
-# Comandos dentro del honeypot:
-whoami
-uname -a
-cat /etc/passwd
-exit
-
-# Ventana 3 — acceso al panel por túnel SSH:
-ssh -L 9999:127.0.0.1:8888 -p 2929 adminuser@<IP_VPS> -N
-```
-
-![alt text](ev30_pipeline_honeypot_comandos.png)
-
