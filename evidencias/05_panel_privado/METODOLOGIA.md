@@ -72,3 +72,18 @@ ssh -L 9999:127.0.0.1:8888 -p 2929 adminuser@<IP_VPS> -N
 ![alt text](ev24_panel_honeypot_comandos.png)
 
 ---
+
+## EV-24b — `ev24b_panel_auditoria.png`
+
+Se accedió a la pestaña **Auditoría** del panel privado. Esta vista muestra el registro de accesos al propio panel, con entradas de tipo `LOGIN_SUCCESS` y `LOGIN_FAILED`, incluyendo IP de origen, usuario, timestamp y tipo de evento. Los datos provienen de la tabla `audit_log` en MySQL y del resumen `view_audit_summary`.
+
+```bash
+# Establecer túnel
+ssh -L 9999:127.0.0.1:8888 -p 2929 adminuser@<IP_VPS> -N
+
+# Abrir http://localhost:9999 → Pestaña "Auditoría"
+```
+
+![alt text](ev24b_panel_auditoria.png)
+
+---

@@ -33,3 +33,18 @@ Se extrajo un fragmento del log de Fail2Ban para su inclusión en el anexo técn
 ```bash
 grep -E "Ban|Found|Restore" /var/log/fail2ban.log | tail -50
 ```
+
+---
+
+## EV-13b — `ev13b_panel_baneos.png`
+
+Se accedió a la pestaña **Baneos** del panel privado a través del túnel SSH. La vista muestra la tabla de IPs actualmente baneadas por Fail2Ban, incluyendo IP, jail de origen y timestamp del ban. Los datos se obtienen mediante consulta Loki (`{job="fail2ban"} |~ "Ban"`) y se presentan en tiempo real.
+
+```bash
+# Establecer túnel
+ssh -L 9999:127.0.0.1:8888 -p 2929 adminuser@<IP_VPS> -N
+
+# Abrir http://localhost:9999 → Pestaña "Baneos"
+```
+
+![alt text](ev13b_panel_baneos.png)
