@@ -63,3 +63,18 @@ Como prueba controlada, se lanzó un ataque de fuerza bruta con Hydra desde una 
 hydra -l root -P /tmp/passwords.txt -t 4 -s 22 \
   -o /tmp/hydra_result.txt ssh://<IP_VPS>
 ```
+
+---
+
+## EV-10b — `ev10b_panel_honeypot_comandos.png`
+
+Se accedió a la pestaña **Honeypot** del panel privado a través del túnel SSH. La vista presenta en una misma página las IPs atacantes, credenciales utilizadas, intentos recientes y la tabla de comandos ejecutados dentro del entorno señuelo. Los datos proceden de consultas Loki sobre `{job="cowrie_json"}` filtrando eventos `cowrie.command.input`.
+
+```bash
+# Establecer túnel
+ssh -L 9999:127.0.0.1:8888 -p 2929 adminuser@<IP_VPS> -N
+
+# Abrir http://localhost:9999 → Pestaña "Honeypot"
+```
+
+![alt text](ev10b_panel_honeypot_comandos.png)
