@@ -1,55 +1,92 @@
-# 04 — Observabilidad (Loki + Promtail)
+# 04 — Observability (Loki and Promtail)
 
-Este bloque verifica el funcionamiento del stack de observabilidad, comprobando que Promtail recopilaba activamente los logs del sistema y los enviaba a Loki, donde quedaban disponibles para consulta mediante LogQL.
+Promtail reads `auth.log`, `fail2ban.log` and Cowrie's text and JSON logs from the host (mounted at `/var/log/host/` inside the Promtail container) and sends every line to Loki; it does not filter them. Loki's port 3100 is not published on the host (EV-02 shows `3100/tcp` with no host binding), so the queries run inside the Loki container with `docker exec`. All captures are from v2.1.0, which used Loki and Promtail 2.9.2.
+
+## Time zones
+
+- In March the host clock was on CET, UTC+1 (EV-03 shows `+01:00`). Fail2Ban writes host local time, with no offset.
+- Cowrie writes UTC, with a trailing `Z`.
+- Promtail gives each Loki entry the time written in the log line: read as local time for `fail2ban` and `auth`, as UTC for `cowrie` and `cowrie_json` (`promtail/config.yml`).
+- Both are stored correctly in these captures. The Fail2Ban line `2026-03-02 00:08:06,560 ... Ban 2.57.121.25` (CET) has the Loki timestamp `1772406486` s, which is `2026-03-01T23:08:06Z` (EV-17). The Cowrie line `2026-03-02T15:59:50.818890Z` has `1772467190` s, which is `2026-03-02T15:59:50Z` (EV-16).
+- The queries below end their window two hours in the future (`END="$(date -d '2 hours' ...)"`). That is a safety margin for a time zone read the wrong way, which would store entries up to an hour or two ahead of the real time and hide them from a window that ends "now". With the timestamps stored correctly, as here, the margin is not needed and `end` can be omitted (Loki then uses the current time).
+
+To convert a Loki timestamp, drop the last nine digits (nanoseconds) and run `date -u -d @1772406486`.
 
 ---
 
-## EV-14 — `ev14_loki_ready.png`
+## EV-14 — Loki readiness
 
-Se realizó una petición HTTP al endpoint `/ready` de Loki para verificar que el servicio había completado su inicialización y se encontraba en estado operativo. La respuesta `ready` confirmó que Loki estaba aceptando escrituras y sirviendo consultas. El puerto 3100 de Loki no está expuesto al host (red `backend_net` interna), por lo que la consulta se realiza desde dentro del propio contenedor mediante `docker exec`.
+**Shows.** `ready`.
+
+**Command.**
 
 ```bash
 docker exec asir_loki wget -qO- http://localhost:3100/ready
 ```
-![alt text](ev14_loki_ready.png)
+
+**What it demonstrates.** Loki had finished starting and reported itself ready to receive and serve data.
+
+![Loki /ready endpoint queried from inside the asir_loki container returns ready](ev14_loki_ready.png)
+
 ---
 
-## EV-15 — `ev15_promtail_targets.png`
+## EV-15 — Job labels in Loki
 
-Se consultó la API de etiquetas de Loki para verificar qué jobs estaba entregando Promtail. La imagen de Promtail es distroless y no dispone de herramientas de shell, por lo que la consulta se realizó a través del contenedor de Loki. La respuesta listó los jobs activos: `auth` (auth.log del host), `cowrie` y `cowrie_json` (honeypot). El job `fail2ban` aparecerá en cuanto Fail2Ban genere su primer ban y Promtail ingeste la entrada en Loki.
+**Shows.** Loki's label-values API for the label `job` returns `{"status":"success","data":["auth","cowrie","cowrie_json"]}`.
+
+**Command.**
 
 ```bash
 docker exec asir_loki wget -qO- \
   'http://localhost:3100/loki/api/v1/label/job/values'
 ```
-![alt text](ev15_promtail_targets.png)
+
+**What it demonstrates.** Loki held log lines from three of Promtail's jobs: `auth`, `cowrie` and `cowrie_json`. This is Loki's view of the data it holds, not Promtail's list of targets.
+
+**Notes.** The `fail2ban` job is missing at that moment, although it exists (EV-17 returns its lines). Without a `start` parameter this endpoint only looks at a recent window (the last 6 hours by default), so the most likely reason is that no Fail2Ban line had been ingested in that window.
+
+![Loki label values for job: auth, cowrie and cowrie_json](ev15_loki_job_labels.png)
+
 ---
 
-## EV-16 — `ev16_loki_query_cowrie.png`
+## EV-16 — LogQL query: Cowrie
 
-Se ejecutó una consulta LogQL contra la API de Loki para recuperar eventos del job `cowrie` dentro de la ventana temporal de las pruebas. La respuesta confirmó que los logs generados por el honeypot durante los ataques controlados habían llegado correctamente al sistema de centralización.
+**Shows.** A `query_range` for `{job="cowrie"}` with `limit=5`. Loki returns one stream (`filename: /var/log/host/cowrie/cowrie.log`, `job: cowrie`) with five lines from session `71ae83302450`, all at 2026-03-02 15:59:50 UTC: `cat /proc/uptime ...`, `uname -m ...`, `uname -s -v -n -m ...`, a long one-liner that collects system information (`uname`, CPU count and model, GPU through `lspci`, `cat --help`, `ls --help`, `last`), and `()`.
+
+**Command.**
 
 ```bash
-# El host VPS usa UTC; los logs de Cowrie tienen timestamp UTC+1.
-# Se amplía la ventana temporal 2h hacia adelante para cubrir el offset horario.
 START="$(date -d '2 hours ago' +%s)000000000"
-END="$(date -d '2 hours' +%s)000000000"
+END="$(date -d '2 hours' +%s)000000000"   # 2 h ahead: time-zone margin, see above
 docker exec asir_loki wget -qO- \
   "http://localhost:3100/loki/api/v1/query_range?query=%7Bjob%3D%22cowrie%22%7D&start=${START}&end=${END}&limit=5" \
   | python3 -m json.tool | head -40
 ```
-![alt text](ev16_loki_query_cowrie.png)
+
+**What it demonstrates.** Cowrie's text log reaches Loki through Promtail and can be queried with LogQL. The commands are those of an automated script profiling the machine inside the honeypot; the source IP is not part of these lines.
+
+**Notes.** The Loki timestamp, `1772467190000000000` ns, is the time in the line, in UTC. `head -40` cuts the output.
+
+![LogQL query on job cowrie: five lines from one honeypot session, including a long system-profiling one-liner](ev16_loki_query_cowrie.png)
+
 ---
 
-## EV-17 — `ev17_loki_query_fail2ban.png`
+## EV-17 — LogQL query: Fail2Ban
 
-De forma análoga, se consultó Loki para el job `fail2ban`. La respuesta incluyó las entradas de ban generadas durante las pruebas, confirmando el pipeline completo: Fail2Ban escribe en su log → Promtail detecta el cambio → Loki indexa la entrada → la consulta lo devuelve.
+**Shows.** A `query_range` for `{job="fail2ban"}` over the previous 24 hours, `limit=5`. Loki returns one stream (`filename: /var/log/host/fail2ban.log`, `job: fail2ban`) with the five newest lines: `[sshd] Ban 2.57.121.25` at 00:08:06,560 on 2 March, and the four `[sshd] Found` lines before it.
+
+**Command.**
 
 ```bash
 START="$(date -d '24 hours ago' +%s)000000000"
-END="$(date -d '2 hours' +%s)000000000"
+END="$(date -d '2 hours' +%s)000000000"   # 2 h ahead: time-zone margin, see above
 docker exec asir_loki wget -qO- \
   "http://localhost:3100/loki/api/v1/query_range?query=%7Bjob%3D%22fail2ban%22%7D&start=${START}&end=${END}&limit=5" \
   | python3 -m json.tool | head -40
 ```
-![alt text](ev17_loki_query_fail2ban.png)
+
+**What it demonstrates.** Fail2Ban's log reaches Loki. Promtail ships every line of the file, not only bans: the `Found` lines come back next to the `Ban`.
+
+**Notes.** The `Ban` line's Loki timestamp, `1772406486` s, is `2026-03-01T23:08:06Z`, the UTC equivalent of the 00:08:06 CET written in the line.
+
+![LogQL query on job fail2ban: the Ban line for 2.57.121.25 and four Found lines, with their Loki timestamps](ev17_loki_query_fail2ban.png)
