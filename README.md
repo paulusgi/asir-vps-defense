@@ -1,332 +1,178 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Debian-11%2F12-A81D33?style=for-the-badge&logo=debian" alt="Debian">
-  <img src="https://img.shields.io/badge/Ubuntu-20.04+-E95420?style=for-the-badge&logo=ubuntu&logoColor=white" alt="Ubuntu">
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
-  <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=for-the-badge" alt="License">
-</p>
+# ASIR VPS Defense
 
-<h1 align="center">ASIR VPS Defense</h1>
+A defended Linux VPS. A **Cowrie SSH honeypot on port 22** lets attackers "log in" and records their credentials, commands and sessions, while the **real SSH runs on another port and accepts only the admin's public key**. Fail2Ban turns honeypot activity into bans on the real host, Promtail and Loki collect every log, and a **private dashboard is reachable only through an SSH tunnel**. One Bash installer sets it all up with Docker Compose.
 
-<p align="center">
-  <strong>Sistema de defensa, hardening y observabilidad para VPS Linux</strong><br>
-  <em>Proyecto Final de Ciclo Superior — ASIR 2025/2026</em>
-</p>
+Final project of the Spanish higher vocational degree in Network and Systems Administration (*ASIR*), 2025–2026, by Pau Ginesta.
 
----
+![Dashboard map of the latest attack sources: honeypot connections, failed SSH logins and Fail2Ban bans](evidence/05_private_panel/ev22_panel_geo_map.png)
 
-## Resumen del proyecto
+<sub>Dashboard map with live data from the VPS, April 2026 (v2.1.0, Spanish UI).</sub>
 
-Sistema automatizado de defensa y observabilidad para servidores VPS Linux expuestos a Internet, centrado en el vector SSH. El proyecto combina **hardening del acceso administrativo**, despliegue de un **honeypot SSH** (Cowrie) para captura de telemetría de ataques, **bloqueo automático** con Fail2Ban, **centralización de logs** con Loki/Promtail y un **panel de métricas privado** accesible exclusivamente mediante túnel SSH.
+## What it does
 
-El enfoque se basa en el principio de **mínima exposición**: el único servicio publicado a Internet es SSH (puerto 22 para el honeypot y un puerto alternativo para administración). El panel web no se expone públicamente.
+| | |
+|---|---|
+| **Deceive** | Cowrie answers on port 22 as an Ubuntu server, accepts any password and records logins, commands and full TTY sessions. |
+| **Protect** | The real OpenSSH listens on port 2929 (configurable) for one account, with public keys only. |
+| **Respond** | Fail2Ban bans repeat offenders on the real SSH, and blocks anyone who keeps hitting the honeypot from the rest of the host. |
+| **Observe** | Promtail ships `auth.log`, `fail2ban.log` and Cowrie's text and JSON logs to Loki; a PHP dashboard shows bans, SSH attempts, honeypot credentials and commands, a map and an audit log. |
 
-### Objetivos del proyecto
+![Honeypot tab: top attacking IPs, most tried credentials, recent attempts and commands run inside the honeypot](evidence/02_cowrie_honeypot/ev10b_panel_honeypot_commands.png)
 
-| ID | Objetivo | Descripción |
-|----|----------|-------------|
-| OE1 | Hardening SSH | Acceso administrativo por clave pública en puerto alternativo; rechazo de contraseña |
-| OE2 | Honeypot SSH | Cowrie en puerto 22, captura de intentos de autenticación y sesiones |
-| OE3 | Respuesta automática | Fail2Ban con política estricta: jail `sshd` (ban 35 días) sobre el SSH real y jail `cowrie` (ban 7 días) sobre el honeypot |
-| OE4 | Centralización de logs | Loki + Promtail para ingesta de auth.log, fail2ban.log y logs de Cowrie |
-| OE5 | Panel privado | Visualización de métricas con geolocalización offline, solo accesible por túnel SSH |
-| OE6 | Operación | Verificación post-despliegue y gestor de copias de seguridad |
+<sub>Honeypot tab after a few days online (v2.1.0, Spanish UI): 604 attempts as `root`, credentials tried by bots, and the commands they ran once "inside".</sub>
 
----
+## Architecture
 
-## Arquitectura del sistema
+```mermaid
+flowchart LR
+    attacker([Attacker]) -->|"TCP 22"| cowrie
+    admin([Admin]) -->|"TCP 2929, public key<br/>+ tunnel to 127.0.0.1:8888"| sshd
 
+    subgraph host["VPS host"]
+        sshd["OpenSSH, real<br/>AllowUsers admin"]
+        f2b["Fail2Ban"]
+        logs[("/var/log<br/>auth, fail2ban, cowrie")]
+        subgraph honeypot_net["honeypot_net"]
+            cowrie["Cowrie 2.9<br/>fake SSH"]
+        end
+        subgraph frontend_net["frontend_net"]
+            nginx["nginx<br/>127.0.0.1:8888"]
+            php["PHP-FPM<br/>dashboard"]
+        end
+        subgraph backend_net["backend_net, internal"]
+            mysql[("MySQL 8.4")]
+            loki[("Loki")]
+            promtail["Promtail"]
+        end
+    end
+
+    sshd --> logs
+    cowrie --> logs
+    f2b -->|reads| logs
+    f2b -.->|"bans on the host<br/>(nftables input)"| sshd
+    promtail -->|tails| logs
+    promtail --> loki
+    sshd -.->|SSH tunnel| nginx
+    nginx --> php
+    php --> mysql
+    php --> loki
 ```
-Internet                     VPS Host
-────────                ┌──────────────────────────────────────────┐
-                        │                                          │
-Atacante ──► :22 ───────┼──► Cowrie (honeypot SSH)                 │
-                        │     └► /var/log/cowrie/ ────┐            │
-                        │                             │            │
-Admin ────► :2929 ──────┼──► OpenSSH real (solo clave)│            │
-                        │     └► /var/log/auth.log ───┤            │
-                        │                             │            │
-                        │  Fail2Ban ──► ban IPs       │            │
-                        │     └► /var/log/fail2ban.log┘            │
-                        │                             │            │
-                        │                         Promtail         │
-                        │                             │            │
-                        │                           Loki           │
-                        │                           / │            │
-                        │  127.0.0.1:8888 → Nginx → PHP            │
-                        │  Panel privado (túnel SSH)  │            │
-                        │                           MySQL          │
-                        └──────────────────────────────────────────┘
-```
 
-### Componentes
+- **Port 22** is published by Docker and forwarded to Cowrie. **Port 2929** is the host's OpenSSH. Nothing else is reachable from the Internet: UFW denies incoming traffic, and the dashboard binds to `127.0.0.1`.
+- Cowrie sits alone on its own network. If the honeypot were compromised, it could not reach nginx, PHP-FPM, MySQL or Loki.
+- MySQL and Loki live on an internal network with no route out and no published ports.
 
-| Componente | Tecnología | Función |
-|------------|-----------|---------|
-| Honeypot SSH | Cowrie (contenedor) | Captura ataques en puerto 22, registra credenciales y sesiones TTY |
-| SSH real | OpenSSH (host) | Acceso administrativo en puerto alternativo, solo clave pública |
-| Bloqueo automático | Fail2Ban (host) | Detección de intentos fallidos en SSH real y ban automático |
-| Centralización de logs | Loki + Promtail (contenedores) | Ingesta de auth.log, fail2ban.log, cowrie.log y cowrie.json |
-| Panel de métricas | Nginx + PHP 8.2-FPM (contenedores) | Dashboard con métricas, tabla de ataques, mapa de geolocalización |
-| Base de datos | MySQL 8.0 (contenedor) | Autenticación del panel, auditoría y caché GeoIP |
-| Geolocalización | GeoLite2-City (local) | Enriquecimiento offline de IPs sin dependencia de APIs externas |
+## Design decisions
 
-### Redes Docker
+- **The honeypot owns port 22.** That is where bots knock, so that is where the telemetry is. The real SSH moves to another port and accepts nothing but the admin's key: there is no password to guess.
+- **Ban from the host, not from the honeypot.** An IP that makes 5 connections to Cowrie in 10 minutes is a known attacker. Fail2Ban blocks it from every port of the real host for 7 days with an nftables *input* rule, but Docker forwards port 22 to Cowrie through the *forward* path, so the attacker keeps reaching the honeypot and keeps producing data.
+- **The dashboard is never exposed.** It listens on loopback only, and the admin reaches it through the same SSH connection used to manage the server. The real SSH allows local forwards (`-L`) and nothing else.
+- **Validate before applying.** The installer writes `sshd_config` to a temporary file, checks it with `sshd -t`, and only then replaces the live one; Fail2Ban's configuration is checked with `fail2ban-client -t` before restarting. A broken config never locks the admin out.
+- **No secrets in `.env`.** MySQL passwords are Docker secrets (files readable only by root or by the consuming container); the dashboard credentials are encrypted with [age](https://age-encryption.org) to the admin's SSH public key.
 
-| Red | Tipo | Contenedores | Propósito |
-|-----|------|-------------|-----------|
-| `frontend_net` | bridge | Cowrie, Nginx, PHP | Acceso al panel y al honeypot |
-| `backend_net` | internal | PHP, MySQL, Loki, Promtail | Aislamiento de servicios internos sin puertos expuestos |
+## Security controls
 
-### Puertos
+| Area | Control |
+|---|---|
+| Real SSH | `AllowUsers <admin>`, public key only, no root, `MaxAuthTries 1`, local forwarding only, post-quantum hybrid key exchange first (`mlkem768x25519` or `sntrup761x25519`, whichever the installed OpenSSH supports). Drop-ins in `sshd_config.d/` are ignored, so cloud-init cannot re-enable passwords. |
+| Fail2Ban | `sshd` jail: 2 failed attempts in 10 min → 35-day ban on the SSH port; the admin's own failed keys do not count. `cowrie` jail: 5 connections in 10 min → 7-day ban from every host port, honeypot still reachable. |
+| Honeypot | Cowrie 2.9.0, own network, all capabilities dropped, `no-new-privileges`, memory and PID limits. |
+| Dashboard | Loopback only, behind the SSH tunnel; bcrypt passwords, CSRF token, session cookie `HttpOnly` + `SameSite=Strict`, 8-hour session limit, login rate limit in nginx, audit log. Everything that comes from logs (usernames tried by attackers included) is escaped; scripts run only with a per-request CSP nonce, and Leaflet is loaded with Subresource Integrity. |
+| Containers | `no-new-privileges` on all; the PHP container is read-only, non-root and has no capabilities; image versions are pinned. |
+| Data | Loki keeps 31 days. `backups.sh` makes cold backups of MySQL plus configuration and honeypot sessions, with rotation and scheduling; a restore reports any step that fails instead of claiming success. |
 
-| Puerto | Binding | Servicio | Exposición |
-|--------|---------|----------|------------|
-| 22/tcp | 0.0.0.0 | Cowrie (honeypot) | Internet (intencionado) |
-| 2929/tcp | 0.0.0.0 | OpenSSH real | Internet (configurable) |
-| 8888/tcp | 127.0.0.1 | Panel Nginx | Solo loopback (requiere túnel SSH) |
+## Requirements
 
----
+- A VPS with a public IPv4 address and **Debian 12**, where the project was deployed. Debian 13 and Ubuntu 22.04 / 24.04 are expected to work but have not been tested end to end.
+- Root access, and an SSH key pair on your computer.
+- Free space for Docker images and a dedicated disk or 20 GB for backups (a loop file is created if there is no spare disk).
 
-## Requisitos
+## Installation
 
-| Requisito | Detalle |
-|-----------|---------|
-| **Sistema operativo** | Debian 11/12 o Ubuntu 20.04+ |
-| **Acceso** | Root o sudo |
-| **SSH** | Clave pública del administrador disponible |
-| **Conectividad** | Internet (para instalación de dependencias y descarga de GeoLite2) |
-
----
-
-## Instalación
-
-El despliegue se realiza mediante un instalador interactivo que automatiza todas las fases:
+Run it on a fresh server, from a session you can keep open:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/mainv2/deploy.sh | sudo bash
+git clone https://github.com/paulusgi/asir-vps-defense.git
+cd asir-vps-defense
+less deploy.sh            # it runs as root: read it first
+sudo ./deploy.sh
 ```
 
-El instalador ejecuta los siguientes pasos:
+The installer is interactive and can be re-run: completed steps are recorded and skipped. It asks for the real SSH port (default 2929), the admin's user name, sudo password and public key, and the key used to encrypt the dashboard credentials. Then it:
 
-1. **Preparación del sistema**: instalación de dependencias (Docker, UFW, Fail2Ban, rsyslog).
-2. **Creación de usuarios**: administrador seguro (clave SSH) y usuario honeypot.
-3. **Honeypot Cowrie**: contenedor Docker escuchando en el puerto 22, captura credenciales y comandos de atacantes; logs reenviados a Loki vía Promtail.
-4. **Configuración SSH**: split authentication (admin = solo clave pública en puerto 2929, resto = contraseña para captura).
-5. **Firewall UFW**: política deny incoming, puertos 22 (Cowrie) y 2929 (SSH real) abiertos.
-6. **Fail2Ban**: jails `sshd` (ban 35 días) y `cowrie` (ban 7 días), detección en 10 minutos.
-7. **Despliegue Docker**: construcción y arranque de contenedores con `docker compose up`.
-8. **Generación de credenciales**: contraseña del panel (bcrypt), Docker Secrets para MySQL, cifrado con `age`.
-9. **Preparación de backups**: volumen LVM o loop, primer backup opcional.
+1. installs Docker, UFW, Fail2Ban and rsyslog, and closes every incoming port except 22;
+2. creates the admin, moves the real SSH to the new port (validated with `sshd -t`), and configures Fail2Ban;
+3. copies the project to the admin's home;
+4. generates secrets, downloads the GeoLite2 City database (pinned and checksum-verified) and starts the containers;
+5. prepares the backup volume and offers a first backup.
 
-> El instalador es **idempotente**: si se interrumpe, puede re-ejecutarse sin duplicar pasos gracias a marcas de estado persistentes.
+Before closing the installer's session, **open a new terminal and check that you can log in** with `ssh -p 2929 <admin_user>@<server-ip>`.
 
----
+## Using it
 
-## Acceso al panel
-
-El panel no está expuesto a Internet. Para acceder se establece un túnel SSH:
+Open the tunnel and browse to <http://localhost:8888> (any free local port works; the screenshots use 9999):
 
 ```bash
-ssh -p 2929 -L 9999:127.0.0.1:8888 <admin_user>@<IP_VPS> -N
+ssh -p 2929 -N -L 8888:127.0.0.1:8888 <admin_user>@<server-ip>
 ```
 
-Tras establecer el túnel, abrir `http://localhost:9999` en el navegador local.
-
-Las credenciales de acceso se generan durante la instalación y se almacenan cifradas en `~/admin_credentials.txt.age`. Para descifrarlas:
+The dashboard credentials are in `~/admin_credentials.txt.age` on the server, encrypted to your key:
 
 ```bash
-age -d -i ~/.ssh/<clave_privada> -o credenciales.txt ~/admin_credentials.txt.age
+scp -P 2929 <admin_user>@<server-ip>:admin_credentials.txt.age .
+age -d -i ~/.ssh/id_ed25519 admin_credentials.txt.age
 ```
 
----
-
-## Medidas de seguridad implementadas
-
-| Capa | Medida | Descripción |
-|------|--------|-------------|
-| SSH | Split Authentication | Admin: solo clave pública. Honeypot: contraseña (captura). Separación por `Match User` en sshd_config |
-| SSH | Algoritmos post-quantum | `sntrup761x25519-sha512@openssh.com` como primer KEX |
-| SSH | Hardening | `MaxAuthTries 1`, `LoginGraceTime 20`, `PermitRootLogin no` |
-| Red | Firewall UFW | Política deny incoming; solo puertos 22 y SSH real abiertos |
-| Red | Panel en loopback | Binding `127.0.0.1:8888`; inaccesible sin túnel SSH |
-| Red | Red interna Docker | MySQL y Loki en `backend_net` (internal), sin puertos expuestos al host |
-| Aplicación | CSRF | Token `bin2hex(random_bytes(32))` validado con `hash_equals` en login |
-| Aplicación | Cookies endurecidas | `HttpOnly`, `SameSite=Strict`, `Secure` dinámico |
-| Aplicación | Auditoría | Registro de LOGIN_SUCCESS/LOGIN_FAILED con IP y timestamp en MySQL |
-| Contenedores | Hardening Docker | `read_only`, `no-new-privileges`, `cap_drop: ALL`, `tmpfs`, `mem_limit`, `pids_limit` |
-| Credenciales | Docker Secrets | Passwords MySQL en archivos con permisos 600, leídos desde `/run/secrets/` |
-| Credenciales | Cifrado age | Credenciales del panel cifradas con clave pública SSH del administrador |
-| Observabilidad | Retención | Loki con retención de 31 días y compactación automática |
-
----
-
-## Estructura del repositorio
-
-```
-.
-├── deploy.sh                    # Instalador interactivo automatizado
-├── backups.sh                   # Gestor de copias de seguridad
-├── docker-compose.yml           # Orquestación de contenedores
-├── POSTDEPLOY_CHECKS.md         # Checklist de verificación post-despliegue
-├── LICENSE                      # Licencia de uso no comercial
-│
-├── cowrie/
-│   ├── cowrie.cfg               # Configuración del honeypot (banner, backend, logs)
-│   └── userdb.txt               # Base de credenciales (wildcard: acepta todo)
-│
-├── fail2ban/
-│   └── filter.d/
-│       └── cowrie.conf           # Filtro Fail2Ban para logs de Cowrie (failregex)
-│
-├── nginx/
-│   └── conf.d/
-│       └── admin.conf           # Configuración del panel privado (cabeceras, FastCGI)
-│
-├── php/
-│   ├── Dockerfile               # Imagen PHP 8.2-FPM con extensión maxminddb
-│   ├── conf.d/custom.ini        # Configuración PHP (seguridad, opcache)
-│   └── pool.d/www.conf          # Pool PHP-FPM (tuning de workers)
-│
-├── src/
-│   ├── index.php                # Panel web (login, dashboard, API de métricas)
-│   └── includes/
-│       ├── loki_client.php      # Cliente HTTP para Loki (query, query_range)
-│       └── security_metrics.php # Extracción de métricas de Fail2Ban, SSH y Cowrie
-│
-├── mysql/
-│   └── init/
-│       └── 01-schema.sql        # Esquema inicial (users, audit_log, ip_geo_cache)
-│
-├── loki/
-│   └── config.yml               # Configuración de Loki (retención 31d, caché)
-│
-├── promtail/
-│   └── config.yml               # Configuración de Promtail (5 scrape configs: fail2ban, system_auth, system_auth_secure, cowrie, cowrie_json)
-│
-├── geoip/                       # Base de datos GeoLite2-City (descargada en deploy)
-│
-└── evidencias/                  # Evidencias técnicas organizadas por bloque
-    ├── 01_infraestructura/      # EV-01 a EV-05: puertos, contenedores, firewall, banner
-    ├── 02_honeypot_cowrie/      # EV-06 a EV-10: logs, sesiones TTY, prueba controlada
-    ├── 03_fail2ban/             # EV-11 a EV-13: estado jail, bans, fragmento de log
-    ├── 04_observabilidad/       # EV-14 a EV-17: Loki ready, jobs Promtail, consultas LogQL
-    ├── 05_panel_privado/        # EV-18 a EV-24: túnel SSH, dashboard, mapa, gráfica, auditoría
-    ├── 06_ssh_real/             # EV-25 a EV-27: acceso por clave, rechazo contraseña, nmap
-    └── 07_pipeline_completo/    # EV-28, EV-29: ciclo ataque→Loki, ciclo intento→ban
-```
-
----
-
-## Evidencias técnicas
-
-Se documentaron 31 evidencias numeradas (EV-01 a EV-29 + EV-10b + EV-13b) organizadas en 7 bloques de validación. Cada evidencia incluye el comando ejecutado, la captura de pantalla y una descripción de lo que demuestra.
-
-| Bloque | Evidencias | Qué valida |
-|--------|------------|------------|
-| Infraestructura | EV-01 a EV-05 | Puertos, contenedores healthy, firewall, banner honeypot |
-| Honeypot Cowrie | EV-06 a EV-10, EV-10b | Captura de ataques reales, sesiones TTY, prueba con Hydra, panel honeypot |
-| Fail2Ban | EV-11 a EV-13, EV-13b | Jail activa, IPs baneadas, fragmento de log con Found+Ban, panel baneos |
-| Observabilidad | EV-14 a EV-17 | Loki ready, jobs Promtail, consultas LogQL para cowrie y fail2ban |
-| Panel privado | EV-18 a EV-24 | Bloqueo externo, túnel SSH, dashboard, tabla de ataques, mapa, gráfica, auditoría |
-| SSH real | EV-25 a EV-27 | Login por clave, rechazo de contraseña, separación de servicios con nmap |
-| Pipeline completo | EV-28, EV-29 | Ciclo ataque→Cowrie→Promtail→Loki y ciclo intento→Fail2Ban→ban |
-
-Para el detalle completo, consultar [evidencias/README.md](evidencias/README.md) y las carpetas de cada bloque con sus respectivos archivos `METODOLOGIA.md`.
-
----
-
-## Copias de seguridad
+Backups, from the project folder on the server:
 
 ```bash
-sudo ./backups.sh
+sudo ./backups.sh                      # interactive menu
+sudo ./backups.sh create               # backup now
+sudo ./backups.sh schedule 03:30       # daily at 03:30 (weekly and monthly too)
+sudo ./backups.sh restore <file>
 ```
 
-Gestor interactivo con las siguientes operaciones:
+[POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) lists the commands to verify a deployment: ports, containers, SSH settings, jails, firewall rules and the log pipeline.
 
-| Comando | Función |
-|---------|---------|
-| `create` | Crea un backup completo (configuración, código, datadir MySQL) |
-| `list` | Lista backups disponibles con fecha y tamaño |
-| `restore <fichero>` | Restaura un backup existente |
-| `prune --keep N` | Conserva solo los N backups más recientes |
-| `schedule <HH:MM>` | Programa backup automático (diario, semanal o mensual) |
-| `delete <fichero>` | Elimina un backup concreto |
+Fail2Ban does not exempt your own address: two failed logins on the real SSH, or five connections to the honeypot, will ban you too. Test attacks from another address, and keep the provider's console at hand to run `sudo fail2ban-client set sshd unbanip <your-ip>`.
 
-![alt text](backup_manager.png)
+## How it was validated
 
-El contenido de cada backup incluye: `docker-compose.yml`, `.env`, configuraciones de servicios (`nginx/`, `php/`, `promtail/`, `loki/`), código fuente (`src/`), inicialización SQL (`mysql/init/`) y copia física del datadir de MySQL.
+- **v2.1.0** ran on a Debian 12 VPS exposed to the Internet between March and April 2026. The [evidence](evidence/README.md) folder documents 31 checks with screenshots and logs: listening ports and firewall, real attacks captured by Cowrie, TTY session replays, a controlled Hydra test, Fail2Ban bans, LogQL queries, the dashboard behind the tunnel, and the full attack → log → Loki and attempt → ban paths. Public IPs of the VPS and of the admin's computer are redacted.
+- **v3.0.0**, the current version, came out of a review of that deployment: key-only real SSH, a working honeypot jail, an isolated honeypot network, panel hardening and backup fixes (see the commit history). Its changes were tested on Debian 13 (OpenSSH 10, Fail2Ban 1.1): the generated `sshd_config` with `sshd -t` / `sshd -T` and live logins (key accepted; password, unknown user, root and wrong key rejected; `-L` allowed, `-R` refused); the jails with `fail2ban-client -t` and `fail2ban-regex` on real log lines; the dashboard's log parser, login, CSP and GeoIP lookups; the backup and restore paths; the Promtail health check; and `shellcheck` on both scripts. **v3.0.0 has not yet been re-deployed end to end on a VPS**; the screenshots show v2.1.0.
 
----
+## Limitations
 
-## Verificación post-despliegue
+- Promtail is deprecated in favour of Grafana Alloy; Loki and Promtail stay on the 2.9 line, and Cowrie on 2.9.0, until the upgrade is tested.
+- The dashboard loads Leaflet from jsDelivr (with SRI) and map tiles from CARTO. Geolocation itself is offline (GeoLite2).
+- Totals come from Loki counts; the "top" tables are built from the most recent events (for example, the last 2,000 honeypot logins).
+- Behind the SSH tunnel every request reaches nginx from the Docker gateway, so the audit log's IP column is not meaningful; the SSH logs say who opened the tunnel. Failed logins are recorded without the user name that was tried.
+- Cowrie's disguise can be fingerprinted: its banner says Ubuntu, its MOTD Debian.
+- There is no alerting yet, and the installer is a single Bash script. An Ansible role would be the natural next step.
 
-Consultar [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) para el checklist completo. Verificaciones principales:
+## Repository layout
 
-```bash
-# Estado de contenedores (todos deben mostrar Up/healthy)
-docker compose ps
-
-# Puertos (22=Cowrie, 2929=SSH real, 127.0.0.1:8888=panel)
-sudo ss -tulpen | grep -E ':(22|2929|8888)\s'
-
-# Fail2Ban activo
-fail2ban-client status sshd
-
-# Panel accesible desde loopback
-curl -I http://127.0.0.1:8888
-
-# Loki operativo
-docker exec asir_loki wget -qO- http://localhost:3100/ready
+```
+deploy.sh               interactive installer (Debian/Ubuntu)
+backups.sh              backup, restore and scheduling
+docker-compose.yml      Cowrie, nginx, PHP-FPM, MySQL, Loki, Promtail
+cowrie/                 honeypot configuration and accept-all user database
+fail2ban/filter.d/      filter for Cowrie's log (the jails are written by deploy.sh)
+nginx/conf.d/           dashboard server: headers, login rate limit, FastCGI
+php/                    PHP-FPM image and settings
+src/                    dashboard: index.php and the Loki client and metrics
+mysql/init/             database schema
+loki/, promtail/        log storage and collection
+evidence/               validation screenshots and logs, by block
+POSTDEPLOY_CHECKS.md    how to verify a deployment
 ```
 
----
+## Responsible use
 
-## Alcance del MVP
+This project is for learning and defence. A honeypot collects credentials that attackers try, and some of them belong to real people: do not reuse, publish or share them. Run it only on servers you own, and check the law that applies where you deploy it.
 
-### Implementado y validado
+## License
 
-- Honeypot Cowrie operativo con captura de ataques reales en puerto 22.
-- SSH real en puerto alternativo con autenticación exclusiva por clave pública.
-- Fail2Ban con detección y ban automático (sshd: 35 días, cowrie: 7 días).
-- Loki y Promtail ingiriendo logs de auth, fail2ban, cowrie (texto y JSON).
-- Panel web con autenticación, métricas, tabla de ataques, mapa de geolocalización y gráfica temporal.
-- Panel accesible exclusivamente mediante túnel SSH (binding a loopback).
-- Geolocalización offline con GeoLite2-City.
-- Gestor de backups con creación, rotación, restauración y programación.
-- Despliegue automatizado e idempotente.
+[PolyForm Noncommercial 1.0.0](LICENSE): free to use, study and modify for any non-commercial purpose. Commercial use requires the author's permission.
 
-### Fuera de alcance (trabajo futuro)
-
-- Exposición de servicios HTTP/HTTPS a Internet (por diseño, panel no publicado).
-- Grafana como panel adicional de visualización.
-- Alertas en tiempo real (umbrales de bans/hora, notificaciones).
-- Sistema de roles efectivo en el panel (admin/viewer).
-- Cobertura de otros vectores de ataque (RDP, HTTP).
-
----
-
-## Documentación del proyecto
-
-| Documento | Descripción |
-|-----------|-------------|
-| [POSTDEPLOY_CHECKS.md](POSTDEPLOY_CHECKS.md) | Checklist de verificación post-despliegue |
-| [evidencias/README.md](evidencias/README.md) | Índice de 31 evidencias técnicas con relación a objetivos |
-| [LICENSE](LICENSE) | Licencia de uso no comercial |
-
----
-
-## Licencia
-
-Uso exclusivamente no comercial. Consultar [LICENSE](LICENSE) para los términos completos.
-
----
-
-<p align="center">
-  <strong>Aviso importante</strong>
-</p>
-
-<p align="center">
-  Este proyecto tiene fines <strong>educativos y defensivos</strong>.<br>
-  El honeypot captura credenciales de atacantes — no deben almacenarse, compartirse ni reutilizarse.<br>
-  Uso responsable y conforme a la legislación vigente.
-</p>
+This product includes GeoLite2 data created by MaxMind, available from <https://www.maxmind.com>.
