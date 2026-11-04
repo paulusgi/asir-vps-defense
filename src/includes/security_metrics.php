@@ -4,6 +4,18 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/loki_client.php';
 
+/**
+ * LogQL selector for SSH attempts rejected by the real sshd.
+ *
+ * The real SSH only accepts the admin's public key, so an attempt by anyone else
+ * shows up as "Invalid user X from IP port N" (unknown account) or
+ * "User X from IP not allowed because not listed in AllowUsers" (existing account).
+ * "Failed password" is kept for servers that still allow passwords.
+ * Requiring the "sshd[PID]:" / "sshd-session[PID]:" prefix (OpenSSH 9.8+ logs from
+ * sshd-session) leaves out sudo audit lines that quote these words in a command.
+ */
+const SSH_REJECTION_SELECTOR = '{job="auth"} |~ `sshd(-session)?\[[0-9]+\]: (Invalid user .* from .* port [0-9]+|User .* from .* not allowed because|Failed password for )`';
+
 function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
 {
     $client = new LokiClient(getenv('LOKI_URL') ?: 'http://loki:3100');
@@ -129,18 +141,15 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
 
 function fetchSshMetrics(LokiClient $client, PDO $pdo): array
 {
-    // Filtramos con |= "sshd[" para excluir líneas de auditoría de sudo
-    // que también contienen "Failed password" en el texto del comando ejecutado.
-    // Las líneas reales de sshd siempre tienen "sshd[PID]:", las de sudo no.
     $totals = [
-        'last5m' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" |= "sshd[" [5m]))'),
-        'last1h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" |= "sshd[" [1h]))'),
-        'last24h' => $client->queryScalar('sum(count_over_time({job="auth"} |= "Failed password" |= "sshd[" [24h]))'),
+        'last5m' => $client->queryScalar('sum(count_over_time(' . SSH_REJECTION_SELECTOR . ' [5m]))'),
+        'last1h' => $client->queryScalar('sum(count_over_time(' . SSH_REJECTION_SELECTOR . ' [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time(' . SSH_REJECTION_SELECTOR . ' [24h]))'),
     ];
 
     // Query last 24 hours for better historical view
     $logs = $client->queryRangeRaw(
-        '{job="auth"} |= "Failed password" |= "sshd["',
+        SSH_REJECTION_SELECTOR,
         time() - 86400,
         time(),
         '60s',
@@ -365,27 +374,39 @@ function parseFail2BanEvent(string $line): ?array
     ];
 }
 
+/**
+ * Parses one rejected SSH attempt (see SSH_REJECTION_SELECTOR).
+ *
+ * The IP is taken from the last "from <ip> port <n>" of the line, so a crafted
+ * username such as "x from 8.8.8.8" cannot spoof the source address.
+ *
+ * @return array{username:string,ip:string,result:string}|null
+ */
 function parseSshFailure(string $line): ?array
 {
-    if (!str_contains($line, 'Failed password')) {
-        return null;
-    }
-
-    if (!preg_match('/Failed password for (invalid user )?(?<user>[\w.@-]+)/', $line, $userMatch)) {
-        return null;
-    }
-
-    if (!preg_match('/from (?<ip>[0-9A-Fa-f:.]+)/', $line, $ipMatch)) {
-        return null;
-    }
-
-    $result = str_contains($userMatch[0], 'invalid user') ? 'Usuario inválido' : 'Usuario existente';
-
-    return [
-        'username' => $userMatch['user'],
-        'ip' => $ipMatch['ip'],
-        'result' => $result,
+    $patterns = [
+        '/sshd(?:-session)?\[\d+\]: Invalid user (?<user>.*) from (?<ip>[0-9A-Fa-f:.]+) port \d+/' => 'Usuario inválido',
+        '/sshd(?:-session)?\[\d+\]: User (?<user>\S+) from (?<ip>[0-9A-Fa-f:.]+) not allowed because/' => 'Usuario no permitido',
+        '/sshd(?:-session)?\[\d+\]: Failed password for (?<invalid>invalid user )?(?<user>.*) from (?<ip>[0-9A-Fa-f:.]+) port \d+/' => null,
     ];
+
+    foreach ($patterns as $regex => $result) {
+        if (!preg_match($regex, $line, $match)) {
+            continue;
+        }
+        if (filter_var($match['ip'], FILTER_VALIDATE_IP) === false) {
+            return null;
+        }
+        $result ??= ($match['invalid'] ?? '') !== '' ? 'Usuario inválido' : 'Usuario existente';
+
+        return [
+            'username' => $match['user'] === '' ? '(vacío)' : $match['user'],
+            'ip' => $match['ip'],
+            'result' => $result,
+        ];
+    }
+
+    return null;
 }
 
 function formatIpCountList(PDO $pdo, array $counts, int $limit = 5): array
