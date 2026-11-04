@@ -1,8 +1,10 @@
+# Generated on the server by deploy.sh: secrets, credentials and runtime data
 .env
 secrets/
-.DS_Store
+mysql/init/02-seed.sql
+admin_credentials.txt*
 geoip/
-.vscode
-ignore/
-.github
-Entregables/
+
+# Editor and OS files
+.vscode/
+.DS_Store
