@@ -13,8 +13,8 @@
 ###############################################################################
 #
 # NAME:         deploy.sh
-# VERSION:      2.1.0
-# AUTHOR:       ASIR Team
+# VERSION:      3.0.0
+# AUTHOR:       Pau Ginesta
 # LICENSE:      PolyForm Noncommercial 1.0.0
 #
 # DESCRIPTION:
@@ -1086,13 +1086,13 @@ create_docker_secrets() {
     echo -n "$root_pass" > "$secrets_dir/mysql_root_password.txt"
     echo -n "$app_pass" > "$secrets_dir/mysql_app_password.txt"
     
-    # Permissions: root for root_password, uid 1000 (PHP) for app_password
+    # Permissions: root for root_password, UID 10001 (the PHP container) for app_password
     chmod 600 "$secrets_dir/mysql_root_password.txt"
     chown root:root "$secrets_dir/mysql_root_password.txt"
     
-    # PHP runs as uid 1000 and needs to read this file
+    # PHP runs as UID 10001 and needs to read this file
     chmod 400 "$secrets_dir/mysql_app_password.txt"
-    chown 1000:1000 "$secrets_dir/mysql_app_password.txt"
+    chown 10001:10001 "$secrets_dir/mysql_app_password.txt"
     
     chmod 755 "$secrets_dir"
     
@@ -1106,18 +1106,28 @@ create_docker_secrets() {
 # =============================================================================
 
 download_geolite_mmdb() {
-    # Download the GeoLite2-City database from the free CDN (jsDelivr)
-    local url="https://cdn.jsdelivr.net/npm/geolite2-city/GeoLite2-City.mmdb.gz"
+    # GeoLite2-City from a pinned release of the geolite2-city npm mirror (jsDelivr),
+    # verified by checksum: nothing unpinned is downloaded into the server.
+    local version="1.0.113"
+    local sha256="daab81ed25857a4e8a342a35409015e918af46da15e569a128ac65e3f8c769ad"
+    local url="https://cdn.jsdelivr.net/npm/geolite2-city@${version}/GeoLite2-City.mmdb.gz"
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p geoip
 
     log_step "Downloading the GeoLite2-City database"
-    log_info "Source: jsDelivr CDN (no API key needed)"
+    log_info "Source: geolite2-city@${version} on jsDelivr (no API key needed)"
     
     if ! curl -fsSL "$url" -o "$tmpdir/GeoLite2-City.mmdb.gz"; then
         log_warn "Could not download GeoLite2 from the CDN"
         log_info "Falling back to country-level data (reduced functionality)"
+        rm -rf "$tmpdir"
+        return 0
+    fi
+
+    if ! echo "$sha256  $tmpdir/GeoLite2-City.mmdb.gz" | sha256sum -c --status; then
+        log_warn "GeoLite2 checksum mismatch; the file was discarded"
+        log_info "Falling back to country-level data"
         rm -rf "$tmpdir"
         return 0
     fi

@@ -14,8 +14,6 @@ services:
       - ./cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
       - /var/log/cowrie:/cowrie/var/log/cowrie   # Promtail reads /var/log/host/cowrie
       - cowrie_data:/cowrie/var/lib/cowrie         # Recorded TTY sessions
-    environment:
-      - TZ=Europe/Madrid
     networks:
       - honeypot_net   # alone: nothing else is reachable from the honeypot
     security_opt:
@@ -59,7 +57,7 @@ services:
     build: ./php
     container_name: asir_php
     restart: always
-    user: "1000:1000" # Run as non-root user
+    user: "10001:10001" # Non-root, and not the distribution's default user (UID 1000)
     volumes:
       - ./src:/var/www/html:ro
       - ./php/conf.d/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
@@ -124,13 +122,10 @@ services:
     image: grafana/loki:2.9.17
     container_name: asir_loki
     restart: always
-    environment:
-      - TZ=Europe/Madrid
     volumes:
       - ./loki/config.yml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro   # host time zone
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3100/ready || exit 1"]
       interval: 30s
@@ -146,14 +141,11 @@ services:
     image: grafana/promtail:2.9.17
     container_name: asir_promtail
     restart: always
-    environment:
-      - TZ=Europe/Madrid
     volumes:
       - ./promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
       - promtail_positions:/positions
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro   # auth.log and fail2ban.log carry host-local timestamps
     command: -config.file=/etc/promtail/config.yml
     healthcheck:
       test: ["CMD-SHELL", "wget -qO/dev/null http://localhost:9080/ready || exit 1"]

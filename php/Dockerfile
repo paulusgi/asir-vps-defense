@@ -18,12 +18,12 @@ RUN docker-php-ext-install curl pdo pdo_mysql \
     && pecl install maxminddb \
     && docker-php-ext-enable maxminddb
 
-# Create non-root user (matches user: 1000:1000 in docker-compose)
-# Alpine already has 'www-data' (82), but we want 1000.
+# Non-root user matching `user: 10001:10001` in docker-compose. A dedicated UID, not 1000,
+# which on cloud images belongs to the distribution's default login user.
 # We use shadow to get usermod/groupmod for cleaner handling
 RUN apk add --no-cache shadow && \
-    usermod -u 1000 www-data && \
-    groupmod -g 1000 www-data
+    usermod -u 10001 www-data && \
+    groupmod -g 10001 www-data
 
 # Set working directory
 WORKDIR /var/www/html
