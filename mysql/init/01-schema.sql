@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE TABLE IF NOT EXISTS ip_geo_cache (
     ip VARCHAR(45) PRIMARY KEY,
     country_code CHAR(2) DEFAULT '??',
-    country_name VARCHAR(100) DEFAULT 'Desconocido',
+    country_name VARCHAR(100) DEFAULT 'Unknown',
     lat DECIMAL(10,6) NULL,
     lon DECIMAL(10,6) NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

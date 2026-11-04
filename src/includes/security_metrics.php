@@ -28,9 +28,9 @@ function fetchSecurityMetrics(PDO $pdo): array
         $ssh      = fetchSshMetrics($client, $pdo);
         $cowrie   = fetchCowrieMetrics($client, $pdo);
 
-        // Merge events + topIps para mayor cobertura en el mapa, deduplicado por IP.
-        // Los eventos tienen prioridad (llevan timestamp); los topIps sirven de respaldo
-        // para IPs que tienen coords pero cuyos eventos no se incluyeron por el límite de 25.
+        // Merge events + topIps for wider map coverage, deduplicated by IP.
+        // Events take priority (they carry a timestamp); topIps act as a fallback
+        // for IPs that have coordinates but whose events were cut by the limit of 25.
         $geoSources = array_merge(
             $fail2ban['events'] ?? [],
             $ssh['events']     ?? [],
@@ -75,8 +75,8 @@ function fetchSecurityMetrics(PDO $pdo): array
 
 function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
 {
-    // Usamos regex para coincidir solo con "Ban" (no Unban, Restore Ban, etc.)
-    // El patrón ] Ban captura el formato típico: "fail2ban.actions ... [sshd] Ban IP"
+    // The selector's regex matches only "Ban" (not Unban, Restore Ban, etc.)
+    // The "] Ban" pattern catches the usual format: "fail2ban.actions ... [sshd] Ban IP"
     $totals = [
         'last1h' => $client->queryScalar('sum(count_over_time(' . FAIL2BAN_BAN_SELECTOR . ' [1h]))'),
         'last24h' => $client->queryScalar('sum(count_over_time(' . FAIL2BAN_BAN_SELECTOR . ' [24h]))'),
@@ -120,8 +120,8 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
         ];
     }
 
-    // Ordenar descendente para que los eventos más recientes (Cowrie recién activado)
-    // no queden fuera del slice cuando hay muchos eventos SSH históricos anteriores.
+    // Sort newest first so the most recent events (e.g. a newly enabled Cowrie jail)
+    // are not cut from the slice when there are many older SSH events.
     usort($events, static fn($a, $b) => $b['timestamp'] <=> $a['timestamp']);
 
     return [
@@ -192,18 +192,18 @@ function fetchSshMetrics(LokiClient $client, PDO $pdo): array
 // =============================================================================
 
 /**
- * Obtiene métricas del honeypot Cowrie desde Loki.
+ * Fetches Cowrie honeypot metrics from Loki.
  *
- * Los totales se leen del log de texto (job=cowrie) porque cuentan bien.
- * Los eventos detallados se leen de cowrie_json (job=cowrie_json) que incluye
- * src_ip como campo estructurado, a diferencia del log de texto donde la IP
- * no aparece en las líneas de "login attempt".
+ * Totals are read from the text log (job=cowrie) because its counts are accurate.
+ * Detailed events are read from cowrie_json (job=cowrie_json), which carries
+ * src_ip as a structured field; in the text log the IP does not appear
+ * on the "login attempt" lines.
  *
  * @return array{totals:array,topIps:list<array>,topUsers:list<array>,topCommands:list<array>,events:list<array>,commands:list<array>}
  */
 function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
 {
-    // Totales desde log de texto — el conteo de "login attempt" funciona correctamente.
+    // Totals from the text log: counting "login attempt" lines is accurate there.
     $totals = [
         'last1h'       => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [1h]))'),
         'last24h'      => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [24h]))'),
@@ -211,8 +211,8 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         'sessions_24h' => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "New connection" [24h]))'),
     ];
 
-    // Eventos detallados desde cowrie_json — tiene src_ip, username, password estructurados.
-    // Filtramos login.success + login.failed en una sola query; separamos por eventid luego.
+    // Detailed events from cowrie_json: src_ip, username and password are structured fields.
+    // One query filters login.success + login.failed; they are split by eventid afterwards.
     $jsonLogs = $client->queryRangeRaw(
         '{job="cowrie_json"} |= "cowrie.login."',
         time() - (7 * 86400),
@@ -238,7 +238,7 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         $ip       = (string) ($data['src_ip'] ?? 'unknown');
         $username = (string) ($data['username'] ?? '');
         $password = (string) ($data['password'] ?? '');
-        $result   = $eventid === 'cowrie.login.success' ? 'ingresó al honeypot' : 'rechazado';
+        $result   = $eventid === 'cowrie.login.success' ? 'Logged into honeypot' : 'Rejected';
 
         if ($ip !== 'unknown') {
             $ipCounts[$ip] = ($ipCounts[$ip] ?? 0) + 1;
@@ -263,7 +263,7 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         ];
     }
 
-    // Comandos ejecutados dentro del honeypot (eventid=cowrie.command.input).
+    // Commands run inside the honeypot (eventid=cowrie.command.input).
     $cmdLogs = $client->queryRangeRaw(
         '{job="cowrie_json"} |= "cowrie.command.input"',
         time() - (7 * 86400),
@@ -304,7 +304,7 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
 
 function parseFail2BanEvent(string $line): ?array
 {
-    // Formato Fail2Ban: "2025-01-31 23:45:12,345 fail2ban.actions [12345]: NOTICE  [sshd] Ban 1.2.3.4"
+    // Fail2Ban format: "2025-01-31 23:45:12,345 fail2ban.actions [12345]: NOTICE  [sshd] Ban 1.2.3.4"
     if (!preg_match('/NOTICE\s+\[(?<jail>[^\]]+)\]\s+(?<action>Ban|Unban)\s+(?<ip>[0-9A-Fa-f:.]+)/', $line, $matches)) {
         return null;
     }
@@ -327,8 +327,8 @@ function parseFail2BanEvent(string $line): ?array
 function parseSshFailure(string $line): ?array
 {
     $patterns = [
-        '/sshd(?:-session)?\[\d+\]: Invalid user (?<user>.*) from (?<ip>[0-9A-Fa-f:.]+) port \d+/' => 'Usuario inválido',
-        '/sshd(?:-session)?\[\d+\]: User (?<user>\S+) from (?<ip>[0-9A-Fa-f:.]+) not allowed because/' => 'Usuario no permitido',
+        '/sshd(?:-session)?\[\d+\]: Invalid user (?<user>.*) from (?<ip>[0-9A-Fa-f:.]+) port \d+/' => 'Invalid user',
+        '/sshd(?:-session)?\[\d+\]: User (?<user>\S+) from (?<ip>[0-9A-Fa-f:.]+) not allowed because/' => 'User not allowed',
         '/sshd(?:-session)?\[\d+\]: Failed password for (?<invalid>invalid user )?(?<user>.*) from (?<ip>[0-9A-Fa-f:.]+) port \d+/' => null,
     ];
 
@@ -339,10 +339,10 @@ function parseSshFailure(string $line): ?array
         if (filter_var($match['ip'], FILTER_VALIDATE_IP) === false) {
             return null;
         }
-        $result ??= ($match['invalid'] ?? '') !== '' ? 'Usuario inválido' : 'Usuario existente';
+        $result ??= ($match['invalid'] ?? '') !== '' ? 'Invalid user' : 'Existing user';
 
         return [
-            'username' => $match['user'] === '' ? '(vacío)' : $match['user'],
+            'username' => $match['user'] === '' ? '(empty)' : $match['user'],
             'ip' => $match['ip'],
             'result' => $result,
         ];
@@ -395,14 +395,14 @@ function normalizeCounts(array $counts): array
 }
 
 /**
- * Resolución geográfica de IP con caché local en MySQL.
+ * IP geolocation lookup with a local MySQL cache.
  */
 function lookupGeoForIp(PDO $pdo, string $ip): array
 {
     static $memo = [];
     $default = [
         'country_code' => '??',
-        'country_name' => 'Desconocido',
+        'country_name' => 'Unknown',
         'lat' => null,
         'lon' => null,
     ];
@@ -459,7 +459,7 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         if (!$stale && $hasCoords) {
             return $memo[$ip] = [
                 'country_code' => $row['country_code'] ?? '??',
-                'country_name' => $row['country_name'] ?? 'Desconocido',
+                'country_name' => $row['country_name'] ?? 'Unknown',
                 'lat' => (float) $row['lat'],
                 'lon' => (float) $row['lon'],
             ];
@@ -499,8 +499,8 @@ function lookupGeoFromMmdb(string $ip, array $fallback): array
         $record = @maxminddb_fetch_assoc($path, $ip);
     }
 
-    // Fallback a la herramienta CLI mmdblookup si el módulo PHP no expone funciones
-    // Usamos la salida completa y la parseamos porque algunas builds no soportan rutas profundas.
+    // Fall back to the mmdblookup CLI tool if the PHP module exposes no functions.
+    // The full output is parsed because some builds do not support deep lookup paths.
     if (!is_array($record) && is_executable('/usr/bin/mmdblookup')) {
         $cmd = sprintf(
             '/usr/bin/mmdblookup --file %s --ip %s 2>/dev/null',
@@ -547,13 +547,13 @@ function lookupGeoFromMmdb(string $ip, array $fallback): array
     }
 
     $code = strtoupper((string) ($record['country']['iso_code'] ?? $fallback['country_code'] ?? '??'));
-    $name = (string) ($record['country']['names']['en'] ?? $fallback['country_name'] ?? 'Desconocido');
+    $name = (string) ($record['country']['names']['en'] ?? $fallback['country_name'] ?? 'Unknown');
     $lat = $record['location']['latitude'] ?? null;
     $lon = $record['location']['longitude'] ?? null;
 
     return [
         'country_code' => $code ?: ($fallback['country_code'] ?? '??'),
-        'country_name' => $name ?: ($fallback['country_name'] ?? 'Desconocido'),
+        'country_name' => $name ?: ($fallback['country_name'] ?? 'Unknown'),
         'lat' => $lat !== null ? (float) $lat : ($fallback['lat'] ?? null),
         'lon' => $lon !== null ? (float) $lon : ($fallback['lon'] ?? null),
     ];

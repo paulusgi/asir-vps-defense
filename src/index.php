@@ -108,12 +108,12 @@ $host = getenv('MYSQL_HOST');
 $db   = getenv('MYSQL_DATABASE');
 $user = getenv('MYSQL_USER');
 
-// Leer password de Docker Secret (más seguro que variable de entorno)
+// Read the password from a Docker secret (safer than an environment variable)
 $secretFile = '/run/secrets/mysql_app_password';
 if (file_exists($secretFile)) {
     $pass = trim(file_get_contents($secretFile));
 } else {
-    // Fallback a variable de entorno para desarrollo local
+    // Fall back to an environment variable for local development
     $pass = getenv('MYSQL_PASSWORD');
 }
 
@@ -131,7 +131,7 @@ try {
 } catch (PDOException $e) {
     error_log('ASIR VPS Defense - DB connection failed: ' . $e->getMessage());
     http_response_code(503);
-    echo '<!DOCTYPE html><html><head><title>Error</title></head><body><h1>Servicio no disponible</h1><p>Error interno del servidor. Contacta al administrador.</p></body></html>';
+    echo '<!DOCTYPE html><html><head><title>Error</title></head><body><h1>Service unavailable</h1><p>Internal server error. Please contact the administrator.</p></body></html>';
     exit;
 }
 
@@ -139,7 +139,7 @@ if (isset($_GET['action'])) {
     header('Content-Type: application/json');
     if (!isset($_SESSION['user_id'])) {
         http_response_code(401);
-        echo json_encode(['error' => 'No autorizado']);
+        echo json_encode(['error' => 'Unauthorized']);
         exit;
     }
 
@@ -179,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
     $audit = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (:uid, :action, :ip)');
 
     if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrfToken)) {
-        $error = 'Token de seguridad inválido. Recarga la página.';
+        $error = 'Invalid security token. Please reload the page.';
         $audit->execute(['uid' => null, 'action' => 'LOGIN_CSRF_REJECTED', 'ip' => $_SERVER['REMOTE_ADDR']]);
     } else {
         $stmt = $pdo->prepare('SELECT id, username, password_hash, role FROM users WHERE username = :username');
@@ -199,19 +199,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
             exit;
         }
 
-        $error = 'Credenciales inválidas.';
+        $error = 'Invalid credentials.';
         $audit->execute(['uid' => null, 'action' => 'LOGIN_FAILED', 'ip' => $_SERVER['REMOTE_ADDR']]);
     }
 }
 
 if (!isset($_SESSION['user_id'])) {
-    // Generar token CSRF si no existe
+    // Generate a CSRF token if there is none yet
     if (empty($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Login - ASIR Defense</title>
@@ -234,11 +234,11 @@ if (!isset($_SESSION['user_id'])) {
         <?php endif; ?>
         <form method="POST" action="">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
-            <input type="text" name="username" placeholder="Usuario" required autofocus>
-            <input type="password" name="password" placeholder="Contraseña" required>
-            <button type="submit">Entrar</button>
+            <input type="text" name="username" placeholder="Username" required autofocus>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Sign in</button>
         </form>
-        <small>Panel accesible solo vía túnel SSH</small>
+        <small>Panel reachable only through an SSH tunnel</small>
     </div>
 </body>
 </html>
@@ -255,7 +255,7 @@ function h($value) {
 }
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>ASIR VPS Defense</title>
@@ -332,7 +332,7 @@ function h($value) {
         .flag { display: inline-block; width: 1.5em; text-align: center; }
         @media (max-width: 720px) { .hero { flex-direction: column; align-items: flex-start; } body { padding: 18px 12px; } }
 
-        /* Indicador de severidad global */
+        /* Global severity indicator */
         .severity-indicator {
             display: flex;
             align-items: center;
@@ -350,7 +350,7 @@ function h($value) {
         @keyframes pulse-critical { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .severity-indicator svg { width: 16px; height: 16px; }
 
-        /* Badges de tendencia */
+        /* Trend badges */
         .trend-badge {
             display: inline-flex;
             align-items: center;
@@ -365,7 +365,7 @@ function h($value) {
         .trend-down { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
         .trend-stable { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
 
-        /* Estados vacíos contextuales */
+        /* Contextual empty states */
         .empty-state {
             text-align: center;
             padding: 2rem 1rem;
@@ -388,12 +388,12 @@ function h($value) {
         .empty-state-positive svg { color: #22c55e; }
         .empty-state-neutral svg { color: #60a5fa; }
 
-        /* Highlight usuarios críticos */
+        /* Highlight critical usernames */
         .user-critical { color: #ef4444; font-weight: 600; }
         .user-warning { color: #fbbf24; }
         .user-root { background: rgba(239, 68, 68, 0.1); }
 
-        /* Timestamps relativos */
+        /* Relative timestamps */
         .timestamp-relative {
             font-size: 0.75rem;
             color: var(--text-muted);
@@ -401,7 +401,7 @@ function h($value) {
         }
         .timestamp-recent { color: #fbbf24; }
 
-        /* Leyenda del mapa */
+        /* Map legend */
         .map-legend {
             display: flex;
             gap: 1.5rem;
@@ -462,18 +462,18 @@ function h($value) {
             <div class="meta">
                 <h1 style="margin:0;">🛡️ ASIR VPS Defense</h1>
                 <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                    <div class="status-pill" aria-live="polite">● Operativo · Solo túnel SSH</div>
+                    <div class="status-pill" aria-live="polite">● Operational · SSH tunnel only</div>
                     <div id="severityIndicator" class="severity-indicator severity-low">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        <span id="severityText">Sistema Normal</span>
+                        <span id="severityText">System Normal</span>
                     </div>
                 </div>
-                <small style="color:var(--text-muted);">Última sincronización: <span id="lastRefresh">--</span></small>
+                <small style="color:var(--text-muted);">Last sync: <span id="lastRefresh">--</span></small>
             </div>
             <div class="user-panel">
                 <div class="user-row">
-                    <span>Hola, <strong><?= h($_SESSION['username']) ?></strong></span>
-                    <a class="logout-link" href="?logout=1">Cerrar sesión</a>
+                    <span>Signed in as <strong><?= h($_SESSION['username']) ?></strong></span>
+                    <a class="logout-link" href="?logout=1">Log out</a>
                     <?php if (($_SESSION['role'] ?? '') !== ($_SESSION['username'] ?? '')): ?>
                         <span class="badge"><?= h($_SESSION['role']) ?></span>
                     <?php endif; ?>
@@ -482,17 +482,17 @@ function h($value) {
         </header>
 
         <div class="controls">
-            <span>Auto-refresco:</span>
-            <select id="refreshSelect" aria-label="Frecuencia de refresco">
+            <span>Auto-refresh:</span>
+            <select id="refreshSelect" aria-label="Refresh interval">
                 <option value="5000" selected>5s</option>
                 <option value="15000">15s</option>
                 <option value="60000">1m</option>
             </select>
-            <button id="toggleRefresh" aria-pressed="false">Pausar</button>
-            <span id="netChip" class="chip" aria-live="polite">↕ Red: -- / --</span>
+            <button id="toggleRefresh" aria-pressed="false">Pause</button>
+            <span id="netChip" class="chip" aria-live="polite">↕ Network (container): -- / --</span>
         </div>
 
-        <section class="system-cards" aria-label="Recursos del sistema">
+        <section class="system-cards" aria-label="System resources">
             <div class="sys-card" id="cardCpu">
                 <span class="label">CPU</span>
                 <div class="value" id="cpuValue">--</div>
@@ -504,12 +504,12 @@ function h($value) {
                 <small id="memDetail" style="color:var(--text-muted);">-- / -- GB</small>
             </div>
             <div class="sys-card" id="cardDisk">
-                <span class="label">Disco</span>
+                <span class="label">Disk</span>
                 <div class="donut" id="diskDonut"><span id="diskDonutLabel">--</span></div>
                 <small id="diskDetail" style="color:var(--text-muted);">-- / -- GB</small>
             </div>
             <div class="sys-card" id="cardNet">
-                <span class="label">Red (60s)</span>
+                <span class="label">Network (panel container)</span>
                 <div class="value" id="netValue">--</div>
                 <small id="netDetail" style="color:var(--text-muted);">↑ -- / ↓ --</small>
                 <svg id="netSpark" viewBox="0 0 100 30" height="30" role="presentation"></svg>
@@ -518,55 +518,55 @@ function h($value) {
 
         <div class="cards">
             <div class="card">
-                <span class="label">Baneos Fail2Ban (24h)</span>
+                <span class="label">Fail2Ban bans (24h)</span>
                 <strong id="fail2ban24h">--</strong>
-                <small>Última hora: <span id="fail2ban1h">--</span> | 7 días: <span id="fail2ban7d">--</span></small>
+                <small>Last hour: <span id="fail2ban1h">--</span> | 7 days: <span id="fail2ban7d">--</span></small>
             </div>
             <div class="card">
-                <span class="label">Intentos SSH fallidos (24h)</span>
+                <span class="label">Failed SSH attempts (24h)</span>
                 <strong id="ssh24h">--</strong>
-                <small>Última hora: <span id="ssh1h">--</span> | 5 min: <span id="ssh5m">--</span></small>
+                <small>Last hour: <span id="ssh1h">--</span> | 5 min: <span id="ssh5m">--</span></small>
             </div>
             <div class="card">
-                <span class="label">Honeypot Cowrie (24h)</span>
+                <span class="label">Cowrie honeypot (24h)</span>
                 <strong id="cowrie24h">--</strong>
-                <small>1h: <span id="cowrie1h">--</span> | 7d: <span id="cowrie7d">--</span> | Sesiones: <span id="cowrieSessions">--</span></small>
+                <small>1h: <span id="cowrie1h">--</span> | 7d: <span id="cowrie7d">--</span> | Sessions: <span id="cowrieSessions">--</span></small>
             </div>
         </div>
 
         <div class="tab-bar" role="tablist">
-            <button class="tab-button active" data-tab="ban" aria-selected="true">Baneos</button>
+            <button class="tab-button active" data-tab="ban" aria-selected="true">Bans</button>
             <button class="tab-button" data-tab="ssh" aria-selected="false">SSH</button>
             <button class="tab-button" data-tab="honeypot" aria-selected="false">Honeypot</button>
-            <button class="tab-button" data-tab="map" aria-selected="false">Mapa</button>
-            <button class="tab-button" data-tab="audit" aria-selected="false">Auditoría</button>
+            <button class="tab-button" data-tab="map" aria-selected="false">Map</button>
+            <button class="tab-button" data-tab="audit" aria-selected="false">Audit</button>
         </div>
 
-        <div id="metricsError" class="alert" role="alert">No se pudo actualizar la telemetría.</div>
+        <div id="metricsError" class="alert" role="alert">Could not update telemetry.</div>
 
         <div class="tab-content active" data-tab="ban">
             <section class="grid">
                 <div class="panel">
-                    <h3>Baneos SSH real</h3>
+                    <h3>Real SSH bans</h3>
                     <div class="table-scroll"><table>
-                        <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
+                        <thead><tr><th>Date</th><th>Country</th><th>IP</th></tr></thead>
                         <tbody id="banEventsBody"></tbody>
                     </table></div>
                     <div class="pager" id="banEventsPager"></div>
                 </div>
                 <div class="panel">
-                    <h3>Baneos Cowrie <span class="legend-dot cowrie" style="margin-left:6px;vertical-align:middle;width:10px;height:10px;display:inline-block;border-radius:50%;"></span></h3>
+                    <h3>Cowrie bans <span class="legend-dot cowrie" style="margin-left:6px;vertical-align:middle;width:10px;height:10px;display:inline-block;border-radius:50%;"></span></h3>
                     <div class="table-scroll"><table>
-                        <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
+                        <thead><tr><th>Date</th><th>Country</th><th>IP</th></tr></thead>
                         <tbody id="cowrieBanBody"></tbody>
                     </table></div>
                     <div class="pager" id="cowrieBanPager"></div>
                 </div>
             </section>
             <section class="panel">
-                <h3>Historial de baneos</h3>
+                <h3>Ban history</h3>
                 <div class="table-scroll"><table>
-                    <thead><tr><th>Fecha</th><th>País</th><th>IP</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Country</th><th>IP</th></tr></thead>
                     <tbody id="banIpsBody"></tbody>
                 </table></div>
                 <div class="pager" id="banIpsPager"></div>
@@ -576,40 +576,40 @@ function h($value) {
         <div class="tab-content" data-tab="ssh">
             <section class="grid">
                 <div class="panel table-scroll">
-                    <h3>Top IP ofensivas (SSH)</h3>
+                    <h3>Top offending IPs (SSH)</h3>
                     <table>
-                        <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
+                        <thead><tr><th>IP</th><th>Country</th><th>Attempts</th></tr></thead>
                         <tbody id="sshIpsBody"></tbody>
                     </table>
                 </div>
                 <div class="panel table-scroll">
-                    <h3>Usuarios más atacados (SSH)</h3>
+                    <h3>Most targeted usernames (SSH)</h3>
                     <table>
-                        <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
+                        <thead><tr><th>Username</th><th>Attempts</th></tr></thead>
                         <tbody id="sshUsersBody"></tbody>
                     </table>
                 </div>
             </section>
             <section class="panel table-scroll">
-                <h3>Intentos SSH recientes</h3>
+                <h3>Recent SSH attempts</h3>
                 <table>
-                    <thead><tr><th>Fecha</th><th>Usuario</th><th>Origen</th><th>Resultado</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Username</th><th>Source</th><th>Result</th></tr></thead>
                     <tbody id="sshEventsBody"></tbody>
                 </table>
-                <button type="button" class="load-more" id="sshLoadMore" aria-label="Cargar más eventos SSH">Cargar más</button>
+                <button type="button" class="load-more" id="sshLoadMore" aria-label="Load more SSH events">Load more</button>
             </section>
         </div>
 
         <div class="tab-content" data-tab="map">
             <section class="panel">
-                <h3>Mapa de actividad (últimos eventos)</h3>
+                <h3>Activity map (latest events)</h3>
                 <div id="geoSkeleton" class="map-skeleton"></div>
                 <div id="geoMap" style="display:none;"></div>
                 <div class="map-legend">
-                    <div class="legend-item"><span class="legend-dot fail2ban"></span> Fail2Ban (IPs baneadas)</div>
-                    <div class="legend-item"><span class="legend-dot ssh"></span> SSH (intentos fallidos)</div>
+                    <div class="legend-item"><span class="legend-dot fail2ban"></span> Fail2Ban (banned IPs)</div>
+                    <div class="legend-item"><span class="legend-dot ssh"></span> SSH (failed attempts)</div>
                     <div class="legend-item"><span class="legend-dot cowrie"></span> Honeypot (Cowrie)</div>
-                    <span style="margin-left:auto;color:var(--text-muted)" id="mapStats">0 ubicaciones</span>
+                    <span style="margin-left:auto;color:var(--text-muted)" id="mapStats">0 locations</span>
                 </div>
             </section>
         </div>
@@ -617,17 +617,17 @@ function h($value) {
         <div class="tab-content" data-tab="honeypot">
             <section class="grid">
                 <div class="panel">
-                    <h3>Top IP atacantes (Honeypot)</h3>
+                    <h3>Top attacking IPs (Honeypot)</h3>
                     <div class="table-scroll"><table>
-                        <thead><tr><th>IP</th><th>País</th><th>Intentos</th></tr></thead>
+                        <thead><tr><th>IP</th><th>Country</th><th>Attempts</th></tr></thead>
                         <tbody id="cowrieIpsBody"></tbody>
                     </table></div>
                     <div class="pager" id="cowrieIpsPager"></div>
                 </div>
                 <div class="panel">
-                    <h3>Credenciales más probadas</h3>
+                    <h3>Most tried usernames</h3>
                     <div class="table-scroll"><table>
-                        <thead><tr><th>Usuario</th><th>Intentos</th></tr></thead>
+                        <thead><tr><th>Username</th><th>Attempts</th></tr></thead>
                         <tbody id="cowrieUsersBody"></tbody>
                     </table></div>
                     <div class="pager" id="cowrieUsersPager"></div>
@@ -635,21 +635,21 @@ function h($value) {
             </section>
             <section class="grid">
                 <div class="panel">
-                    <h3>Intentos recientes en honeypot</h3>
+                    <h3>Recent honeypot login attempts</h3>
                     <div class="table-scroll"><table>
-                        <thead><tr><th>Fecha</th><th>IP</th><th>Usuario</th><th>Contraseña</th><th>Resultado</th></tr></thead>
+                        <thead><tr><th>Date</th><th>IP</th><th>Username</th><th>Password</th><th>Result</th></tr></thead>
                         <tbody id="cowrieEventsBody"></tbody>
                     </table></div>
                     <div class="pager" id="cowrieEventsPager"></div>
                 </div>
                 <div class="panel">
-                    <h3>Comandos ejecutados en honeypot</h3>
+                    <h3>Commands run in the honeypot</h3>
                     <div class="seg-control">
-                        <button type="button" class="seg-btn active" id="cmdsModeRecent">Recientes</button>
-                        <button type="button" class="seg-btn" id="cmdsModeTop">Más ejecutados</button>
+                        <button type="button" class="seg-btn active" id="cmdsModeRecent">Recent</button>
+                        <button type="button" class="seg-btn" id="cmdsModeTop">Most run</button>
                     </div>
                     <div class="table-scroll"><table id="cowrieCmdsTable">
-                        <thead id="cowrieCmdsHead"><tr><th>Fecha</th><th>IP</th><th>Comando</th></tr></thead>
+                        <thead id="cowrieCmdsHead"><tr><th>Date</th><th>IP</th><th>Command</th></tr></thead>
                         <tbody id="cowrieCmdsBody"></tbody>
                     </table></div>
                     <div class="pager" id="cowrieCmdsPager"></div>
@@ -659,14 +659,14 @@ function h($value) {
 
         <div class="tab-content" data-tab="audit">
             <section class="panel table-scroll">
-                <h3>Registro de Auditoría Interna</h3>
+                <h3>Internal Audit Log</h3>
                 <table>
-                    <thead><tr><th>ID</th><th>Usuario</th><th>Acción</th><th>IP Origen</th><th>Fecha</th></tr></thead>
+                    <thead><tr><th>ID</th><th>User</th><th>Action</th><th>Source IP</th><th>Date</th></tr></thead>
                     <tbody>
                         <?php foreach ($logs as $log): ?>
                             <tr>
                                 <td><?= h($log['id']) ?></td>
-                                <td><?= h($log['username'] ?: 'Anónimo') ?></td>
+                                <td><?= h($log['username'] ?: 'Anonymous') ?></td>
                                 <td><?= h($log['action']) ?></td>
                                 <td><?= h($log['ip_address']) ?></td>
                                 <td><?= h($log['created_at']) ?></td>
@@ -678,7 +678,7 @@ function h($value) {
         </div>
     </div>
 
-    <div id="toast" class="toast" role="status">No se pudo actualizar la telemetría.</div>
+    <div id="toast" class="toast" role="status">Could not update telemetry.</div>
 
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" nonce="<?= h($cspNonce) ?>"></script>
     <script nonce="<?= h($cspNonce) ?>">
@@ -697,12 +697,12 @@ function h($value) {
             const days = Math.floor(diff / 86400000);
             let relative = '';
             let recentClass = '';
-            if (mins < 1) { relative = 'ahora mismo'; recentClass = 'timestamp-recent'; }
-            else if (mins < 60) { relative = `hace ${mins}m`; recentClass = mins < 10 ? 'timestamp-recent' : ''; }
-            else if (hours < 24) { relative = `hace ${hours}h`; }
-            else if (days < 7) { relative = `hace ${days}d`; }
-            else { relative = d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }); }
-            const absolute = d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            if (mins < 1) { relative = 'just now'; recentClass = 'timestamp-recent'; }
+            else if (mins < 60) { relative = `${mins}m ago`; recentClass = mins < 10 ? 'timestamp-recent' : ''; }
+            else if (hours < 24) { relative = `${hours}h ago`; }
+            else if (days < 7) { relative = `${days}d ago`; }
+            else { relative = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }); }
+            const absolute = d.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
             return `${absolute}<span class="timestamp-relative ${recentClass}">${relative}</span>`;
         };
         const formatBytes = (bytes) => {
@@ -715,16 +715,16 @@ function h($value) {
 
         const CRITICAL_USERS = ['root', 'admin', 'administrator', 'ubuntu', 'pi', 'postgres', 'mysql', 'oracle'];
         const EMPTY_STATES = {
-            banIpsBody: { icon: 'shield', title: 'Sin historial de baneos', desc: 'No hay baneos registrados de ninguna fuente', positive: true },
-            banEventsBody: { icon: 'shield', title: 'Sin baneos SSH', desc: 'Fail2Ban no ha registrado baneos SSH en este período', positive: true },
-            cowrieBanBody: { icon: 'shield', title: 'Sin baneos Cowrie', desc: 'Ninguna IP baneada por actividad en el honeypot', positive: true },
-            sshIpsBody: { icon: 'lock', title: 'Sin ataques SSH', desc: 'No hay intentos de acceso no autorizados', positive: true },
-            sshUsersBody: { icon: 'users', title: 'Sin usuarios atacados', desc: 'No se detectaron intentos de login sospechosos', positive: true },
-            sshEventsBody: { icon: 'activity', title: 'Sin actividad SSH', desc: 'No hay eventos de autenticación en este período', neutral: true },
-            cowrieIpsBody: { icon: 'lock', title: 'Sin atacantes en honeypot', desc: 'No hay IPs registradas atacando el honeypot', positive: true },
-            cowrieUsersBody: { icon: 'users', title: 'Sin credenciales probadas', desc: 'No se han registrado intentos de login en el honeypot', positive: true },
-            cowrieEventsBody: { icon: 'activity', title: 'Sin intentos en honeypot', desc: 'No hay eventos recientes en el honeypot', neutral: true },
-            cowrieCmdsBody: { icon: 'activity', title: 'Sin comandos ejecutados', desc: 'Ningún atacante ha ejecutado comandos', positive: true },
+            banIpsBody: { icon: 'shield', title: 'No ban history', desc: 'No bans recorded from any source', positive: true },
+            banEventsBody: { icon: 'shield', title: 'No SSH bans', desc: 'Fail2Ban has not recorded any SSH bans in this period', positive: true },
+            cowrieBanBody: { icon: 'shield', title: 'No Cowrie bans', desc: 'No IPs banned for honeypot activity', positive: true },
+            sshIpsBody: { icon: 'lock', title: 'No SSH attacks', desc: 'No unauthorized access attempts', positive: true },
+            sshUsersBody: { icon: 'users', title: 'No targeted usernames', desc: 'No suspicious login attempts detected', positive: true },
+            sshEventsBody: { icon: 'activity', title: 'No SSH activity', desc: 'No authentication events in this period', neutral: true },
+            cowrieIpsBody: { icon: 'lock', title: 'No honeypot attackers', desc: 'No IPs recorded attacking the honeypot', positive: true },
+            cowrieUsersBody: { icon: 'users', title: 'No credentials tried', desc: 'No login attempts recorded on the honeypot', positive: true },
+            cowrieEventsBody: { icon: 'activity', title: 'No honeypot attempts', desc: 'No recent events on the honeypot', neutral: true },
+            cowrieCmdsBody: { icon: 'activity', title: 'No commands run', desc: 'No attacker has run any commands', positive: true },
         };
         const emptyIcon = (type) => {
             const icons = {
@@ -750,7 +750,7 @@ function h($value) {
             if (!tbody) return;
             tbody.innerHTML = '';
             if (!rows || !rows.length) {
-                const es = EMPTY_STATES[tbodyId] || { icon: 'activity', title: 'Sin datos', desc: 'No hay información disponible' };
+                const es = EMPTY_STATES[tbodyId] || { icon: 'activity', title: 'No data', desc: 'No information available' };
                 const cls = es.positive ? 'empty-state-positive' : (es.neutral ? 'empty-state-neutral' : '');
                 const tr = document.createElement('tr');
                 const td = document.createElement('td');
@@ -807,12 +807,12 @@ function h($value) {
 
         const badgeResult = (result) => {
             const span = document.createElement('span');
-            span.className = 'badge-result ' + (result === 'Usuario existente' ? 'ok' : 'warn');
+            span.className = 'badge-result ' + (result === 'Existing user' ? 'ok' : 'warn');
             span.textContent = result;
             return span.outerHTML;
         };
 
-        // Sistema de severidad global
+        // Global severity level
         const updateSeverity = (fail2ban1h, ssh5m) => {
             const el = document.getElementById('severityIndicator');
             const txt = document.getElementById('severityText');
@@ -821,28 +821,28 @@ function h($value) {
             let level, icon, text;
             if (fail2ban1h >= 20 || ssh5m >= 50) {
                 level = 'severity-critical'; icon = 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z';
-                text = '⚠️ Ataque Activo';
+                text = '⚠️ Active Attack';
             } else if (fail2ban1h >= 10 || ssh5m >= 20) {
                 level = 'severity-high'; icon = 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
-                text = 'Alerta Alta';
+                text = 'High Alert';
             } else if (fail2ban1h >= 5 || ssh5m >= 10) {
                 level = 'severity-medium'; icon = 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
-                text = 'Actividad Elevada';
+                text = 'Elevated Activity';
             } else {
                 level = 'severity-low'; icon = 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z';
-                text = 'Sistema Normal';
+                text = 'System Normal';
             }
             el.classList.add(level);
             el.querySelector('svg').innerHTML = `<path d="${icon}"/>`;
             txt.textContent = text;
         };
 
-        // Badges de tendencia
+        // Trend badges
         const trendBadge = (current, previous, invert = false) => {
             if (previous === 0 && current === 0) return '<span class="trend-badge trend-stable">→ 0%</span>';
-            if (previous === 0) return `<span class="trend-badge ${invert ? 'trend-down' : 'trend-up'}">↑ nuevo</span>`;
+            if (previous === 0) return `<span class="trend-badge ${invert ? 'trend-down' : 'trend-up'}">↑ new</span>`;
             const pct = Math.round(((current - previous) / previous) * 100);
-            if (Math.abs(pct) < 5) return '<span class="trend-badge trend-stable">→ estable</span>';
+            if (Math.abs(pct) < 5) return '<span class="trend-badge trend-stable">→ stable</span>';
             const cls = pct > 0 ? (invert ? 'trend-down' : 'trend-up') : (invert ? 'trend-up' : 'trend-down');
             const arrow = pct > 0 ? '↑' : '↓';
             return `<span class="trend-badge ${cls}">${arrow} ${Math.abs(pct)}%</span>`;
@@ -908,13 +908,13 @@ function h($value) {
         const banPages = { events: 0, cowrie: 0, ips: 0 };
         let cowrieCmdsMode = 'recent'; // 'recent' | 'top'
 
-        // Renderiza un paginador numérico compacto.
-        // onPage(n) se llama con el número de página (0-indexed) al hacer clic.
+        // Renders a compact numeric pager.
+        // onPage(n) is called with the page number (0-indexed) on click.
         const renderPager = (containerId, currentPage, total, onPage) => {
             const el = document.getElementById(containerId);
             if (!el) return;
             el.innerHTML = '';
-            if (total <= COWRIE_PAGE_SIZE) return;          // sin paginación si cabe en 1 página
+            if (total <= COWRIE_PAGE_SIZE) return;          // no pager if everything fits on one page
             const pages = Math.ceil(total / COWRIE_PAGE_SIZE);
             const mkBtn = (label, page, active = false, disabled = false) => {
                 const b = document.createElement('button');
@@ -926,7 +926,7 @@ function h($value) {
                 return b;
             };
             el.appendChild(mkBtn('←', currentPage - 1, false, currentPage === 0));
-            // Ventana de páginas: siempre primera, última y hasta 3 alrededor de la actual
+            // Page window: always the first and last page, plus up to 3 around the current one
             const show = new Set([0, pages - 1]);
             for (let i = Math.max(0, currentPage - 1); i <= Math.min(pages - 1, currentPage + 1); i++) show.add(i);
             let prev = -1;
@@ -945,7 +945,7 @@ function h($value) {
             el.appendChild(mkBtn('→', currentPage + 1, false, currentPage >= pages - 1));
             const info = document.createElement('span');
             info.className = 'pager-info';
-            info.textContent = `Pág. ${currentPage + 1} / ${pages} · ${total} registros`;
+            info.textContent = `Page ${currentPage + 1} / ${pages} · ${total} records`;
             el.appendChild(info);
         };
 
@@ -962,14 +962,14 @@ function h($value) {
             renderPager('cowrieUsersPager', cowriePages.users, state.cowrieUsers.length, (p) => { cowriePages.users = p; renderCowrieTables(); });
             updateTable('cowrieEventsBody', slice(state.cowrieEvents, cowriePages.events), 5, [0, 1, 4], 2);
             renderPager('cowrieEventsPager', cowriePages.events, state.cowrieEvents.length, (p) => { cowriePages.events = p; renderCowrieTables(); });
-            // Comandos: modo recientes (fecha+IP+cmd, 3 cols) o top (cmd+veces, 2 cols)
+            // Commands: recent mode (date+IP+cmd, 3 cols) or top mode (cmd+count, 2 cols)
             const head = document.getElementById('cowrieCmdsHead');
             if (cowrieCmdsMode === 'recent') {
-                if (head) head.innerHTML = '<tr><th>Fecha</th><th>IP</th><th>Comando</th></tr>';
+                if (head) head.innerHTML = '<tr><th>Date</th><th>IP</th><th>Command</th></tr>';
                 updateTable('cowrieCmdsBody', slice(state.cowrieCmds, cowriePages.cmds), 3, [0, 1], -1);
                 renderPager('cowrieCmdsPager', cowriePages.cmds, state.cowrieCmds.length, (p) => { cowriePages.cmds = p; renderCowrieTables(); });
             } else {
-                if (head) head.innerHTML = '<tr><th>Comando</th><th>Veces</th></tr>';
+                if (head) head.innerHTML = '<tr><th>Command</th><th>Count</th></tr>';
                 updateTable('cowrieCmdsBody', slice(state.cowrieCmdsTop, cowriePages.cmds), 2, [], -1);
                 renderPager('cowrieCmdsPager', cowriePages.cmds, state.cowrieCmdsTop.length, (p) => { cowriePages.cmds = p; renderCowrieTables(); });
             }
@@ -1005,9 +1005,9 @@ function h($value) {
                     fillOpacity: 0.7,
                 }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${escapeHtml(p.ip)}<br><span style="color:${color}">${escapeHtml(p.type)}</span>`);
             });
-            // Actualizar estadísticas del mapa
+            // Update the map statistics
             const mapStats = document.getElementById('mapStats');
-            if (mapStats) mapStats.textContent = `${valid.length} ubicaciones (${f2bCount} bans, ${sshCount} SSH, ${cowrieCount} honeypot)`;
+            if (mapStats) mapStats.textContent = `${valid.length} locations (${f2bCount} bans, ${sshCount} SSH, ${cowrieCount} honeypot)`;
             if (valid.length && typeof geoLayer.getBounds === 'function') {
                 map.fitBounds(geoLayer.getBounds(), { padding: [20, 20], maxZoom: 4 });
             } else {
@@ -1018,7 +1018,7 @@ function h($value) {
             if (gm && sk) {
                 sk.style.display = 'none';
                 gm.style.display = 'block';
-                // Leaflet necesita recalcular cuando el contenedor deja de estar oculto
+                // Leaflet must recalculate its size once the container is no longer hidden
                 setTimeout(() => map.invalidateSize(), 50);
             }
         };
@@ -1045,7 +1045,7 @@ function h($value) {
                 capSeries(state.system.net);
                 setText('netDetail', `↑ ${formatBytes(txRate)}/s · ↓ ${formatBytes(rxRate)}/s`);
                 setText('netValue', `${formatBytes(rxRate + txRate)}/s`);
-                document.getElementById('netChip').textContent = `↕ Red: ↑ ${formatBytes(txRate)}/s · ↓ ${formatBytes(rxRate)}/s`;
+                document.getElementById('netChip').textContent = `↕ Network (container): ↑ ${formatBytes(txRate)}/s · ↓ ${formatBytes(rxRate)}/s`;
                 renderSpark('netSpark', state.system.net);
             }
             state.netTotals = netTotal;
@@ -1091,7 +1091,7 @@ function h($value) {
             el.appendChild(mkBtn('→', currentPage + 1, false, currentPage >= numPages - 1));
             const info = document.createElement('span');
             info.className = 'pager-info';
-            info.textContent = `Pág. ${currentPage + 1} / ${numPages} · ${total} registros`;
+            info.textContent = `Page ${currentPage + 1} / ${numPages} · ${total} records`;
             el.appendChild(info);
         };
 
@@ -1146,7 +1146,7 @@ function h($value) {
                         setText('fail2ban24h', f24h);
                         setText('fail2ban1h', f1h);
                         setText('fail2ban7d', f7d);
-                        // Añadir tendencia comparando con valor previo
+                        // Add a trend badge by comparing with the previous value
                         const f24hEl = document.getElementById('fail2ban24h');
                         if (f24hEl && prevMetrics.fail2ban24h > 0) {
                             const badge = f24hEl.parentElement.querySelector('.trend-badge');
@@ -1161,12 +1161,12 @@ function h($value) {
                         setText('ssh1h', s1h);
                         setText('ssh5m', s5m);
 
-                        // Actualizar severidad global
+                        // Update the global severity level
                         updateSeverity(f1h, s5m);
                         prevMetrics = { fail2ban24h: f24h, ssh24h: s24h };
 
                         const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
-                        setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
+                        setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('en-GB'));
 
                         const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${escapeHtml(name || cc || '')}`.trim();
                         state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
@@ -1185,7 +1185,7 @@ function h($value) {
                         setText('cowrieSessions', cowrieTotals.sessions_24h ?? 0);
                         state.cowrieIps    = ((data.cowrie && data.cowrie.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.cowrieUsers  = ((data.cowrie && data.cowrie.topUsers) || []).map((r) => [r.label, r.count]);
-                        const badgeCowrie  = (result) => `<span class="badge-result ${result === 'ingresó al honeypot' ? 'honeypot-ok' : 'warn'}">${result === 'ingresó al honeypot' ? '🍯 Honeypot' : 'Rechazado'}</span>`;
+                        const badgeCowrie  = (result) => `<span class="badge-result ${result === 'Logged into honeypot' ? 'honeypot-ok' : 'warn'}">${result === 'Logged into honeypot' ? '🍯 Honeypot' : 'Rejected'}</span>`;
                         state.cowrieEvents = ((data.cowrie && data.cowrie.events) || []).map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.ip), r.username, r.password, badgeCowrie(r.result)]);
                         state.cowrieCmds      = ((data.cowrie && data.cowrie.commands) || [])
                             .sort((a, b) => b.timestamp - a.timestamp)
@@ -1213,7 +1213,7 @@ function h($value) {
             if (hadError) {
                 failureCount++;
                 document.getElementById('metricsError').classList.add('show');
-                if (failureCount % 2 === 0) showToast('No se pudo actualizar la telemetría.');
+                if (failureCount % 2 === 0) showToast('Could not update telemetry.');
             } else {
                 failureCount = 0;
                 document.getElementById('metricsError').classList.remove('show');
@@ -1241,7 +1241,7 @@ function h($value) {
 
         document.getElementById('toggleRefresh').addEventListener('click', (e) => {
             paused = !paused;
-            e.target.textContent = paused ? 'Reanudar' : 'Pausar';
+            e.target.textContent = paused ? 'Resume' : 'Pause';
             e.target.setAttribute('aria-pressed', paused ? 'true' : 'false');
             if (paused) {
                 if (refreshTimer) clearTimeout(refreshTimer);
@@ -1259,7 +1259,7 @@ function h($value) {
                 const content = document.querySelector(`.tab-content[data-tab="${tab}"]`);
                 if (content) content.classList.add('active');
                 if (tab === 'map') {
-                    // Asegura que Leaflet recalcule tras mostrar el tab
+                    // Make Leaflet recalculate its size after the tab is shown
                     setTimeout(() => map.invalidateSize(), 50);
                     renderMap(state.geo);
                 }
