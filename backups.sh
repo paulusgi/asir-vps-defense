@@ -263,7 +263,7 @@ create_backup() {
 
     # Copiar datadir desde el volumen del contenedor detenido
     echo "  ${DIM}Copiando datadir...${NC}"
-    if ! docker run --rm --volumes-from asir_mysql -v "$staging/db":/backup busybox sh -c 'cd /var/lib/mysql && cp -a . /backup'; then
+    if ! docker run --rm --volumes-from asir_mysql -v "$staging/db":/backup busybox:1.37 sh -c 'cd /var/lib/mysql && cp -a . /backup'; then
         echo "  ${RED}✗ Fallo al copiar el datadir de MySQL${NC}" >&2
         rm -rf "$staging"
         if [ "$mysql_stopped" = true ]; then
@@ -528,7 +528,7 @@ restore_backup() {
         mysql_volume=$(docker volume ls -q | grep -E 'mysql_data$' | head -1)
         if [ -n "$mysql_volume" ]; then
             # Limpiar y restaurar
-            docker run --rm -v "$mysql_volume":/var/lib/mysql -v "$staging/db":/backup busybox sh -c 'rm -rf /var/lib/mysql/* && cp -a /backup/. /var/lib/mysql/'
+            docker run --rm -v "$mysql_volume":/var/lib/mysql -v "$staging/db":/backup busybox:1.37 sh -c 'rm -rf /var/lib/mysql/* && cp -a /backup/. /var/lib/mysql/'
         fi
 
         echo "  ${DIM}Iniciando MySQL...${NC}"

@@ -1190,7 +1190,7 @@ generate_db_seed() {
     # Usar un contenedor PHP temporal para generar el hash Bcrypt
     log_info "Calculando hash de contraseña seguro (bcrypt)..."
     set +e
-    WEB_ADMIN_HASH=$(docker run --rm php:8.2-cli php -r "echo password_hash('$WEB_ADMIN_PASS', PASSWORD_DEFAULT);" 2>>"$LOG_FILE" | tee -a "$LOG_FILE")
+    WEB_ADMIN_HASH=$(printf '%s' "$WEB_ADMIN_PASS" | docker run --rm -i php:8.3-cli php -r 'echo password_hash(stream_get_contents(STDIN), PASSWORD_DEFAULT);' 2>>"$LOG_FILE")
     local hash_status=$?
     set -e
     if [ $hash_status -ne 0 ] || [ -z "$WEB_ADMIN_HASH" ]; then
@@ -1763,14 +1763,6 @@ main() {
 
     # Descarga GeoLite2-City desde CDN (sin requerir License Key)
     download_geolite_mmdb
-
-    # Asegurar que el directorio de posiciones de Promtail existe y es escribible
-    log_info "Preparando directorio de posiciones de Promtail..."
-    mkdir -p "$PROJECT_DIR/promtail/positions"
-    # Promtail corre como nobody (65534) en la imagen oficial
-    chown -R 65534:65534 "$PROJECT_DIR/promtail/positions" 2>/dev/null || chmod 777 "$PROJECT_DIR/promtail/positions"
-    touch "$PROJECT_DIR/promtail/positions/positions.yaml"
-    chown 65534:65534 "$PROJECT_DIR/promtail/positions/positions.yaml" 2>/dev/null || chmod 666 "$PROJECT_DIR/promtail/positions/positions.yaml"
 
     # Preparar directorio de logs de Cowrie en el host
     # Cowrie (UID 1000 en la imagen oficial) escribe aquí

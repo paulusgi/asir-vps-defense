@@ -4,7 +4,7 @@ services:
   # Real SSH está en puerto alternativo (default: 2929)
   # ============================================================================
   cowrie:
-    image: cowrie/cowrie:latest
+    image: cowrie/cowrie:2.9.0   # version the evidence was captured with
     container_name: asir_cowrie
     restart: always
     ports:
@@ -17,7 +17,7 @@ services:
     environment:
       - TZ=Europe/Madrid
     networks:
-      - frontend_net
+      - honeypot_net   # alone: nothing else is reachable from the honeypot
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -37,7 +37,7 @@ services:
   # PRIVATE ADMIN PANEL (Accessible only via SSH Tunnel)
   # ============================================================================
   admin-nginx:
-    image: nginx:alpine
+    image: nginx:1.30-alpine
     container_name: asir_admin_nginx
     restart: always
     ports:
@@ -47,6 +47,8 @@ services:
       - ./src:/var/www/html:ro
     networks:
       - frontend_net
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - php-app
 
@@ -89,7 +91,7 @@ services:
   # DATABASE (Isolated)
   # ============================================================================
   mysql:
-    image: mysql:8.0
+    image: mysql:8.4
     container_name: asir_mysql
     restart: always
     environment:
@@ -111,13 +113,15 @@ services:
       - ./mysql/init:/docker-entrypoint-initdb.d:ro
     networks:
       - backend_net
+    security_opt:
+      - no-new-privileges:true
     # No ports exposed to host!
 
   # ============================================================================
   # OBSERVABILITY STACK (Loki + Promtail)
   # ============================================================================
   loki:
-    image: grafana/loki:2.9.2
+    image: grafana/loki:2.9.17
     container_name: asir_loki
     restart: always
     environment:
@@ -135,9 +139,11 @@ services:
       start_period: 30s
     networks:
       - backend_net
+    security_opt:
+      - no-new-privileges:true
 
   promtail:
-    image: grafana/promtail:2.9.2
+    image: grafana/promtail:2.9.17
     container_name: asir_promtail
     restart: always
     environment:
@@ -145,7 +151,7 @@ services:
     volumes:
       - ./promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log/host:ro # Read host logs (Fail2ban, Auth)
-      - ./promtail/positions:/positions
+      - promtail_positions:/positions
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     command: -config.file=/etc/promtail/config.yml
@@ -160,11 +166,16 @@ services:
         condition: service_healthy
     networks:
       - backend_net
+    security_opt:
+      - no-new-privileges:true
 
 
 networks:
+  honeypot_net:
+    # Cowrie only. A compromised honeypot cannot reach the panel, PHP-FPM or the databases
+    driver: bridge
   frontend_net:
-    # Bridge network for Cowrie (port 22) and Nginx (loopback panel)
+    # Nginx <-> PHP-FPM (the panel, published on 127.0.0.1:8888 only)
     driver: bridge
   backend_net:
     # Internal network: MySQL, Loki and PHP-FPM without host-exposed ports
@@ -174,6 +185,7 @@ volumes:
   mysql_data:
   loki_data:
   cowrie_data:    # Sesiones TTY grabadas por el honeypot Cowrie
+  promtail_positions:
 
 # ==============================================================================
 # SECRETS (archivos con credenciales, permisos 600)
