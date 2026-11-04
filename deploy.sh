@@ -13,7 +13,7 @@
 ###############################################################################
 #
 # NAME:         deploy.sh
-# VERSION:      3.0.0
+# VERSION:      3.0.1
 # AUTHOR:       Pau Ginesta
 # LICENSE:      PolyForm Noncommercial 1.0.0
 #
@@ -50,10 +50,12 @@ export NEEDRESTART_SUSPEND=1
 # CONSTANTS AND CONFIGURATION
 # =============================================================================
 
-readonly SCRIPT_VERSION="3.0.0"
+readonly SCRIPT_VERSION="3.0.1"
 readonly SCRIPT_NAME="ASIR VPS Defense"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BASH_SOURCE is empty when the script arrives through a pipe (curl ... | sudo bash)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
 readonly SCRIPT_DIR
+readonly REPO_URL="https://github.com/paulusgi/asir-vps-defense.git"
 readonly BACKUP_VG_NAME="backups"
 readonly BACKUP_LV_NAME="backups"
 readonly BACKUP_MOUNTPOINT="/srv/backups"
@@ -1694,13 +1696,19 @@ main() {
         fi
 
         # Logic to populate the directory
-        if [ -f "docker-compose.yml" ]; then
-            log_info "Copying the local installation files..."
-            rsync -av --exclude ".git" --exclude "asir-vps-defense" . "$PROJECT_DIR/" 2>/dev/null || cp -R . "$PROJECT_DIR/"
+        # A checkout of the project next to this script: use its files. Otherwise the script
+        # came alone (curl ... | sudo bash): fetch the release with the same version.
+        if [ -f "$SCRIPT_DIR/deploy.sh" ] && [ -f "$SCRIPT_DIR/docker-compose.yml" ] && [ -f "$SCRIPT_DIR/cowrie/cowrie.cfg" ]; then
+            log_info "Copying the project files from $SCRIPT_DIR..."
+            rsync -a --exclude ".git" "$SCRIPT_DIR/" "$PROJECT_DIR/" 2>/dev/null \
+                || tar -C "$SCRIPT_DIR" --exclude=.git -cf - . | tar -C "$PROJECT_DIR" -xf -
         else
-            log_info "Downloading the official repository..."
+            log_info "Downloading release v${SCRIPT_VERSION} of the project..."
             rm -rf "$PROJECT_DIR"
-            git clone https://github.com/paulusgi/asir-vps-defense.git "$PROJECT_DIR"
+            if ! git clone --quiet --branch "v${SCRIPT_VERSION}" "$REPO_URL" "$PROJECT_DIR" 2>>"$LOG_FILE"; then
+                log_warn "Release v${SCRIPT_VERSION} not found; using the default branch"
+                git clone --quiet "$REPO_URL" "$PROJECT_DIR"
+            fi
         fi
 
         # Make sure the ownership is correct right away
