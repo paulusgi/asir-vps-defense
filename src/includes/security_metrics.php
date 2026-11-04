@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/loki_client.php';
 
+// Only real bans ("[jail] Ban <ip>"), not Unban, Restore Ban or Found lines.
+const FAIL2BAN_BAN_SELECTOR = '{job="fail2ban"} |~ `\] Ban [0-9a-fA-F]`';
+
 /**
  * LogQL selector for SSH attempts rejected by the real sshd.
  *
@@ -16,7 +19,7 @@ require_once __DIR__ . '/loki_client.php';
  */
 const SSH_REJECTION_SELECTOR = '{job="auth"} |~ `sshd(-session)?\[[0-9]+\]: (Invalid user .* from .* port [0-9]+|User .* from .* not allowed because|Failed password for )`';
 
-function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
+function fetchSecurityMetrics(PDO $pdo): array
 {
     $client = new LokiClient(getenv('LOKI_URL') ?: 'http://loki:3100');
 
@@ -53,12 +56,6 @@ function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
         }
         $geoPoints = array_values($geoPoints);
 
-        if ($mode === 'lite') {
-            $fail2ban['events'] = [];
-            $ssh['events']      = [];
-            $cowrie['events']   = [];
-        }
-
         return [
             'generatedAt' => time(),
             'fail2ban'    => $fail2ban,
@@ -67,8 +64,11 @@ function fetchSecurityMetrics(PDO $pdo, string $mode = 'full'): array
             'geo'         => array_slice($geoPoints, 0, 100),
         ];
     } catch (Throwable $exception) {
+        // Details go to the PHP error log, not to the browser
+        error_log('fetchSecurityMetrics: ' . $exception->getMessage());
+
         return [
-            'error' => $exception->getMessage(),
+            'error' => 'metrics_unavailable',
         ];
     }
 }
@@ -78,14 +78,14 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
     // Usamos regex para coincidir solo con "Ban" (no Unban, Restore Ban, etc.)
     // El patrón ] Ban captura el formato típico: "fail2ban.actions ... [sshd] Ban IP"
     $totals = [
-        'last1h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |~ "\\\\] Ban [0-9]" [1h]))'),
-        'last24h' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |~ "\\\\] Ban [0-9]" [24h]))'),
-        'last7d' => $client->queryScalar('sum(count_over_time({job="fail2ban"} |~ "\\\\] Ban [0-9]" [7d]))'),
+        'last1h' => $client->queryScalar('sum(count_over_time(' . FAIL2BAN_BAN_SELECTOR . ' [1h]))'),
+        'last24h' => $client->queryScalar('sum(count_over_time(' . FAIL2BAN_BAN_SELECTOR . ' [24h]))'),
+        'last7d' => $client->queryScalar('sum(count_over_time(' . FAIL2BAN_BAN_SELECTOR . ' [7d]))'),
     ];
 
     // Query last 7 days of logs for better historical view
     $logs = $client->queryRangeRaw(
-        '{job="fail2ban"}',
+        FAIL2BAN_BAN_SELECTOR,
         time() - (7 * 86400),
         time(),
         '5m',
@@ -93,8 +93,6 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
     );
 
     $ipCounts      = [];
-    $sshIpCounts   = [];
-    $jailCounts    = [];
     $events        = [];
 
     foreach ($logs as $entry) {
@@ -107,10 +105,6 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
         $jail = $parsed['jail'];
 
         $ipCounts[$ip] = ($ipCounts[$ip] ?? 0) + 1;
-        if ($jail === 'sshd') {
-            $sshIpCounts[$ip] = ($sshIpCounts[$ip] ?? 0) + 1;
-        }
-        $jailCounts[$jail] = ($jailCounts[$jail] ?? 0) + 1;
 
         $geo = lookupGeoForIp($pdo, $ip);
 
@@ -133,8 +127,6 @@ function fetchFail2BanMetrics(LokiClient $client, PDO $pdo): array
     return [
         'totals'     => $totals,
         'topIps'     => formatIpCountList($pdo, $ipCounts),
-        'topIpsSSH'  => formatIpCountList($pdo, $sshIpCounts),
-        'topJails'   => array_slice(normalizeCounts($jailCounts), 0, 5),
         'events'     => array_slice($events, 0, 500),
     ];
 }
@@ -216,23 +208,18 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         'last1h'       => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [1h]))'),
         'last24h'      => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [24h]))'),
         'last7d'       => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "login attempt" [7d]))'),
-        'sessions_1h'  => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "New connection" [1h]))'),
         'sessions_24h' => $client->queryScalar('sum(count_over_time({job="cowrie"} |= "New connection" [24h]))'),
     ];
 
     // Eventos detallados desde cowrie_json — tiene src_ip, username, password estructurados.
     // Filtramos login.success + login.failed en una sola query; separamos por eventid luego.
-    $jsonLogs = [];
-    try {
-        $jsonLogs = $client->queryRangeRaw(
-            '{job="cowrie_json"} |= "cowrie.login."',
-            time() - (7 * 86400),
-            time(),
-            '5m',
-            2000
-        );
-    } catch (Throwable $ignored) {
-    }
+    $jsonLogs = $client->queryRangeRaw(
+        '{job="cowrie_json"} |= "cowrie.login."',
+        time() - (7 * 86400),
+        time(),
+        '5m',
+        2000
+    );
 
     $ipCounts   = [];
     $userCounts = [];
@@ -277,17 +264,13 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
     }
 
     // Comandos ejecutados dentro del honeypot (eventid=cowrie.command.input).
-    $cmdLogs = [];
-    try {
-        $cmdLogs = $client->queryRangeRaw(
-            '{job="cowrie_json"} |= "cowrie.command.input"',
-            time() - (7 * 86400),
-            time(),
-            '5m',
-            600
-        );
-    } catch (Throwable $ignored) {
-    }
+    $cmdLogs = $client->queryRangeRaw(
+        '{job="cowrie_json"} |= "cowrie.command.input"',
+        time() - (7 * 86400),
+        time(),
+        '5m',
+        600
+    );
 
     $commandCounts = [];
     $commands      = [];
@@ -316,47 +299,6 @@ function fetchCowrieMetrics(LokiClient $client, PDO $pdo): array
         'topCommands' => array_slice(normalizeCounts($commandCounts), 0, 15),
         'events'      => array_slice($events, 0, 200),
         'commands'    => array_slice($commands, 0, 200),
-    ];
-}
-
-/**
- * Parsea una línea de log de Cowrie buscando intentos de login.
- *
- * Formato texto de Cowrie:
- *   2024-01-31T14:23:47+0000 [cowrie.ssh.userauth...] login attempt [root/password123] failed
- *   2024-01-31T14:23:47+0000 [cowrie.ssh.userauth...] login attempt [admin/] succeeded
- *
- * @return array{ip:string,username:string,password:string,result:string}|null
- */
-function parseCowrieLogin(string $line): ?array
-{
-    if (!str_contains($line, 'login attempt')) {
-        return null;
-    }
-
-    // Extraer usuario y contraseña del bloque [user/pass]
-    if (!preg_match('/login attempt \[(?P<user>[^/\]]*)\/(?P<pass>[^\]]*)\]/', $line, $authMatch)) {
-        return null;
-    }
-
-    // Extraer IP de origen — Cowrie la escribe en "New connection: IP:port" o en la sesión
-    // En las líneas de login attempt, la IP aparece como "<IP:port>"
-    $ip = 'unknown';
-    if (preg_match('/\b(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+/', $line, $ipMatch)) {
-        $ip = $ipMatch['ip'];
-    } elseif (preg_match('/\b(?P<ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/', $line, $ipMatch)) {
-        if (filter_var($ipMatch['ip'], FILTER_VALIDATE_IP)) {
-            $ip = $ipMatch['ip'];
-        }
-    }
-
-    $result = str_contains($line, 'succeeded') ? 'ingresó al honeypot' : 'rechazado';
-
-    return [
-        'ip'       => $ip,
-        'username' => $authMatch['user'],
-        'password' => $authMatch['pass'],
-        'result'   => $result,
     ];
 }
 
@@ -497,29 +439,6 @@ function lookupGeoForIp(PDO $pdo, string $ip): array
         }
         return $default;
     };
-
-    static $tableEnsured = false;
-    if (!$tableEnsured) {
-        $pdo->exec(
-            "CREATE TABLE IF NOT EXISTS ip_geo_cache (
-                ip VARCHAR(45) PRIMARY KEY,
-                country_code CHAR(2) DEFAULT '??',
-                country_name VARCHAR(100) DEFAULT 'Desconocido',
-                lat DECIMAL(10,6) NULL,
-                lon DECIMAL(10,6) NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB"
-        );
-        try {
-            $pdo->exec("ALTER TABLE ip_geo_cache ADD COLUMN lat DECIMAL(10,6) NULL");
-        } catch (Throwable $ignored) {
-        }
-        try {
-            $pdo->exec("ALTER TABLE ip_geo_cache ADD COLUMN lon DECIMAL(10,6) NULL");
-        } catch (Throwable $ignored) {
-        }
-        $tableEnsured = true;
-    }
 
     if (!filter_var($ip, FILTER_VALIDATE_IP)) {
         return $default;

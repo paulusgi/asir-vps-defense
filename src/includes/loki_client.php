@@ -51,48 +51,6 @@ final class LokiClient
     }
 
     /**
-     * Returns timeline entries as [ ['ts' => ms, 'value' => int], ... ]
-     *
-     * @return array<int, array{ts:int,value:int}>
-     */
-    public function queryRangeSeries(string $logql, int $minutes, string $step = '60s'): array
-    {
-        $end = time();
-        $start = $end - ($minutes * 60);
-
-        $payload = $this->request('/loki/api/v1/query_range', [
-            'query' => $logql,
-            'start' => $this->toNanoseconds($start),
-            'end' => $this->toNanoseconds($end),
-            'step' => $step,
-        ]);
-
-        $data = $payload['data'] ?? [];
-        $result = $data['result'] ?? [];
-        $timeline = [];
-
-        foreach ($result as $series) {
-            foreach ($series['values'] ?? [] as $point) {
-                $tsMs = (int) round(((int) ($point[0] ?? 0)) / 1_000_000);
-                $value = (float) ($point[1] ?? 0);
-                $timeline[$tsMs] = ($timeline[$tsMs] ?? 0) + $value;
-            }
-        }
-
-        ksort($timeline);
-
-        $formatted = [];
-        foreach ($timeline as $ts => $value) {
-            $formatted[] = [
-                'ts' => (int) $ts,
-                'value' => (int) round($value),
-            ];
-        }
-
-        return $formatted;
-    }
-
-    /**
      * Flattens raw log entries for downstream classification.
      *
      * @return array<int, array{timestamp:int,line:string,labels:array<string,string>}>

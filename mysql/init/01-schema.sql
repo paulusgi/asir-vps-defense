@@ -15,18 +15,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
--- View for simplified audit analysis
-CREATE OR REPLACE VIEW view_audit_summary AS
-SELECT 
-    a.id,
-    u.username,
-    a.action,
-    a.ip_address,
-    a.created_at
-FROM audit_log a
-LEFT JOIN users u ON a.user_id = u.id
-ORDER BY a.created_at DESC;
-
 CREATE TABLE IF NOT EXISTS ip_geo_cache (
     ip VARCHAR(45) PRIMARY KEY,
     country_code CHAR(2) DEFAULT '??',

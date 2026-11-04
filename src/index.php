@@ -16,6 +16,16 @@ header("Content-Security-Policy: default-src 'self'; script-src 'nonce-{$cspNonc
 
 require_once __DIR__ . '/includes/security_metrics.php';
 
+// Sessions end 8 hours after login, even while the dashboard keeps polling.
+const SESSION_MAX_AGE = 8 * 3600;
+if (isset($_SESSION['user_id']) && time() - ($_SESSION['login_at'] ?? 0) > SESSION_MAX_AGE) {
+    $_SESSION = [];
+    session_regenerate_id(true);
+}
+
+// Verified when the username does not exist, so the response time does not reveal valid accounts.
+const DUMMY_PASSWORD_HASH = '$2y$10$mMt.S3fw6pMnx6.jWfF9dOn0RQo304LJahSoUN8WzjY2d3u5/CgZy';
+
 function readSystemMetrics(): array
 {
     try {
@@ -134,8 +144,7 @@ if (isset($_GET['action'])) {
     }
 
     if ($_GET['action'] === 'metrics') {
-        $mode = $_GET['mode'] ?? 'full';
-        echo json_encode(fetchSecurityMetrics($pdo, $mode));
+        echo json_encode(fetchSecurityMetrics($pdo));
         exit;
     }
 
@@ -163,31 +172,36 @@ if (isset($_GET['logout'])) {
 // Handle login
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['username'])) {
-    // Validar token CSRF
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    // Arrays (username[]=...) would otherwise raise a TypeError and a 500
+    $username = is_string($_POST['username']) ? trim($_POST['username']) : '';
+    $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
+    $csrfToken = is_string($_POST['csrf_token'] ?? null) ? $_POST['csrf_token'] : '';
+    $audit = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (:uid, :action, :ip)');
+
+    if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrfToken)) {
         $error = 'Token de seguridad inválido. Recarga la página.';
+        $audit->execute(['uid' => null, 'action' => 'LOGIN_CSRF_REJECTED', 'ip' => $_SERVER['REMOTE_ADDR']]);
     } else {
-    $stmt = $pdo->prepare('SELECT id, username, password_hash, role FROM users WHERE username = :username');
-    $stmt->execute(['username' => $_POST['username']]);
-    $userRow = $stmt->fetch();
+        $stmt = $pdo->prepare('SELECT id, username, password_hash, role FROM users WHERE username = :username');
+        $stmt->execute(['username' => $username]);
+        $userRow = $stmt->fetch();
 
-    if ($userRow && password_verify($_POST['password'], $userRow['password_hash'])) {
-        session_regenerate_id(true);
-        $_SESSION['user_id'] = $userRow['id'];
-        $_SESSION['username'] = $userRow['username'];
-        $_SESSION['role'] = $userRow['role'];
+        $passwordOk = password_verify($password, $userRow['password_hash'] ?? DUMMY_PASSWORD_HASH);
+        if ($userRow && $passwordOk) {
+            session_regenerate_id(true);
+            $_SESSION['user_id'] = $userRow['id'];
+            $_SESSION['username'] = $userRow['username'];
+            $_SESSION['role'] = $userRow['role'];
+            $_SESSION['login_at'] = time();
+            $audit->execute(['uid' => $userRow['id'], 'action' => 'LOGIN_SUCCESS', 'ip' => $_SERVER['REMOTE_ADDR']]);
 
-        $stmt = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (:uid, "LOGIN_SUCCESS", :ip)');
-        $stmt->execute(['uid' => $userRow['id'], 'ip' => $_SERVER['REMOTE_ADDR']]);
+            header('Location: index.php');
+            exit;
+        }
 
-        header('Location: index.php');
-        exit;
+        $error = 'Credenciales inválidas.';
+        $audit->execute(['uid' => null, 'action' => 'LOGIN_FAILED', 'ip' => $_SERVER['REMOTE_ADDR']]);
     }
-
-    $error = 'Credenciales inválidas.';
-    $stmt = $pdo->prepare('INSERT INTO audit_log (user_id, action, ip_address) VALUES (NULL, "LOGIN_FAILED", :ip)');
-    $stmt->execute(['ip' => $_SERVER['REMOTE_ADDR']]);
-    } // Cierre del else CSRF
 }
 
 if (!isset($_SESSION['user_id'])) {
@@ -1123,6 +1137,7 @@ function h($value) {
 
                 if (metricsOk) {
                     const data = await metricsRes.value.json();
+                    if (data.error) hadError = true;
                     if (!data.error) {
                         const fail2banTotals = (data.fail2ban && data.fail2ban.totals) || {};
                         const f24h = fail2banTotals.last24h ?? 0;
