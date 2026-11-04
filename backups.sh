@@ -5,6 +5,8 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 BACKUP_ROOT="${BACKUP_ROOT:-/srv/backups}"
+BACKUP_LOOP_FILE="${BACKUP_LOOP_FILE:-/var/lib/asir-vps-defense/backups.img}"
+BACKUP_VG="${BACKUP_VG:-backups}"
 BACKUP_RETENTION="${BACKUP_RETENTION:-7}"
 LOG_FILE="${LOG_FILE:-/var/log/asir-vps-defense/backup.log}"
 COMPOSE=(docker compose -f "$PROJECT_DIR/docker-compose.yml")
@@ -20,8 +22,6 @@ CYAN=$'\033[0;36m'
 BOLD=$'\033[1m'
 DIM=$'\033[2m'
 NC=$'\033[0m'
-BLUE=$'\033[0;34m'
-MAGENTA=$'\033[0;35m'
 WHITE=$'\033[1;37m'
 
 copy_tree() {
@@ -185,6 +185,13 @@ ensure_mount() {
         return
     fi
 
+    # Loop-file setups: after a reboot the loop device and the LVM volume group are
+    # not active, so the fstab entry (nofail) silently does not mount. Bring them up.
+    if [ -f "$BACKUP_LOOP_FILE" ]; then
+        losetup -j "$BACKUP_LOOP_FILE" | grep -q . || losetup -f "$BACKUP_LOOP_FILE" || true
+        vgchange -ay "$BACKUP_VG" >/dev/null 2>&1 || true
+    fi
+
     # Intento de montaje automático (loop o disco dedicado deben estar en /etc/fstab)
     if mount "$BACKUP_ROOT" >/dev/null 2>&1 || mount -a >/dev/null 2>&1; then
         if mountpoint -q "$BACKUP_ROOT"; then
@@ -224,6 +231,15 @@ prune_backups() {
     echo "  ${GREEN}✔${NC} Prune completado: ${YELLOW}$deleted eliminados${NC} (protegidos intactos)"
 }
 
+# Name of the Docker volume mounted at <destination> in <container> (empty if none)
+container_volume() {
+    docker inspect -f "{{range .Mounts}}{{if eq .Destination \"$2\"}}{{.Name}}{{end}}{{end}}" "$1" 2>/dev/null || true
+}
+
+restart_mysql_quietly() {
+    "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || true
+}
+
 create_backup() {
     local retention="$1"
     local protect_flag="${2:-}"
@@ -240,7 +256,9 @@ create_backup() {
     mkdir -p "$staging/files"
     for path in docker-compose.yml .env secrets nginx php promtail loki mysql/init src; do
         if [ -e "$PROJECT_DIR/$path" ]; then
-            copy_tree "$PROJECT_DIR/$path" "$staging/files/"
+            # Keep the relative path (mysql/init stays mysql/init) so restore puts it back in place
+            mkdir -p "$staging/files/$(dirname "$path")"
+            copy_tree "$PROJECT_DIR/$path" "$staging/files/$(dirname "$path")/"
         fi
     done
 
@@ -275,6 +293,19 @@ create_backup() {
     echo "  ${DIM}Iniciando MySQL...${NC}"
     if [ "$mysql_stopped" = true ]; then
         "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || echo "MySQL no se pudo iniciar automáticamente" >&2
+    fi
+
+    # Honeypot data: recorded TTY sessions (Docker volume) and Cowrie logs (host)
+    local cowrie_volume
+    cowrie_volume=$(container_volume asir_cowrie /cowrie/var/lib/cowrie)
+    if [ -n "$cowrie_volume" ]; then
+        mkdir -p "$staging/cowrie/data"
+        docker run --rm -v "$cowrie_volume":/data:ro -v "$staging/cowrie/data":/backup busybox:1.37 sh -c 'cp -a /data/. /backup/' \
+            || echo "  ${YELLOW}⚠ No se pudieron copiar las sesiones de Cowrie${NC}" >&2
+    fi
+    if [ -d /var/log/cowrie ]; then
+        mkdir -p "$staging/cowrie"
+        cp -a /var/log/cowrie "$staging/cowrie/logs"
     fi
 
     cat > "$staging/meta.json" <<EOF
@@ -432,7 +463,10 @@ download_hint() {
     echo ""
     echo "  ${BOLD}${YELLOW}Desde tu máquina local, ejecuta:${NC}"
     echo ""
-    echo "  ${WHITE}scp -P ${port} <usuario>@${host:-<IP>}:${BACKUP_ROOT}/${chosen} .${NC}"
+    echo "  ${DIM}1) En el servidor, copia el backup a tu home (los backups solo los lee root):${NC}"
+    echo "  ${WHITE}sudo install -m 600 -o \"\$USER\" ${BACKUP_ROOT}/${chosen} ~/${NC}"
+    echo "  ${DIM}2) En tu máquina local:${NC}"
+    echo "  ${WHITE}scp -P ${port} <usuario>@${host:-<IP>}:~/${chosen} .${NC}"
     echo ""
     echo "  ${DIM}Notas:${NC}"
     echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
@@ -453,7 +487,8 @@ import_backup() {
     echo ""
     echo "  ${WHITE}Para subir un backup desde tu máquina local:${NC}"
     echo ""
-    echo "  ${WHITE}scp -P ${port} /ruta/local/backup-XXXXXX.tar.xz <usuario>@${host:-<IP>}:${BACKUP_ROOT}/${NC}"
+    echo "  ${WHITE}scp -P ${port} /ruta/local/backup-XXXXXX.tar.xz <usuario>@${host:-<IP>}:~/${NC}"
+    echo "  ${DIM}Después, en el servidor:${NC} ${WHITE}sudo mv ~/backup-XXXXXX.tar.xz ${BACKUP_ROOT}/${NC}"
     echo ""
     echo "  ${DIM}Notas:${NC}"
     echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
@@ -508,36 +543,76 @@ restore_backup() {
         return 1
     fi
 
-    # Restaurar archivos de configuración
+    local restore_ok=true
+
+    # Configuration files (same list and layout as create_backup)
     echo "  ${DIM}Restaurando archivos de configuración...${NC}"
-    for path in docker-compose.yml .env secrets nginx php promtail loki mysql src; do
-        if [ -e "$staging/files/$path" ]; then
-            rm -rf "$PROJECT_DIR/$path"
-            cp -a "$staging/files/$path" "$PROJECT_DIR/"
+    for path in docker-compose.yml .env secrets nginx php promtail loki mysql/init src; do
+        local src="$staging/files/$path"
+        # Backups made before v3.0.0 stored mysql/init as files/init
+        if [ "$path" = "mysql/init" ] && [ ! -e "$src" ] && [ -e "$staging/files/init" ]; then
+            src="$staging/files/init"
+        fi
+        if [ -e "$src" ]; then
+            rm -rf -- "${PROJECT_DIR:?}/$path"
+            mkdir -p "$PROJECT_DIR/$(dirname "$path")"
+            cp -a "$src" "$PROJECT_DIR/$path"
         fi
     done
 
-    # Restaurar MySQL datadir
-    if [ -d "$staging/db" ] && [ "$(ls -A "$staging/db" 2>/dev/null)" ]; then
-        echo "  ${DIM}Deteniendo MySQL...${NC}"
-        "${COMPOSE[@]}" stop mysql >/dev/null 2>&1 || true
-
-        echo "  ${DIM}Restaurando datadir de MySQL...${NC}"
-        # Obtener el volumen de MySQL
+    # MySQL datadir
+    if [ -d "$staging/db" ] && [ -n "$(ls -A "$staging/db" 2>/dev/null)" ]; then
         local mysql_volume
-        mysql_volume=$(docker volume ls -q | grep -E 'mysql_data$' | head -1)
-        if [ -n "$mysql_volume" ]; then
-            # Limpiar y restaurar
-            docker run --rm -v "$mysql_volume":/var/lib/mysql -v "$staging/db":/backup busybox:1.37 sh -c 'rm -rf /var/lib/mysql/* && cp -a /backup/. /var/lib/mysql/'
+        mysql_volume=$(container_volume asir_mysql /var/lib/mysql)
+        if [ -z "$mysql_volume" ]; then
+            mysql_volume=$(docker volume ls -q | grep -E '_mysql_data$' | head -1 || true)
         fi
-
-        echo "  ${DIM}Iniciando MySQL...${NC}"
-        "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || true
+        if [ -z "$mysql_volume" ]; then
+            echo "  ${RED}✗ No se encontró el volumen de MySQL: la base de datos NO se ha restaurado${NC}" >&2
+            restore_ok=false
+        else
+            echo "  ${DIM}Deteniendo MySQL...${NC}"
+            "${COMPOSE[@]}" stop mysql >/dev/null 2>&1 || true
+            # Whatever happens from here on, MySQL is started again and the staging copy removed
+            # shellcheck disable=SC2064  # $staging is expanded now on purpose: it is a local variable
+            trap "restart_mysql_quietly; rm -rf -- '$staging'" EXIT
+            echo "  ${DIM}Restaurando datadir de MySQL...${NC}"
+            if ! docker run --rm -v "$mysql_volume":/var/lib/mysql -v "$staging/db":/backup:ro busybox:1.37 \
+                    sh -c 'find /var/lib/mysql -mindepth 1 -delete && cp -a /backup/. /var/lib/mysql/'; then
+                echo "  ${RED}✗ Falló la copia del datadir de MySQL${NC}" >&2
+                restore_ok=false
+            fi
+            echo "  ${DIM}Iniciando MySQL...${NC}"
+            if ! "${COMPOSE[@]}" start mysql >/dev/null 2>&1; then
+                echo "  ${RED}✗ MySQL no ha arrancado; revisa: docker compose logs mysql${NC}" >&2
+                restore_ok=false
+            fi
+            trap - EXIT
+        fi
     fi
 
-    rm -rf "$staging"
+    # Honeypot data (backups made since v3.0.0)
+    if [ -d "$staging/cowrie/data" ]; then
+        local cowrie_volume
+        cowrie_volume=$(container_volume asir_cowrie /cowrie/var/lib/cowrie)
+        if [ -n "$cowrie_volume" ]; then
+            docker run --rm -v "$cowrie_volume":/data -v "$staging/cowrie/data":/backup:ro busybox:1.37 sh -c 'cp -a /backup/. /data/' \
+                || { echo "  ${YELLOW}⚠ No se pudieron restaurar las sesiones de Cowrie${NC}" >&2; restore_ok=false; }
+        fi
+    fi
+    if [ -d "$staging/cowrie/logs" ]; then
+        mkdir -p /var/log/cowrie
+        cp -a "$staging/cowrie/logs/." /var/log/cowrie/
+    fi
+
+    rm -rf -- "$staging"
 
     echo ""
+    if [ "$restore_ok" != true ]; then
+        echo "  ${YELLOW}⚠ Restauración incompleta: revisa los mensajes de arriba${NC}"
+        log "Backup restaurado con errores: $file"
+        return 1
+    fi
     echo "  ${GREEN}✔ Backup restaurado correctamente${NC}"
     echo ""
     echo "  ${YELLOW}Nota:${NC} Puede ser necesario reiniciar los servicios:"
@@ -614,8 +689,8 @@ show_current_schedule() {
         if [ -n "$schedule_line" ]; then
             echo "  ${CYAN}Programación actual:${NC}"
             # Extraer campos del cron
-            local min hour dom mon dow
-            read -r min hour dom mon dow _ <<< "$schedule_line"
+            local min hour dom dow
+            IFS=' ' read -r min hour dom _ dow _ <<< "$schedule_line"
             if [ "$dom" = "*" ] && [ "$dow" = "*" ]; then
                 echo "    ${WHITE}Diario${NC} a las ${hour}:${min}"
             elif [ "$dom" = "*" ] && [ "$dow" != "*" ]; then
