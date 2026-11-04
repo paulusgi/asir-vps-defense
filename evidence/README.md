@@ -1,6 +1,6 @@
 # Evidence
 
-Screenshots and log excerpts from a deployment of **ASIR VPS Defense v2.1.0** on a Debian 12 VPS exposed to the Internet, captured between 2 March and 6 April 2026. The current version is v3.0.0; what changed since the captures is listed under [Version notes](#version-notes).
+Screenshots and log excerpts from a deployment of **ASIR VPS Defense v2.1.0** on a Debian 12 VPS exposed to the Internet, captured between 2 March and 6 April 2026. The current version is v3.0.1; what changed since the captures is listed under [Version notes](#version-notes).
 
 Each folder covers one part of the system. Its `METHODOLOGY.md` describes every capture in the same way: what it shows, the command used, what it demonstrates, and notes on anything that needs context.
 

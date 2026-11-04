@@ -89,12 +89,20 @@ flowchart LR
 
 ## Installation
 
-Run it on a fresh server, from a session you can keep open:
+On a fresh server, from a session you can keep open, one command:
 
 ```bash
-git clone https://github.com/paulusgi/asir-vps-defense.git
+curl -fsSL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/v3.0.1/deploy.sh | sudo bash
+```
+
+The URL points to a release tag, not to a branch, and the installer then fetches the project files of that same release: what runs is exactly the published v3.0.1. Its questions are read from the terminal, so they work through the pipe.
+
+To read the script before it runs as root:
+
+```bash
+git clone --branch v3.0.1 https://github.com/paulusgi/asir-vps-defense.git
 cd asir-vps-defense
-less deploy.sh            # it runs as root: read it first
+less deploy.sh
 sudo ./deploy.sh
 ```
 
@@ -102,7 +110,7 @@ The installer is interactive and can be re-run: completed steps are recorded and
 
 1. installs Docker, UFW, Fail2Ban and rsyslog, and closes every incoming port except 22;
 2. creates the admin, moves the real SSH to the new port (validated with `sshd -t`), and configures Fail2Ban;
-3. copies the project to the admin's home;
+3. puts the project in the admin's home: the files next to the script, or the matching release from GitHub when the script came through `curl`;
 4. generates secrets, downloads the GeoLite2 City database (pinned and checksum-verified) and starts the containers;
 5. prepares the backup volume and offers a first backup.
 
@@ -139,7 +147,7 @@ Fail2Ban does not exempt your own address: two failed logins on the real SSH, or
 ## How it was validated
 
 - **v2.1.0** ran on a Debian 12 VPS exposed to the Internet between March and April 2026. The [evidence](evidence/README.md) folder documents 31 checks with screenshots and logs: listening ports and firewall, real attacks captured by Cowrie, TTY session replays, a controlled Hydra test, Fail2Ban bans, LogQL queries, the dashboard behind the tunnel, and the full attack → log → Loki and attempt → ban paths. Public IPs of the VPS and of the admin's computer are redacted.
-- **v3.0.0**, the current version, came out of a review of that deployment: key-only real SSH, a working honeypot jail, an isolated honeypot network, panel hardening and backup fixes (see the commit history). Its changes were tested on Debian 13 (OpenSSH 10, Fail2Ban 1.1): the generated `sshd_config` with `sshd -t` / `sshd -T` and live logins (key accepted; password, unknown user, root and wrong key rejected; `-L` allowed, `-R` refused); the jails with `fail2ban-client -t` and `fail2ban-regex` on real log lines; the dashboard's log parser, login, CSP and GeoIP lookups; the backup and restore paths; the Promtail health check; and `shellcheck` on both scripts. **v3.0.0 has not yet been re-deployed end to end on a VPS**; the screenshots show v2.1.0.
+- **v3.0**, the current version (v3.0.0, and v3.0.1 for the one-command install), came out of a review of that deployment: key-only real SSH, a working honeypot jail, an isolated honeypot network, panel hardening and backup fixes (see the commit history). Its changes were tested on Debian 13 (OpenSSH 10, Fail2Ban 1.1): the generated `sshd_config` with `sshd -t` / `sshd -T` and live logins (key accepted; password, unknown user, root and wrong key rejected; `-L` allowed, `-R` refused); the jails with `fail2ban-client -t` and `fail2ban-regex` on real log lines; the dashboard's log parser, login, CSP and GeoIP lookups; the backup and restore paths; the Promtail health check; and `shellcheck` on both scripts. **v3.0.0 has not yet been re-deployed end to end on a VPS**; the screenshots show v2.1.0.
 
 ## Limitations
 

@@ -1,8 +1,8 @@
 # Post-deployment checks
 
-Commands to verify a v3.0.0 deployment. Run them on the server as the admin user, from the project folder (by default `/home/<admin_user>/asir-vps-defense`). The installer adds the admin to the `docker` group, so `docker` works without `sudo` once you have logged in again after the installation. Replace `2929` if you chose another SSH port.
+Commands to verify a v3.0 deployment. Run them on the server as the admin user, from the project folder (by default `/home/<admin_user>/asir-vps-defense`). The installer adds the admin to the `docker` group, so `docker` works without `sudo` once you have logged in again after the installation. Replace `2929` if you chose another SSH port.
 
-The expected results follow from the v3.0.0 configuration. v3.0.0 has not yet been re-deployed end to end on a VPS, so they have not all been observed on one; the [evidence](evidence/README.md) shows v2.1.0.
+The expected results follow from the v3.0 configuration. v3.0 has not yet been re-deployed end to end on a VPS, so they have not all been observed on one; the [evidence](evidence/README.md) shows v2.1.0.
 
 > **Test from another address.** Fail2Ban does not exempt your workstation. Two failed attempts on the real SSH in 10 minutes ban that address from port 2929 for 35 days, and five connections to Cowrie (port 22) in 10 minutes block it from every port of the host for 7 days. The ban also cuts sessions that are already open. Run the negative tests and the honeypot tests below from an address you do not administer from, or make sure you can reach the provider's console to lift a ban with `sudo fail2ban-client set sshd unbanip <ADMIN_IP>` (or `set cowrie unbanip`).
 
