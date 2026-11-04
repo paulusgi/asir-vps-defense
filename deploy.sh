@@ -12,42 +12,42 @@
 #                                                                             #
 ###############################################################################
 #
-# NOMBRE:       deploy.sh
-# VERSIÓN:      2.1.0
-# AUTOR:        Equipo ASIR
-# LICENCIA:     Uso No Comercial 1.0.0
+# NAME:         deploy.sh
+# VERSION:      2.1.0
+# AUTHOR:       ASIR Team
+# LICENSE:      PolyForm Noncommercial 1.0.0
 #
-# DESCRIPCIÓN:
-#   Orquesta el despliegue de una infraestructura VPS segura (honeypot)
-#   con observabilidad integrada y hardening de seguridad:
+# DESCRIPTION:
+#   Orchestrates the deployment of a hardened VPS infrastructure (honeypot)
+#   with built-in observability and security hardening:
 #
-#   • Instalación de Docker y Docker Compose
-#   • Hardening del Firewall (UFW)
-#   • SSH real solo con clave pública y solo para el admin (el honeypot es Cowrie, en el 22)
-#   • Panel privado (Nginx + PHP-FPM + MySQL) accesible solo por túnel SSH
-#   • Pila de Observabilidad (Loki + Promtail)
-#   • Fail2Ban con políticas estrictas (35d ban, 2 intentos)
+#   • Docker and Docker Compose installation
+#   • Firewall hardening (UFW)
+#   • Real SSH: public key only, admin only (the honeypot, Cowrie, is on port 22)
+#   • Private panel (Nginx + PHP-FPM + MySQL), reachable only through an SSH tunnel
+#   • Observability stack (Loki + Promtail)
+#   • Fail2Ban with strict policies (35-day ban, 2 attempts)
 #
-# USO:
+# USAGE:
 #   sudo ./deploy.sh
 #
-# REQUISITOS:
-#   • Sistema Operativo: Debian 11+ / Ubuntu 20.04+
-#   • Ejecutar como root (sudo)
-#   • Conexión a Internet
+# REQUIREMENTS:
+#   • Operating system: Debian 11+ / Ubuntu 20.04+
+#   • Run as root (sudo)
+#   • Internet connection
 #
 ###############################################################################
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# Configuración para evitar prompts interactivos en apt/dpkg
+# Avoid interactive prompts from apt/dpkg
 export DEBIAN_FRONTEND=noninteractive
 export NEEDRESTART_MODE=a
 export NEEDRESTART_SUSPEND=1
 
 # =============================================================================
-# CONSTANTES Y CONFIGURACIÓN
+# CONSTANTS AND CONFIGURATION
 # =============================================================================
 
 readonly SCRIPT_VERSION="3.0.0"
@@ -62,18 +62,18 @@ readonly BACKUP_LOOP_FILE="/var/lib/asir-vps-defense/backups.img"
 readonly BACKUP_LOOP_DEFAULT_SIZE="20G"
 readonly SSH_PUBKEY_REGEX='^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)[[:space:]]'
 
-# Rutas de estado y logs
+# State and log paths
 readonly STATE_DIR="/var/lib/asir-vps-defense"
 readonly LOG_FILE="/var/log/asir-vps-defense/install.log"
 
-# Crear directorios necesarios
+# Create the required directories
 mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 printf '\n===== %s · %s %s =====\n' "$(date -Is)" "$SCRIPT_NAME" "$SCRIPT_VERSION" >> "$LOG_FILE"
 
 # =============================================================================
-# PALETA DE COLORES ANSI
+# ANSI COLOR PALETTE
 # =============================================================================
 
 readonly RED='\033[0;31m'
@@ -84,32 +84,32 @@ readonly CYAN='\033[0;36m'
 readonly WHITE='\033[1;37m'
 readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
-readonly NC='\033[0m'  # Reset / Sin Color
+readonly NC='\033[0m'  # Reset / no color
 
 # =============================================================================
-# MANEJO DE ERRORES
+# ERROR HANDLING
 # =============================================================================
 
 trap 'handle_error $LINENO' ERR
 
 handle_error() {
     local line_num="$1"
-    echo -e "\n${RED}[ERROR FATAL]${NC} Fallo inesperado en línea ${BOLD}$line_num${NC}" >&2
-    echo -e "${DIM}Últimas 25 líneas del log:${NC}" >&2
+    echo -e "\n${RED}[FATAL ERROR]${NC} Unexpected failure at line ${BOLD}$line_num${NC}" >&2
+    echo -e "${DIM}Last 25 lines of the log:${NC}" >&2
     tail -n 25 "$LOG_FILE" >&2
-    echo -e "\n${YELLOW}Log completo disponible en:${NC} $LOG_FILE" >&2
+    echo -e "\n${YELLOW}Full log available at:${NC} $LOG_FILE" >&2
     exit 1
 }
 
 # =============================================================================
-# VARIABLES GLOBALES DE ESTADO
+# GLOBAL STATE VARIABLES
 # =============================================================================
 
 SECURE_ADMIN=""
 CURRENT_REAL_USER=""
 
 # =============================================================================
-# FUNCIONES DE LOGGING (UX mejorada con iconos Unicode)
+# LOGGING FUNCTIONS (Unicode icons for readability)
 # =============================================================================
 
 log_info() {
@@ -129,12 +129,12 @@ log_error() {
 }
 
 log_step() {
-    # Para pasos principales del proceso
+    # For the main steps of the process
     echo -e "\n${CYAN}→${NC} ${BOLD}$1${NC}"
 }
 
 # =============================================================================
-# SPINNER Y EJECUCIÓN SILENCIOSA
+# SPINNER AND QUIET EXECUTION
 # =============================================================================
 
 run_quiet() {
@@ -145,10 +145,10 @@ run_quiet() {
     "$@" >>"$LOG_FILE" 2>&1 &
     local pid=$!
 
-    # Si el comando no pudo lanzarse, marcamos fallo temprano
+    # If the command could not be started, fail early
     if [ -z "$pid" ]; then
         printf "\r  %-55s [${RED}✗${NC}]\n" "$msg"
-        log_error "No se pudo lanzar el comando: $*"
+        log_error "Could not start the command: $*"
         return 1
     fi
 
@@ -158,7 +158,7 @@ run_quiet() {
         sleep 0.15
     done
 
-    # Capturar el status sin que errexit aborte antes de imprimir
+    # Capture the exit status before errexit can abort
     set +e
     wait "$pid"
     local status=$?
@@ -168,19 +168,19 @@ run_quiet() {
         printf "\r  %-55s [${GREEN}✓${NC}]  \n" "$msg"
     else
         printf "\r  %-55s [${RED}✗${NC}]\n" "$msg"
-        echo -e "\nÚltimas líneas del log:" >&2
+        echo -e "\nLast lines of the log:" >&2
         tail -n 25 "$LOG_FILE" >&2
         return $status
     fi
 }
 
 # =============================================================================
-# VALIDACIÓN DE PERMISOS
+# PERMISSION CHECKS
 # =============================================================================
 
 check_mode() {
-    # Verifica que un archivo/directorio tenga los permisos esperados
-    # Uso: check_mode "/ruta/archivo" "600" "descripción opcional"
+    # Checks that a file or directory has the expected mode
+    # Usage: check_mode "/path/file" "600" "optional label"
     local path="$1"
     local expected="$2"
     local label="${3:-$path}"
@@ -189,7 +189,7 @@ check_mode() {
         local mode
         mode=$(stat -c "%a" "$path")
         if [ "$mode" != "$expected" ]; then
-            log_warn "Permisos incorrectos en ${label}: modo ${RED}$mode${NC}, esperado ${GREEN}$expected${NC}"
+            log_warn "Wrong permissions on ${label}: mode ${RED}$mode${NC}, expected ${GREEN}$expected${NC}"
             return 1
         fi
     fi
@@ -197,18 +197,18 @@ check_mode() {
 }
 
 # =============================================================================
-# GESTIÓN DE CLAVES SSH
+# SSH KEY MANAGEMENT
 # =============================================================================
 
 collect_public_keys_for_user() {
-    # Recolecta todas las claves públicas SSH disponibles en el sistema
+    # Collects every SSH public key available on the system
     local user="$1"
     declare -A seen
     declare -A file_seen
     PUBLIC_KEY_CANDIDATES=()
     local files=()
     
-    # Preferir find para cubrir claves inyectadas por el proveedor; fallback si falta find
+    # Prefer find so keys injected by the provider are covered; fall back if find is missing
     if command -v find >/dev/null 2>&1; then
         while IFS= read -r f; do
             files+=("$f")
@@ -230,14 +230,14 @@ collect_public_keys_for_user() {
         done
     fi
 
-    # Rutas explícitas clave para asegurar cobertura aunque find estuviera filtrado
+    # Explicit key paths, to ensure coverage even if find was filtered
     files+=(
         "/home/$user/.ssh/authorized_keys"
         "/home/$CURRENT_REAL_USER/.ssh/authorized_keys"
         "/root/.ssh/authorized_keys"
     )
 
-    # Deduplicar lista de ficheros
+    # Deduplicate the file list
     local unique_files=()
     for f in "${files[@]}"; do
         [ -n "$f" ] || continue
@@ -247,7 +247,7 @@ collect_public_keys_for_user() {
         fi
     done
 
-    # Extraer claves de cada fichero candidato (authorized_keys o *.pub)
+    # Extract the keys from each candidate file (authorized_keys or *.pub)
     for file in "${unique_files[@]}"; do
         [ -s "$file" ] || continue
         while IFS= read -r line; do
@@ -261,7 +261,7 @@ collect_public_keys_for_user() {
 }
 
 choose_public_key_for_user() {
-    # Interfaz interactiva para seleccionar una clave pública SSH
+    # Interactive menu to pick an SSH public key
     local user="$1"
     local purpose="$2"
     collect_public_keys_for_user "$user"
@@ -269,7 +269,7 @@ choose_public_key_for_user() {
 
     if [ ${#candidates[@]} -gt 0 ]; then
         echo "" >&2
-        echo -e "${CYAN}[SSH] Se encontraron ${BOLD}${#candidates[@]}${NC}${CYAN} clave(s) SSH para ${BOLD}$user${NC}${CYAN} (${purpose}):${NC}" >&2
+        echo -e "${CYAN}[SSH] Found ${BOLD}${#candidates[@]}${NC}${CYAN} SSH key(s) for ${BOLD}$user${NC}${CYAN} (${purpose}):${NC}" >&2
         echo "" >&2
         local i=1
         for key in "${candidates[@]}"; do
@@ -281,10 +281,10 @@ choose_public_key_for_user() {
             ((i++))
         done
         echo "" >&2
-        echo -e "  ${YELLOW}[M]${NC} Introducir clave manualmente" >&2
-        echo -e "  ${RED}[S]${NC} Salir sin elegir" >&2
+        echo -e "  ${YELLOW}[M]${NC} Enter a key manually" >&2
+        echo -e "  ${RED}[Q]${NC} Quit without choosing" >&2
         echo "" >&2
-        echo -n -e "${CYAN}Selecciona opción: ${NC}" >&2
+        echo -n -e "${CYAN}Select an option: ${NC}" >&2
         read -r choice < /dev/tty
 
         if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#candidates[@]} ]; then
@@ -292,16 +292,16 @@ choose_public_key_for_user() {
             return 0
         elif [[ "$choice" =~ ^[Mm]$ ]]; then
             candidates=()
-        elif [[ "$choice" =~ ^[Ss]$ ]]; then
+        elif [[ "$choice" =~ ^[Qq]$ ]]; then
             return 1
         else
             return 1
         fi
     fi
 
-    # Entrada manual (cuando no hay detecciones o se elige M)
+    # Manual entry (when nothing was detected or M was chosen)
     echo "" >&2
-    echo -n -e "${CYAN}Pega una clave pública SSH (ssh-rsa/ssh-ed25519) o ENTER para omitir: ${NC}" >&2
+    echo -n -e "${CYAN}Paste an SSH public key (ssh-rsa/ssh-ed25519) or press ENTER to skip: ${NC}" >&2
     read -r manual < /dev/tty
     if [[ "$manual" =~ $SSH_PUBKEY_REGEX ]] && ssh-keygen -lf /dev/stdin <<<"$manual" >/dev/null 2>&1; then
         printf '%s' "$manual"
@@ -311,72 +311,72 @@ choose_public_key_for_user() {
 }
 
 # =============================================================================
-# CIFRADO DE CREDENCIALES (age)
+# CREDENTIAL ENCRYPTION (age)
 # =============================================================================
 
 install_age_if_missing() {
     if command -v age >/dev/null 2>&1; then
         return 0
     fi
-    log_info "Instalando 'age' para cifrado de credenciales..."
-    if ! run_quiet "Instalando age (cifrado moderno)" apt-get install -y age; then
-        log_warn "No se pudo instalar age. Las credenciales se mostrarán en texto plano."
+    log_info "Installing 'age' to encrypt the credentials..."
+    if ! run_quiet "Installing age (modern encryption)" apt-get install -y age; then
+        log_warn "Could not install age. The credentials will be shown in plain text."
         return 1
     fi
     return 0
 }
 
 # =============================================================================
-# AUDITORÍA DE PERMISOS
+# PERMISSION AUDIT
 # =============================================================================
 
 audit_permissions() {
     local base="$1"
     local issues=0
 
-    log_info "Ejecutando auditoría de permisos en ${BOLD}$base${NC}"
+    log_info "Running the permission audit on ${BOLD}$base${NC}"
     echo ""
 
-    # Ficheros de secretos
-    echo -e "  ${CYAN}Verificando secretos...${NC}"
+    # Secret files
+    echo -e "  ${CYAN}Checking secrets...${NC}"
     check_mode "$base/.env" 600 ".env" || issues=1
-    check_mode "$base/mysql/init" 755 "mysql/init (directorio)" || issues=1
+    check_mode "$base/mysql/init" 755 "mysql/init (directory)" || issues=1
     if find "$base/mysql/init" -type d ! -perm 755 -print -quit | grep -q .; then 
         issues=1
-        log_warn "Directorio(s) en mysql/init sin modo 755"
+        log_warn "Directory(ies) in mysql/init without mode 755"
     fi
     if find "$base/mysql/init" -type f ! -perm 644 -print -quit | grep -q .; then 
         issues=1
-        log_warn "Ficheros en mysql/init sin modo 644"
+        log_warn "Files in mysql/init without mode 644"
     fi
 
-    # Configs PHP y Loki
-    echo -e "  ${CYAN}Verificando configuraciones...${NC}"
+    # PHP and Loki configs
+    echo -e "  ${CYAN}Checking configuration files...${NC}"
     check_mode "$base/php/conf.d/custom.ini" 644 "php/conf.d/custom.ini" || issues=1
     check_mode "$base/php/pool.d/www.conf" 644 "php/pool.d/www.conf" || issues=1
     check_mode "$base/loki/config.yml" 644 "loki/config.yml" || issues=1
 
     # Webroot
-    echo -e "  ${CYAN}Verificando webroot...${NC}"
+    echo -e "  ${CYAN}Checking the webroot...${NC}"
     if find "$base/src" -type d ! -perm 755 -print -quit | grep -q .; then 
         issues=1
-        log_warn "Directorios en src sin modo 755"
+        log_warn "Directories in src without mode 755"
     fi
     if find "$base/src" -type f ! -perm 644 -print -quit | grep -q .; then 
         issues=1
-        log_warn "Ficheros en src sin modo 644"
+        log_warn "Files in src without mode 644"
     fi
 
-    # Credenciales del admin
-    echo -e "  ${CYAN}Verificando archivos sensibles...${NC}"
+    # Admin credentials
+    echo -e "  ${CYAN}Checking sensitive files...${NC}"
     if [ -f "/home/$SECURE_ADMIN/admin_credentials.txt" ]; then
         check_mode "/home/$SECURE_ADMIN/admin_credentials.txt" 600 "admin_credentials.txt" || issues=1
-        log_warn "admin_credentials.txt presente; guarda su contenido y elimínalo del servidor"
+        log_warn "admin_credentials.txt is present; save its contents and delete it from the server"
     else
-        log_info "admin_credentials.txt no encontrado (ya eliminado correctamente)"
+        log_info "admin_credentials.txt not found (already removed)"
     fi
 
-    # SSH del admin
+    # Admin SSH
     if [ -d "/home/$SECURE_ADMIN/.ssh" ]; then
         check_mode "/home/$SECURE_ADMIN/.ssh" 700 ".ssh" || issues=1
         check_mode "/home/$SECURE_ADMIN/.ssh/authorized_keys" 600 "authorized_keys" || issues=1
@@ -384,25 +384,25 @@ audit_permissions() {
 
     echo ""
     if [ $issues -eq 0 ]; then
-        log_success "Auditoría completada: ${GREEN}Sin problemas detectados${NC}"
+        log_success "Audit complete: ${GREEN}no problems found${NC}"
     else
-        log_warn "Auditoría completada: ${YELLOW}Se detectaron permisos incorrectos${NC}"
+        log_warn "Audit complete: ${YELLOW}wrong permissions found${NC}"
     fi
 
     return $issues
 }
 
 # =============================================================================
-# GESTIÓN DE ESTADO (idempotencia)
+# STATE MANAGEMENT (idempotency)
 # =============================================================================
 
 load_env_if_present() {
-    # Carga las variables de .env en el entorno actual
+    # Load the .env variables into the current environment
     if [ -f .env ]; then
-        # Si el .env fue sanitizado (contiene REDACTED), no lo cargamos pero NO lo borramos
-        # El archivo debe existir para el backup
+        # If .env was sanitized (contains REDACTED), do not load it, but do NOT delete it
+        # The file must exist for the backup
         if grep -q 'REDACTED' .env 2>/dev/null; then
-            log_warn "El .env está sanitizado de un deploy anterior (esto es normal)."
+            log_warn ".env was sanitized by a previous deploy (this is expected)."
             return
         fi
         set -a
@@ -423,12 +423,12 @@ is_step_done() {
 }
 
 # =============================================================================
-# INTERFAZ DE USUARIO
+# USER INTERFACE
 # =============================================================================
 
 print_section() {
     local title="$1"
-    local width=58  # Ancho interior del recuadro (sin los bordes ║)
+    local width=58  # Inner width of the box (without the ║ borders)
     local title_len=${#title}
     local padding_left=$(( (width - title_len) / 2 ))
     local padding_right=$(( width - title_len - padding_left ))
@@ -455,34 +455,34 @@ print_banner() {
     ╚═══════════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}"
-    echo -e "                    ${DIM}Versión ${SCRIPT_VERSION}${NC}"
+    echo -e "                    ${DIM}Version ${SCRIPT_VERSION}${NC}"
     echo ""
 }
 
 # =============================================================================
-# DETECCIÓN DE CONTEXTO
+# CONTEXT DETECTION
 # =============================================================================
 
 detect_context() {
-    # Identificar el usuario humano real que ejecuta el script (incluso detrás de sudo)
+    # Identify the real human user running the script (even behind sudo)
     if [ -n "${SUDO_USER:-}" ]; then
         CURRENT_REAL_USER="$SUDO_USER"
     else
         CURRENT_REAL_USER=$(whoami)
     fi
-    log_info "Usuario real detectado: ${BOLD}$CURRENT_REAL_USER${NC}"
+    log_info "Real user detected: ${BOLD}$CURRENT_REAL_USER${NC}"
 }
 
 # =============================================================================
-# VALIDACIONES DEL SISTEMA
+# SYSTEM CHECKS
 # =============================================================================
 
 check_root() {
     if [ "$EUID" -ne 0 ]; then
         echo ""
-        log_error "Este script debe ejecutarse como ${BOLD}root${NC}"
+        log_error "This script must be run as ${BOLD}root${NC}"
         echo ""
-        echo -e "  ${CYAN}Uso correcto:${NC}"
+        echo -e "  ${CYAN}Correct usage:${NC}"
         echo -e "    ${YELLOW}sudo ./deploy.sh${NC}"
         echo ""
         exit 1
@@ -496,158 +496,158 @@ detect_os() {
         OS=$NAME
         VER=$VERSION_ID
         if [[ "$ID" == "debian" ]] || [[ "$ID" == "ubuntu" ]]; then
-            log_info "Sistema Operativo: ${BOLD}$OS $VER${NC}"
+            log_info "Operating system: ${BOLD}$OS $VER${NC}"
         else
-            log_error "Sistema Operativo no soportado: ${BOLD}$OS${NC}"
+            log_error "Unsupported operating system: ${BOLD}$OS${NC}"
             echo ""
-            echo -e "  ${CYAN}Sistemas soportados:${NC}"
+            echo -e "  ${CYAN}Supported systems:${NC}"
             echo -e "    • Debian 12 / 13"
             echo -e "    • Ubuntu 22.04 / 24.04"
             echo ""
             exit 1
         fi
     else
-        log_error "No se puede detectar el Sistema Operativo (/etc/os-release no existe)"
+        log_error "Cannot detect the operating system (/etc/os-release does not exist)"
         exit 1
     fi
 }
 
 # =============================================================================
-# GESTIÓN DE PAQUETES APT
+# APT PACKAGE MANAGEMENT
 # =============================================================================
 
 wait_for_apt_locks() {
-    log_info "Verificando disponibilidad del gestor de paquetes..."
+    log_info "Checking that the package manager is available..."
     
     local elapsed=0
     local spinner='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
     local spin_i=0
     local showed_msg=false
     
-    # Comprobar únicamente los archivos de lock (lo que realmente bloquea apt)
+    # Check only the lock files (what actually blocks apt)
     while fuser /var/lib/dpkg/lock >/dev/null 2>&1 \
        || fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
        || fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
        || fuser /var/cache/apt/archives/lock >/dev/null 2>&1; do
         
         if [ "$showed_msg" = false ]; then
-            log_info "El sistema está ejecutando actualizaciones automáticas..."
-            echo -e "  ${DIM}Esperando a que terminen (esto puede tardar varios minutos)...${NC}"
+            log_info "The system is running automatic updates..."
+            echo -e "  ${DIM}Waiting for them to finish (this can take several minutes)...${NC}"
             showed_msg=true
         fi
         
         local mins=$((elapsed / 60))
         local secs=$((elapsed % 60))
-        printf "\r  ${CYAN}%s${NC} Esperando locks... [%d:%02d]" "${spinner:spin_i%10:1}" "$mins" "$secs"
+        printf "\r  ${CYAN}%s${NC} Waiting for locks... [%d:%02d]" "${spinner:spin_i%10:1}" "$mins" "$secs"
         spin_i=$((spin_i + 1))
         sleep 3
         elapsed=$((elapsed + 3))
     done
     
-    # Mensaje de éxito si hubo espera
+    # Success message if there was a wait
     if [ "$showed_msg" = true ]; then
         echo ""
-        log_success "Gestor de paquetes disponible"
+        log_success "Package manager available"
     fi
     
-    # Configurar needrestart para no preguntar
+    # Configure needrestart so it does not ask
     if [ -f /etc/needrestart/needrestart.conf ]; then
         sed -i "s/^#\$nrconf{restart} = .*/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf 2>/dev/null || true
     fi
 }
 
 # =============================================================================
-# INSTALACIÓN DE DEPENDENCIAS
+# DEPENDENCY INSTALLATION
 # =============================================================================
 
 install_dependencies() {
     wait_for_apt_locks
     
-    log_step "Instalando dependencias del sistema"
+    log_step "Installing system dependencies"
     
-    if ! run_quiet "Actualizando repositorios" apt-get update -y; then
-        log_warn "apt-get update falló, posible lock activo. Reintentando tras esperar..."
+    if ! run_quiet "Updating repositories" apt-get update -y; then
+        log_warn "apt-get update failed, possibly an active lock. Waiting and retrying..."
         wait_for_apt_locks
-        run_quiet "Actualizando repositorios (reintento)" apt-get update -y
+        run_quiet "Updating repositories (retry)" apt-get update -y
     fi
 
-    # Instalar con reintento y verificación
-    if ! run_quiet "Instalando paquetes base (psmisc, curl, git, ufw, fail2ban, rsyslog, lvm2, xz-utils, cron, rsync)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron rsync; then
-        log_warn "Fallo en la instalación. Reintentando tras espera..."
+    # Install with retry and verification
+    if ! run_quiet "Installing base packages (psmisc, curl, git, ufw, fail2ban, rsyslog, lvm2, xz-utils, cron, rsync)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron rsync; then
+        log_warn "Installation failed. Waiting and retrying..."
         wait_for_apt_locks
-        run_quiet "Instalando paquetes base (reintento)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron rsync
+        run_quiet "Installing base packages (retry)" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" psmisc curl git ufw fail2ban rsyslog lvm2 xz-utils cron rsync
     fi
 
-    # Comprobación crítica: Fail2Ban debe estar presente
+    # Critical check: Fail2Ban must be present
     if ! command -v fail2ban-client &> /dev/null; then
-        log_error "CRÍTICO: Fail2Ban no se instaló correctamente"
+        log_error "CRITICAL: Fail2Ban was not installed correctly"
         echo ""
-        echo -e "  ${CYAN}Intenta instalarlo manualmente:${NC}"
+        echo -e "  ${CYAN}Try installing it manually:${NC}"
         echo -e "    ${YELLOW}apt-get install -y fail2ban${NC}"
         echo ""
         exit 1
     fi
 
-    # Asegurar que rsyslog se está ejecutando para que se genere /var/log/auth.log
+    # Make sure rsyslog is running so /var/log/auth.log is written
     if systemctl list-unit-files | grep -q rsyslog.service; then
-        systemctl enable --now rsyslog >/dev/null 2>&1 || log_warn "No se pudo iniciar rsyslog automáticamente"
+        systemctl enable --now rsyslog >/dev/null 2>&1 || log_warn "Could not start rsyslog automatically"
     fi
 
-    # Instalar Docker si no está presente
+    # Install Docker if it is not present
     if ! command -v docker &> /dev/null; then
-        log_step "Instalando Docker (esto puede tardar unos minutos)"
-        run_quiet "Descargando e instalando Docker" bash -c 'curl -fsSL https://get.docker.com | sh'
-        log_success "Docker instalado correctamente"
+        log_step "Installing Docker (this can take a few minutes)"
+        run_quiet "Downloading and installing Docker" bash -c 'curl -fsSL https://get.docker.com | sh'
+        log_success "Docker installed"
     else
-        log_info "Docker ya está instalado"
+        log_info "Docker is already installed"
     fi
 }
 
 ensure_lvm_tools() {
-    # Cargar módulo dm-mod para device-mapper (necesario para LVM)
+    # Load the dm-mod module for device-mapper (required by LVM)
     modprobe dm-mod 2>/dev/null || true
     
     if command -v pvcreate >/dev/null 2>&1; then
         return 0
     fi
-    log_info "Instalando lvm2 para gestionar backups..."
+    log_info "Installing lvm2 to manage backups..."
     wait_for_apt_locks
-    run_quiet "Instalando lvm2" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" lvm2
+    run_quiet "Installing lvm2" apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" lvm2
     
-    # Recargar módulo tras instalar
+    # Reload the module after installing
     modprobe dm-mod 2>/dev/null || true
 }
 
 # =============================================================================
-# CIFRADO DE CREDENCIALES
+# CREDENTIAL ENCRYPTION
 # =============================================================================
 
 encrypt_credentials_file() {
     local cred_file="$1"
 
     if [ ! -f "$cred_file" ]; then
-        log_warn "Archivo de credenciales no encontrado: ${BOLD}$cred_file${NC}"
+        log_warn "Credentials file not found: ${BOLD}$cred_file${NC}"
         return 1
     fi
 
     echo ""
-    echo -e "${CYAN}[CIFRADO] Cifrado de credenciales${NC}"
-    echo -e "${DIM}Selecciona una clave SSH pública para cifrar las credenciales.${NC}"
-    echo -e "${DIM}Solo podrás descifrarlas con la clave privada correspondiente.${NC}"
+    echo -e "${CYAN}[ENCRYPTION] Credential encryption${NC}"
+    echo -e "${DIM}Select an SSH public key to encrypt the credentials.${NC}"
+    echo -e "${DIM}Only the matching private key will be able to decrypt them.${NC}"
     echo ""
     
     local selected_key=""
-    selected_key=$(choose_public_key_for_user "$SECURE_ADMIN" "cifrar credenciales") || selected_key=""
+    selected_key=$(choose_public_key_for_user "$SECURE_ADMIN" "credential encryption") || selected_key=""
 
     if [ -z "$selected_key" ]; then
-        log_warn "No se seleccionó clave SSH para cifrado"
-        log_info "Las credenciales se mostrarán al final y luego se eliminarán"
+        log_warn "No SSH key was selected for encryption"
+        log_info "The credentials will be shown at the end and then deleted"
         return 1
     fi
 
     if ! install_age_if_missing; then
-        log_warn "Sin herramienta 'age' disponible"
-        log_info "Las credenciales se mostrarán al final y luego se eliminarán"
+        log_warn "The 'age' tool is not available"
+        log_info "The credentials will be shown at the end and then deleted"
         return 1
     fi
 
@@ -655,38 +655,38 @@ encrypt_credentials_file() {
         chmod 600 "${cred_file}.age"
         chown "$SECURE_ADMIN:$SECURE_ADMIN" "${cred_file}.age"
         shred -u "$cred_file"
-        log_success "Credenciales cifradas en ${BOLD}${cred_file}.age${NC}"
-        log_info "Archivo de texto plano eliminado de forma segura"
+        log_success "Credentials encrypted to ${BOLD}${cred_file}.age${NC}"
+        log_info "Plain-text file securely deleted"
         return 0
     else
-        log_warn "Falló el cifrado con age"
+        log_warn "Encryption with age failed"
         return 1
     fi
 }
 
 # =============================================================================
-# CONFIGURACIÓN DE FIREWALL (UFW)
+# FIREWALL CONFIGURATION (UFW)
 # =============================================================================
 
 setup_firewall() {
-    log_step "Configurando Firewall (UFW)"
+    log_step "Configuring the firewall (UFW)"
     
     ufw default deny incoming
     ufw default allow outgoing
     
-    # Puerto 22: Cowrie honeypot SIEMPRE en puerto 22 (máxima captura de ataques)
-    # El SSH real irá en un puerto alternativo (default: 2929)
+    # Port 22: the Cowrie honeypot is ALWAYS on port 22 (to capture as many attacks as possible)
+    # The real SSH goes on an alternative port (default: 2929)
     ufw allow 22/tcp comment 'Cowrie Honeypot'
     
-    # Habilitar UFW de forma no interactiva y verificar
+    # Enable UFW non-interactively and verify
     ufw --force enable
     if ufw status | grep -q "Status: active"; then
-        log_success "Firewall configurado y activo"
-        echo -e "  ${DIM}Política: DENY incoming / ALLOW outgoing${NC}"
-        echo -e "  ${DIM}Puerto abierto: 22/tcp (Cowrie honeypot)${NC}"
-        echo -e "  ${DIM}Nota: el puerto SSH real se abrirá en el paso siguiente${NC}"
+        log_success "Firewall configured and active"
+        echo -e "  ${DIM}Policy: DENY incoming / ALLOW outgoing${NC}"
+        echo -e "  ${DIM}Open port: 22/tcp (Cowrie honeypot)${NC}"
+        echo -e "  ${DIM}Note: the real SSH port is opened in the next step${NC}"
     else
-        log_warn "UFW no quedó activo; revisa configuración"
+        log_warn "UFW is not active; check the configuration"
     fi
 }
 
@@ -898,103 +898,103 @@ EOF
 }
 
 # =============================================================================
-# CREACIÓN DEL ADMINISTRADOR SEGURO
+# SECURE ADMIN CREATION
 # =============================================================================
 
 create_secure_admin() {
-    log_step "Creando Administrador Seguro"
+    log_step "Creating the secure admin"
 
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}[ADMIN] CONFIGURACIÓN DEL ADMIN REAL (Tú)${NC}                 ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[ADMIN] REAL ADMIN SETUP (you)${NC}                             ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
-    echo -n -e "  ${CYAN}Nombre de usuario administrador (ej: sys_ops):${NC} "
+    echo -n -e "  ${CYAN}Admin username (e.g. sys_ops):${NC} "
     read -r SECURE_ADMIN < /dev/tty
 
     if [ -z "$SECURE_ADMIN" ]; then
-        log_error "El nombre de usuario no puede estar vacío"
+        log_error "The username cannot be empty"
         exit 1
     fi
 
     if id "$SECURE_ADMIN" &>/dev/null; then
-        log_warn "El usuario ${BOLD}$SECURE_ADMIN${NC} ya existe. Se reutilizará."
+        log_warn "User ${BOLD}$SECURE_ADMIN${NC} already exists. It will be reused."
     else
         useradd -m -s /bin/bash "$SECURE_ADMIN"
         usermod -aG sudo,docker "$SECURE_ADMIN"
-        log_success "Usuario ${BOLD}$SECURE_ADMIN${NC} creado"
+        log_success "User ${BOLD}$SECURE_ADMIN${NC} created"
     fi
 
-    # Establecer contraseña para uso de sudo
+    # Set a password for sudo
     echo ""
-    echo -e "  ${CYAN}[SUDO] Configuración de contraseña para SUDO${NC}"
-    echo -e "  ${DIM}Aunque el acceso SSH sea por clave, necesitas una contraseña para elevar privilegios.${NC}"
+    echo -e "  ${CYAN}[SUDO] Password for SUDO${NC}"
+    echo -e "  ${DIM}SSH access uses a key, but you still need a password to elevate privileges.${NC}"
     echo ""
     
     while true; do
-        echo -n -e "  ${CYAN}Contraseña sudo:${NC} "
+        echo -n -e "  ${CYAN}Sudo password:${NC} "
         read -r -s ADMIN_PASS < /dev/tty
         echo ""
-        echo -n -e "  ${CYAN}Confirmar contraseña:${NC} "
+        echo -n -e "  ${CYAN}Confirm password:${NC} "
         read -r -s ADMIN_PASS_CONFIRM < /dev/tty
         echo ""
         
         if [ -n "$ADMIN_PASS" ] && [ "$ADMIN_PASS" == "$ADMIN_PASS_CONFIRM" ]; then
             echo "$SECURE_ADMIN:$ADMIN_PASS" | chpasswd
-            log_success "Contraseña establecida para ${BOLD}$SECURE_ADMIN${NC}"
+            log_success "Password set for ${BOLD}$SECURE_ADMIN${NC}"
             break
         else
-            log_error "Las contraseñas no coinciden o están vacías"
+            log_error "The passwords do not match or are empty"
             echo ""
         fi
     done
 
-    # Configurar Clave SSH para Admin Real (obligatorio)
+    # Set up the SSH key for the real admin (required)
     echo ""
-    echo -e "  ${CYAN}[SSH] Clave SSH del administrador (obligatorio)${NC}"
-    echo -e "  ${DIM}Tu cuenta solo podrá acceder mediante clave pública SSH.${NC}"
+    echo -e "  ${CYAN}[SSH] Admin SSH key (required)${NC}"
+    echo -e "  ${DIM}Your account will only be able to log in with an SSH public key.${NC}"
     echo ""
     
     local SSH_KEY=""
     while true; do
-        echo -e "  ${GREEN}[1]${NC} Detectar claves existentes y elegir"
-        echo -e "  ${GREEN}[2]${NC} Introducir clave pública manualmente"
+        echo -e "  ${GREEN}[1]${NC} Detect existing keys and choose one"
+        echo -e "  ${GREEN}[2]${NC} Enter a public key manually"
         echo ""
-        echo -n -e "  ${CYAN}Opción:${NC} "
+        echo -n -e "  ${CYAN}Option:${NC} "
         read -r key_opt < /dev/tty
 
         if [ "$key_opt" = "1" ]; then
-            SSH_KEY=$(choose_public_key_for_user "$SECURE_ADMIN" "acceso SSH") || SSH_KEY=""
+            SSH_KEY=$(choose_public_key_for_user "$SECURE_ADMIN" "SSH access") || SSH_KEY=""
             if [ -n "$SSH_KEY" ]; then
-                log_info "Clave seleccionada mediante detección"
+                log_info "Key selected from the detected keys"
                 break
             else
-                log_warn "No se detectaron claves. Usa la opción 2."
+                log_warn "No keys were detected. Use option 2."
             fi
         elif [ "$key_opt" = "2" ]; then
             echo ""
-            echo -n -e "  ${CYAN}Pega tu clave pública (ssh-ed25519/ssh-rsa):${NC} "
+            echo -n -e "  ${CYAN}Paste your public key (ssh-ed25519/ssh-rsa):${NC} "
             read -r manual_key < /dev/tty
             if [[ "$manual_key" =~ $SSH_PUBKEY_REGEX ]] && ssh-keygen -lf /dev/stdin <<<"$manual_key" >/dev/null 2>&1; then
                 SSH_KEY="$manual_key"
                 break
             else
-                log_warn "Clave no válida. Pega la línea completa de la clave pública (ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256...)"
+                log_warn "Invalid key. Paste the full public key line (ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256...)"
             fi
         else
-            log_warn "Opción no válida. Elige 1 o 2."
+            log_warn "Invalid option. Choose 1 or 2."
         fi
     done
 
     mkdir -p "/home/$SECURE_ADMIN/.ssh"
     if grep -qF "$SSH_KEY" "/home/$SECURE_ADMIN/.ssh/authorized_keys" 2>/dev/null; then
-        log_info "La clave SSH ya estaba autorizada"
+        log_info "The SSH key was already authorized"
     else
         echo "$SSH_KEY" >> "/home/$SECURE_ADMIN/.ssh/authorized_keys"
-        log_success "Clave SSH añadida correctamente"
+        log_success "SSH key added"
     fi
 
-    # Asegurar que los permisos son correctos (Paso crítico)
+    # Make sure the permissions are correct (critical step)
     mkdir -p "/home/$SECURE_ADMIN/.ssh"
     chmod 700 "/home/$SECURE_ADMIN/.ssh"
     if [ -f "/home/$SECURE_ADMIN/.ssh/authorized_keys" ]; then
@@ -1002,74 +1002,74 @@ create_secure_admin() {
     fi
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "/home/$SECURE_ADMIN/.ssh"
     
-    log_success "Configuración SSH verificada para ${BOLD}$SECURE_ADMIN${NC}"
+    log_success "SSH configuration verified for ${BOLD}$SECURE_ADMIN${NC}"
 
     echo "$SECURE_ADMIN" > "$STATE_DIR/secure_admin"
 }
 
 # =============================================================================
-# GENERACIÓN DE ARCHIVO .ENV
+# .ENV FILE GENERATION
 # =============================================================================
 
 generate_env() {
-    log_step "Generando secretos y configuración (.env)"
+    log_step "Generating secrets and configuration (.env)"
     
     echo ""
-    echo -n -e "  ${CYAN}Dominio del VPS (o IP pública si no tienes dominio):${NC} "
+    echo -n -e "  ${CYAN}VPS domain (or public IP if you have no domain):${NC} "
     read -r DOMAIN_NAME < /dev/tty
 
     if [ -z "${DOMAIN_NAME}" ]; then
-        log_error "El dominio/IP no puede estar vacío"
+        log_error "The domain/IP cannot be empty"
         exit 1
     fi
     if echo "${DOMAIN_NAME}" | grep -q ' '; then
-        log_error "El dominio/IP no debe contener espacios"
+        log_error "The domain/IP must not contain spaces"
         exit 1
     fi
     
-    # Generar contraseñas aleatorias
+    # Generate random passwords
     MYSQL_ROOT_PASS=$(openssl rand -base64 24)
     MYSQL_APP_PASS=$(openssl rand -base64 24)
     
-    # Crear Docker Secrets (archivos con permisos 600)
+    # Create the Docker secrets (files with mode 600)
     create_docker_secrets "$PROJECT_DIR" "$MYSQL_ROOT_PASS" "$MYSQL_APP_PASS"
     
     cat > .env <<EOF
 # ==============================================================================
-# ASIR VPS Defense - Variables de Entorno
-# Generado el $(date)
+# ASIR VPS Defense - Environment variables
+# Generated on $(date)
 # ==============================================================================
 
-# Dominio/IP del servidor
+# Server domain/IP
 DOMAIN_NAME=$DOMAIN_NAME
 
-# MySQL (credenciales gestionadas por Docker Secrets en ./secrets/)
+# MySQL (credentials managed by Docker secrets in ./secrets/)
 MYSQL_DATABASE=asir_defense
 MYSQL_USER=app_user
 
-# Configuración de Red Docker
+# Docker network configuration
 FRONTEND_SUBNET=172.20.0.0/16
 BACKEND_SUBNET=172.21.0.0/16
 
-# GeoIP (opcional)
+# GeoIP (optional)
 GEOIP_LICENSE_KEY=
 EOF
 
     chmod 600 .env
-    log_success "Archivo .env generado (credenciales en Docker Secrets)"
+    log_success ".env file generated (credentials in Docker secrets)"
 }
 
 # =============================================================================
-# LIMPIEZA DE CREDENCIALES SENSIBLES DEL .env
+# REMOVING SENSITIVE CREDENTIALS FROM .env
 # =============================================================================
-# Las credenciales de MySQL solo son necesarias durante el primer
-# `docker compose up`. Una vez que MySQL arranca, las guarda internamente
-# en su datadir. Mantenerlas en texto plano es mala práctica.
+# The MySQL credentials are only needed during the first
+# `docker compose up`. Once MySQL starts, it stores them internally
+# in its datadir. Keeping them in plain text is bad practice.
 #
-# Esta función:
-#   1. Reemplaza MYSQL_ROOT_PASSWORD y MYSQL_PASSWORD por placeholders
-#   2. Preserva las demás variables necesarias para operación normal
-#   3. Los secrets se almacenan en archivos separados con permisos 600
+# This function:
+#   1. Replaces MYSQL_ROOT_PASSWORD and MYSQL_PASSWORD with placeholders
+#   2. Keeps the other variables needed for normal operation
+#   3. The secrets are stored in separate files with mode 600
 # =============================================================================
 
 create_docker_secrets() {
@@ -1077,82 +1077,82 @@ create_docker_secrets() {
     local root_pass="$2"
     local app_pass="$3"
     
-    log_step "Creando Docker Secrets para credenciales MySQL"
+    log_step "Creating Docker secrets for the MySQL credentials"
     
     local secrets_dir="$project_dir/secrets"
     mkdir -p "$secrets_dir"
     
-    # Crear archivos de secrets con permisos restrictivos
+    # Create the secret files with restrictive permissions
     echo -n "$root_pass" > "$secrets_dir/mysql_root_password.txt"
     echo -n "$app_pass" > "$secrets_dir/mysql_app_password.txt"
     
-    # Permisos: root para root_password, uid 1000 (PHP) para app_password
+    # Permissions: root for root_password, uid 1000 (PHP) for app_password
     chmod 600 "$secrets_dir/mysql_root_password.txt"
     chown root:root "$secrets_dir/mysql_root_password.txt"
     
-    # PHP corre como uid 1000, necesita leer este archivo
+    # PHP runs as uid 1000 and needs to read this file
     chmod 400 "$secrets_dir/mysql_app_password.txt"
     chown 1000:1000 "$secrets_dir/mysql_app_password.txt"
     
     chmod 755 "$secrets_dir"
     
-    log_success "Docker Secrets creados en $secrets_dir"
-    echo -e "  ${DIM}Los passwords se leen de /run/secrets/ dentro de los contenedores${NC}"
+    log_success "Docker secrets created in $secrets_dir"
+    echo -e "  ${DIM}The passwords are read from /run/secrets/ inside the containers${NC}"
 }
 
 
 # =============================================================================
-# DESCARGA DE BASE DE DATOS GEOLITE2
+# GEOLITE2 DATABASE DOWNLOAD
 # =============================================================================
 
 download_geolite_mmdb() {
-    # Descarga la base GeoLite2-City desde el CDN libre (jsDelivr)
+    # Download the GeoLite2-City database from the free CDN (jsDelivr)
     local url="https://cdn.jsdelivr.net/npm/geolite2-city/GeoLite2-City.mmdb.gz"
     local tmpdir
     tmpdir=$(mktemp -d)
     mkdir -p geoip
 
-    log_step "Descargando base de datos GeoLite2-City"
-    log_info "Fuente: jsDelivr CDN (sin API key necesaria)"
+    log_step "Downloading the GeoLite2-City database"
+    log_info "Source: jsDelivr CDN (no API key needed)"
     
     if ! curl -fsSL "$url" -o "$tmpdir/GeoLite2-City.mmdb.gz"; then
-        log_warn "No se pudo descargar GeoLite2 desde el CDN"
-        log_info "Se usará fallback de país (funcionalidad reducida)"
+        log_warn "Could not download GeoLite2 from the CDN"
+        log_info "Falling back to country-level data (reduced functionality)"
         rm -rf "$tmpdir"
         return 0
     fi
 
     if ! gunzip -c "$tmpdir/GeoLite2-City.mmdb.gz" > geoip/GeoLite2-City.mmdb; then
-        log_warn "No se pudo descomprimir GeoLite2"
-        log_info "Se usará fallback de país"
+        log_warn "Could not decompress GeoLite2"
+        log_info "Falling back to country-level data"
         rm -rf "$tmpdir"
         return 0
     fi
 
     chmod 644 geoip/GeoLite2-City.mmdb
-    log_success "Base GeoLite2-City descargada: ${BOLD}geoip/GeoLite2-City.mmdb${NC}"
+    log_success "GeoLite2-City database downloaded: ${BOLD}geoip/GeoLite2-City.mmdb${NC}"
     rm -rf "$tmpdir"
 }
 
 # =============================================================================
-# GENERACIÓN DE SEMILLA DE BASE DE DATOS
+# DATABASE SEED GENERATION
 # =============================================================================
 
 generate_db_seed() {
-    log_step "Generando credenciales para el Panel de Administración"
+    log_step "Generating the admin panel credentials"
     
     WEB_ADMIN_PASS=$(openssl rand -base64 12)
     
-    # Usar un contenedor PHP temporal para generar el hash Bcrypt
-    log_info "Calculando hash de contraseña seguro (bcrypt)..."
+    # Use a temporary PHP container to generate the bcrypt hash
+    log_info "Computing a secure password hash (bcrypt)..."
     set +e
     WEB_ADMIN_HASH=$(printf '%s' "$WEB_ADMIN_PASS" | docker run --rm -i php:8.3-cli php -r 'echo password_hash(stream_get_contents(STDIN), PASSWORD_DEFAULT);' 2>>"$LOG_FILE")
     local hash_status=$?
     set -e
     if [ $hash_status -ne 0 ] || [ -z "$WEB_ADMIN_HASH" ]; then
-        log_error "No se pudo generar el hash de la contraseña"
+        log_error "Could not generate the password hash"
         echo ""
-        echo -e "  ${CYAN}Revisa el log para más detalles:${NC}"
+        echo -e "  ${CYAN}Check the log for details:${NC}"
         echo -e "    ${YELLOW}tail -n 25 $LOG_FILE${NC}"
         echo ""
         tail -n 25 "$LOG_FILE" >&2
@@ -1161,128 +1161,128 @@ generate_db_seed() {
     
     cat > mysql/init/02-seed.sql <<EOF
 -- ==============================================================================
--- ASIR VPS Defense - Archivo semilla
--- Generado por deploy.sh el $(date)
+-- ASIR VPS Defense - Seed file
+-- Generated by deploy.sh on $(date)
 -- ==============================================================================
 
 INSERT INTO users (username, password_hash, role) VALUES 
 ('admin', '$WEB_ADMIN_HASH', 'admin');
 EOF
     
-    # Guardar credenciales en un archivo seguro para el usuario
+    # Save the credentials to a protected file for the user
     local CRED_FILE="/home/$SECURE_ADMIN/admin_credentials.txt"
     
     cat > "$CRED_FILE" <<EOF
 ╔══════════════════════════════════════════════════════════════╗
-║         ASIR VPS DEFENSE - CREDENCIALES DE ACCESO            ║
+║         ASIR VPS DEFENSE - ACCESS CREDENTIALS                ║
 ╚══════════════════════════════════════════════════════════════╝
 
-Generado el: $(date)
+Generated on: $(date)
 
 ┌──────────────────────────────────────────────────────────────┐
-│ PANEL DE ADMINISTRACIÓN                                      │
+│ ADMIN PANEL                                                  │
 ├──────────────────────────────────────────────────────────────┤
-│ URL:        http://localhost:8888 (Requiere Túnel SSH)       │
-│ Usuario:    admin                                            │
-│ Contraseña: $WEB_ADMIN_PASS
+│ URL:        http://localhost:8888 (SSH tunnel required)      │
+│ Username:   admin                                            │
+│ Password:   $WEB_ADMIN_PASS
 └──────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────┐
-│ BASE DE DATOS                                                │
+│ DATABASE                                                     │
 ├──────────────────────────────────────────────────────────────┤
 │ Root Password:     $MYSQL_ROOT_PASS
 │ App User Password: $MYSQL_APP_PASS
 └──────────────────────────────────────────────────────────────┘
 
-NOTA: Este archivo es propiedad de $SECURE_ADMIN (modo 600).
-      Guarda estas credenciales y elimina este archivo.
+NOTE: This file is owned by $SECURE_ADMIN (mode 600).
+      Save these credentials and delete this file.
 EOF
     
-    # Asegurar el archivo
+    # Lock down the file
     chown "$SECURE_ADMIN:$SECURE_ADMIN" "$CRED_FILE"
     chmod 600 "$CRED_FILE"
 
-    log_success "Semilla de base de datos generada: ${BOLD}mysql/init/02-seed.sql${NC}"
-    log_success "Credenciales guardadas en: ${BOLD}$CRED_FILE${NC}"
+    log_success "Database seed generated: ${BOLD}mysql/init/02-seed.sql${NC}"
+    log_success "Credentials saved to: ${BOLD}$CRED_FILE${NC}"
     
     if encrypt_credentials_file "$CRED_FILE"; then
-        log_info "Credenciales cifradas. Podrás verlas o descargarlas al final."
+        log_info "Credentials encrypted. You can view or download them at the end."
     else
-        log_warn "Credenciales sin cifrar; se mostrarán al final y se eliminarán"
+        log_warn "Credentials not encrypted; they will be shown at the end and then deleted"
     fi
 }
 
 # =============================================================================
-# HARDENING DE ROOT
+# ROOT HARDENING
 # =============================================================================
 
 check_and_harden_root() {
-    log_step "Verificando configuración de seguridad de root"
+    log_step "Checking the root security configuration"
     
     local root_issues=0
     local password_locked=false
     local ssh_denied=false
     
-    # 1. Verificar si el password de root está bloqueado
+    # 1. Check whether the root password is locked
     local shadow_status
     shadow_status=$(grep "^root:" /etc/shadow 2>/dev/null | cut -d: -f2 | head -c1)
     if [[ "$shadow_status" == "!" ]] || [[ "$shadow_status" == "*" ]]; then
         password_locked=true
-        log_success "Password de root bloqueado"
+        log_success "Root password locked"
     else
         local passwd_status
         passwd_status=$(passwd -S root 2>/dev/null | awk '{print $2}')
         if [[ "$passwd_status" == "L" ]]; then
             password_locked=true
-            log_success "Password de root bloqueado"
+            log_success "Root password locked"
         else
-            log_warn "Password de root NO está bloqueado"
+            log_warn "Root password is NOT locked"
             root_issues=$((root_issues + 1))
         fi
     fi
     
-    # 2. Verificar PermitRootLogin en SSH
+    # 2. Check PermitRootLogin in SSH
     local permit_root
     permit_root=$(grep -E "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | tail -1)
     if [[ "$permit_root" == "no" ]]; then
         ssh_denied=true
-        log_success "SSH deniega login de root (PermitRootLogin no)"
+        log_success "SSH denies root login (PermitRootLogin no)"
     elif [[ -z "$permit_root" ]]; then
-        # Si no está definido, el default en muchos sistemas es "prohibit-password"
-        log_info "PermitRootLogin no definido explícitamente (usando default del sistema)"
+        # If it is not set, the default on many systems is "prohibit-password"
+        log_info "PermitRootLogin not set explicitly (using the system default)"
     else
-        log_warn "SSH permite login de root (PermitRootLogin $permit_root)"
+        log_warn "SSH allows root login (PermitRootLogin $permit_root)"
         root_issues=$((root_issues + 1))
     fi
     
-    # 3. Si hay problemas, ofrecer hardening
+    # 3. If there are problems, offer hardening
     if [ $root_issues -gt 0 ]; then
         echo ""
         echo -e "${YELLOW}╭─────────────────────────────────────────────────────────────╮${NC}"
-        echo -e "${YELLOW}│${NC}  ${BOLD}[!] CONFIGURACIÓN DE ROOT MEJORABLE${NC}                       ${YELLOW}│${NC}"
+        echo -e "${YELLOW}│${NC}  ${BOLD}[!] ROOT CONFIGURATION CAN BE IMPROVED${NC}                     ${YELLOW}│${NC}"
         echo -e "${YELLOW}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
-        echo -e "  ${CYAN}Se recomienda:${NC}"
+        echo -e "  ${CYAN}Recommended:${NC}"
         if [ "$password_locked" = false ]; then
-            echo -e "    • Bloquear el password de root (nadie puede hacer login directo)"
+            echo -e "    • Lock the root password (nobody can log in as root directly)"
         fi
         if [ "$ssh_denied" = false ]; then
-            echo -e "    • Denegar login SSH de root (PermitRootLogin no)"
+            echo -e "    • Deny root login over SSH (PermitRootLogin no)"
         fi
         echo ""
-        echo -e "  ${DIM}Esto NO afecta a sudo - seguirás pudiendo usar 'sudo -i'${NC}"
+        echo -e "  ${DIM}This does NOT affect sudo: you can still use 'sudo -i'${NC}"
         echo ""
-        echo -n -e "  ${CYAN}¿Aplicar hardening de root? (S/n):${NC} "
+        echo -n -e "  ${CYAN}Apply root hardening? (Y/n):${NC} "
         read -r CONFIRM_ROOT_HARDENING < /dev/tty
         
-        if [[ "$CONFIRM_ROOT_HARDENING" =~ ^[Ss]$ ]] || [[ -z "$CONFIRM_ROOT_HARDENING" ]]; then
-            # Bloquear password de root
+        if [[ "$CONFIRM_ROOT_HARDENING" =~ ^[Yy]$ ]] || [[ -z "$CONFIRM_ROOT_HARDENING" ]]; then
+            # Lock the root password
             if [ "$password_locked" = false ]; then
                 passwd -l root >/dev/null 2>&1
-                log_success "Password de root bloqueado"
+                log_success "Root password locked"
             fi
             
-            # Denegar root en SSH
+            # Deny root over SSH
             if [ "$ssh_denied" = false ]; then
                 if grep -q "^PermitRootLogin" /etc/ssh/sshd_config; then
                     sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
@@ -1290,27 +1290,27 @@ check_and_harden_root() {
                     echo "PermitRootLogin no" >> /etc/ssh/sshd_config
                 fi
                 systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true
-                log_success "SSH configurado para denegar root"
+                log_success "SSH configured to deny root"
             fi
             
-            log_success "Hardening de root completado"
+            log_success "Root hardening complete"
         else
-            log_info "Hardening de root omitido (puedes hacerlo manualmente después)"
+            log_info "Root hardening skipped (you can do it manually later)"
         fi
     else
-        log_success "Configuración de root es segura"
+        log_success "Root configuration is secure"
     fi
 }
 
 # =============================================================================
-# CONFIGURACIÓN DE VOLUMEN Y BACKUPS
+# VOLUME AND BACKUP CONFIGURATION
 # =============================================================================
 
 ensure_backup_volume() {
-    log_step "Preparando volumen lógico para backups"
+    log_step "Preparing the logical volume for backups"
 
     ensure_lvm_tools || {
-        log_error "No se pudo instalar lvm2; no es posible preparar backups"
+        log_error "Could not install lvm2; backups cannot be prepared"
         return 1
     }
 
@@ -1318,18 +1318,18 @@ ensure_backup_volume() {
     root_dev=$(lsblk -nlso NAME,TYPE "$(findmnt -n -o SOURCE /)" 2>/dev/null | awk '$2 == "disk" {print "/dev/" $1; exit}' || true)
 
     if mountpoint -q "$BACKUP_MOUNTPOINT"; then
-        log_info "Volumen de backups ya montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
+        log_info "Backup volume already mounted at ${BOLD}$BACKUP_MOUNTPOINT${NC}"
         return 0
     fi
 
     mkdir -p "$BACKUP_MOUNTPOINT"
 
     if vgdisplay "$BACKUP_VG_NAME" >/dev/null 2>&1; then
-        log_info "VG existente detectado: ${BOLD}$BACKUP_VG_NAME${NC}"
+        log_info "Existing VG detected: ${BOLD}$BACKUP_VG_NAME${NC}"
         if ! lvdisplay "$BACKUP_VG_NAME/$BACKUP_LV_NAME" >/dev/null 2>&1; then
-            log_warn "LV $BACKUP_LV_NAME no existe en VG $BACKUP_VG_NAME, creando LV..."
+            log_warn "LV $BACKUP_LV_NAME does not exist in VG $BACKUP_VG_NAME, creating the LV..."
             if ! lvcreate -n "$BACKUP_LV_NAME" -l 100%FREE "$BACKUP_VG_NAME" >/dev/null 2>&1; then
-                log_error "No se pudo crear el LV $BACKUP_LV_NAME en $BACKUP_VG_NAME"
+                log_error "Could not create LV $BACKUP_LV_NAME in $BACKUP_VG_NAME"
                 return 1
             fi
         fi
@@ -1338,17 +1338,17 @@ ensure_backup_volume() {
         local candidates=()
 
         echo ""
-        echo -e "${CYAN}Dispositivos detectados (lsblk):${NC}"
+        echo -e "${CYAN}Detected devices (lsblk):${NC}"
         lsblk -e7 -o NAME,TYPE,SIZE,MOUNTPOINT | sed 's/^/  /'
         echo ""
 
-        # Detectar discos sin montajes ni particiones montadas (evita el disco del sistema)
+        # Detect disks with no mounts and no mounted partitions (avoids the system disk)
         while IFS= read -r disk; do
-            # Si el disco o cualquiera de sus hijos tiene un mountpoint, se descarta
+            # Skip the disk if it or any of its children has a mountpoint
             if lsblk -nr -o MOUNTPOINT "$disk" | grep -q '\S'; then
                 continue
             fi
-            # Evitar el disco que contiene / (root)
+            # Skip the disk that holds / (root)
             if [ -n "$root_dev" ] && [ "$disk" = "$root_dev" ]; then
                 continue
             fi
@@ -1358,16 +1358,16 @@ ensure_backup_volume() {
         if [ -z "$chosen_device" ]; then
             if [ ${#candidates[@]} -eq 1 ]; then
                 chosen_device="${candidates[0]}"
-                log_info "Disco libre detectado: ${BOLD}$chosen_device${NC}"
+                log_info "Free disk detected: ${BOLD}$chosen_device${NC}"
             elif [ ${#candidates[@]} -gt 1 ]; then
                 echo ""
-                echo -e "${CYAN}Discos disponibles para backups:${NC}"
+                echo -e "${CYAN}Disks available for backups:${NC}"
                 local idx=1
                 for d in "${candidates[@]}"; do
                     echo -e "  ${GREEN}[$idx]${NC} $d"
                     idx=$((idx+1))
                 done
-                echo -e "${YELLOW}Elige un número o escribe un dispositivo manual (ej: /dev/sdb):${NC} "
+                echo -e "${YELLOW}Choose a number or type a device path (e.g. /dev/sdb):${NC} "
                 read -r selection < /dev/tty
                 if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le ${#candidates[@]} ]; then
                     chosen_device="${candidates[$((selection-1))]}"
@@ -1376,19 +1376,19 @@ ensure_backup_volume() {
                 fi
             else
                 echo ""
-                echo -e "${YELLOW}No se encontraron discos libres dedicados.${NC}"
-                echo -e "${CYAN}Opción segura por defecto:${NC} Crear un archivo-loop en ${BOLD}$BACKUP_LOOP_FILE${NC}${CYAN} (no protege frente a fallo de disco).${NC}"
-                echo -n -e "¿Crear loop ahora? (S/n): "
+                echo -e "${YELLOW}No dedicated free disks were found.${NC}"
+                echo -e "${CYAN}Safe default:${NC} create a loop file at ${BOLD}$BACKUP_LOOP_FILE${NC}${CYAN} (does not protect against disk failure).${NC}"
+                echo -n -e "Create the loop now? (Y/n): "
                 read -r CONF_LOOP < /dev/tty
                 if [[ ! "$CONF_LOOP" =~ ^[Nn]$ ]]; then
-                    echo -n -e "Tamaño del loop en GB (ENTER=${BACKUP_LOOP_DEFAULT_SIZE}): "
+                    echo -n -e "Loop size in GB (ENTER=${BACKUP_LOOP_DEFAULT_SIZE}): "
                     read -r LOOP_SIZE < /dev/tty
                     [ -z "$LOOP_SIZE" ] && LOOP_SIZE="$BACKUP_LOOP_DEFAULT_SIZE"
                     if create_loop_backing "$LOOP_SIZE"; then
                         chosen_device="$BACKUP_LOOP_DEVICE"
-                        log_info "Usando loop device ${BOLD}$chosen_device${NC} (${LOOP_SIZE})"
+                        log_info "Using loop device ${BOLD}$chosen_device${NC} (${LOOP_SIZE})"
                     else
-                        log_warn "No se pudo crear el loop; sin backups"
+                        log_warn "Could not create the loop; no backups"
                         return 1
                     fi
                 fi
@@ -1396,48 +1396,48 @@ ensure_backup_volume() {
         fi
 
         if [ -z "$chosen_device" ]; then
-            log_warn "Salta preparación de backups (no hay VG disponible)"
+            log_warn "Skipping backup preparation (no VG available)"
             return 1
         fi
         if ! lsblk -ndo NAME "$chosen_device" >/dev/null 2>&1; then
-            log_error "Dispositivo inválido: $chosen_device"
+            log_error "Invalid device: $chosen_device"
             return 1
         fi
-        # Proteger el disco/partición del sistema
+        # Protect the system disk/partition
         if [ -n "$root_dev" ]; then
             if [ "$chosen_device" = "$root_dev" ]; then
-                log_error "No puedes usar el disco que contiene / ($root_dev) para backups"
+                log_error "You cannot use the disk that holds / ($root_dev) for backups"
                 return 1
             fi
-            # Si se elige una partición, comprobar su disco padre
+            # If a partition was chosen, check its parent disk
             local parent
             parent=$(lsblk -no PKNAME "$chosen_device" 2>/dev/null || true)
             if [ -n "$parent" ] && [ "/dev/$parent" = "$root_dev" ]; then
-                log_error "El dispositivo seleccionado pertenece al disco del sistema (/dev/$parent). Usa un disco dedicado."
+                log_error "The selected device belongs to the system disk (/dev/$parent). Use a dedicated disk."
                 return 1
             fi
         fi
-        echo -n -e "${CYAN}Se creará PV+VG+LV en ${BOLD}$chosen_device${NC}${CYAN}. ¿Confirmar? (escribe YES en mayúsculas): ${NC}"
+        echo -n -e "${CYAN}PV+VG+LV will be created on ${BOLD}$chosen_device${NC}${CYAN}. Confirm? (type YES in capitals): ${NC}"
         read -r CONFIRM_BACKUP_LVM < /dev/tty
         if [ "$CONFIRM_BACKUP_LVM" != "YES" ]; then
-            log_warn "Operación cancelada por el usuario"
+            log_warn "Operation cancelled by the user"
             return 1
         fi
         
-        # Limpiar firmas previas y esperar a que el dispositivo esté listo
+        # Wipe old signatures and wait for the device to be ready
         wipefs -a "$chosen_device" >/dev/null 2>&1 || true
         sleep 1
         
         if ! pvcreate -f "$chosen_device" >/dev/null 2>&1; then
-            log_error "pvcreate falló sobre $chosen_device"
+            log_error "pvcreate failed on $chosen_device"
             return 1
         fi
         if ! vgcreate "$BACKUP_VG_NAME" "$chosen_device" >/dev/null 2>&1; then
-            log_error "vgcreate falló para $BACKUP_VG_NAME"
+            log_error "vgcreate failed for $BACKUP_VG_NAME"
             return 1
         fi
         if ! lvcreate -n "$BACKUP_LV_NAME" -l 100%FREE "$BACKUP_VG_NAME" >/dev/null 2>&1; then
-            log_error "lvcreate falló para $BACKUP_LV_NAME"
+            log_error "lvcreate failed for $BACKUP_LV_NAME"
             return 1
         fi
     fi
@@ -1446,7 +1446,7 @@ ensure_backup_volume() {
     local fs_type
     fs_type=$(blkid -o value -s TYPE "$lv_path" 2>/dev/null || true)
     if [ -z "$fs_type" ]; then
-        log_info "Creando sistema de ficheros ext4 en $lv_path"
+        log_info "Creating an ext4 file system on $lv_path"
         mkfs.ext4 -L backups "$lv_path" >/dev/null
     fi
 
@@ -1455,17 +1455,17 @@ ensure_backup_volume() {
     if ! grep -q "$BACKUP_MOUNTPOINT" /etc/fstab; then
         echo "UUID=$uuid $BACKUP_MOUNTPOINT ext4 defaults,nofail 0 2" >> /etc/fstab
         if command -v systemctl >/dev/null 2>&1; then
-            log_info "Recargando systemd tras actualizar fstab"
+            log_info "Reloading systemd after updating fstab"
             systemctl daemon-reload >/dev/null 2>&1 || true
         fi
     fi
 
     if mount "$BACKUP_MOUNTPOINT"; then
-        log_success "Volumen de backups montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
+        log_success "Backup volume mounted at ${BOLD}$BACKUP_MOUNTPOINT${NC}"
         chmod 750 "$BACKUP_MOUNTPOINT"
         mark_step_done "backups_prepared"
     else
-        log_error "No se pudo montar $BACKUP_MOUNTPOINT"
+        log_error "Could not mount $BACKUP_MOUNTPOINT"
         return 1
     fi
 }
@@ -1476,31 +1476,31 @@ create_loop_backing() {
     dir=$(dirname "$BACKUP_LOOP_FILE")
     mkdir -p "$dir"
     
-    # Si el usuario puso solo un número, asumir GB
+    # If the user typed only a number, assume GB
     if [[ "$size" =~ ^[0-9]+$ ]]; then
         size="${size}G"
-        log_info "Interpretado como ${size}"
+        log_info "Interpreted as ${size}"
     fi
     
-    # Asegurar módulo loop cargado
+    # Make sure the loop module is loaded
     modprobe loop 2>/dev/null || true
     
-    # Crear archivo sparse
+    # Create a sparse file
     if ! fallocate -l "$size" "$BACKUP_LOOP_FILE" 2>/dev/null && ! truncate -s "$size" "$BACKUP_LOOP_FILE" 2>/dev/null; then
-        log_error "No se pudo crear el archivo $BACKUP_LOOP_FILE (tamaño: $size)"
+        log_error "Could not create the file $BACKUP_LOOP_FILE (size: $size)"
         return 1
     fi
-    # Asociar a loop libre
+    # Attach it to a free loop device
     BACKUP_LOOP_DEVICE=$(losetup -f --show "$BACKUP_LOOP_FILE")
     if [ -z "$BACKUP_LOOP_DEVICE" ]; then
-        log_error "No se pudo asignar loop device"
+        log_error "Could not assign a loop device"
         return 1
     fi
     
-    # Esperar a que el dispositivo esté disponible
+    # Wait for the device to become available
     sleep 1
     
-    log_info "Loop creado: $BACKUP_LOOP_DEVICE (${BACKUP_LOOP_FILE})"
+    log_info "Loop created: $BACKUP_LOOP_DEVICE (${BACKUP_LOOP_FILE})"
     return 0
 }
 
@@ -1513,7 +1513,7 @@ ensure_backups_script() {
         cp "$SCRIPT_DIR/backups.sh" "$path"
     fi
     if [ ! -f "$path" ]; then
-        log_warn "backups.sh no está en $dir; las copias de seguridad habrá que gestionarlas a mano"
+        log_warn "backups.sh is not in $dir; backups will have to be managed by hand"
         return 0
     fi
     chmod 750 "$path"
@@ -1525,51 +1525,51 @@ ensure_backups_script() {
 prompt_initial_backup() {
     local project_dir="$1"
     if [ ! -d "$project_dir" ]; then
-        log_warn "No se encuentra el directorio del proyecto para el backup inicial"
+        log_warn "Project directory not found for the initial backup"
         return
     fi
     if [ ! -x "$project_dir/backups.sh" ]; then
-        log_warn "No se encontró $project_dir/backups.sh; omitiendo backup inicial"
+        log_warn "$project_dir/backups.sh not found; skipping the initial backup"
         return
     fi
     if ! mountpoint -q "$BACKUP_MOUNTPOINT"; then
-        log_warn "Backups no configurados (volumen no montado)"
+        log_warn "Backups not configured (volume not mounted)"
         return
     fi
     echo ""
-    echo -n -e "${CYAN}¿Crear un backup inicial ahora? (S/n): ${NC}"
+    echo -n -e "${CYAN}Create an initial backup now? (Y/n): ${NC}"
     read -r CREATE_BACKUP_NOW < /dev/tty
     if [[ "$CREATE_BACKUP_NOW" =~ ^[Nn]$ ]]; then
-        log_info "Backup inicial omitido por el usuario"
+        log_info "Initial backup skipped by the user"
         return
     fi
     if BACKUP_ROOT="$BACKUP_MOUNTPOINT" BACKUP_RETENTION="$BACKUP_RETENTION_DEFAULT" "$project_dir/backups.sh" create --retention "$BACKUP_RETENTION_DEFAULT"; then
-        log_success "Backup inicial creado en $BACKUP_MOUNTPOINT"
+        log_success "Initial backup created in $BACKUP_MOUNTPOINT"
     else
-        log_warn "Backup inicial falló; revisa el log"
+        log_warn "Initial backup failed; check the log"
     fi
 }
 
 # ==============================================================================
-# EJECUCIÓN PRINCIPAL
+# MAIN EXECUTION
 # ==============================================================================
 
 main() {
     clear
     print_banner
-    print_section "INSTALADOR v${SCRIPT_VERSION}"
+    print_section "INSTALLER v${SCRIPT_VERSION}"
     
     check_root
     detect_context
     detect_os
 
-    # Recuperar usuario admin seguro de ejecuciones previas (si existe)
+    # Recover the secure admin user from previous runs (if any)
     if [ -z "$SECURE_ADMIN" ] && [ -f "$STATE_DIR/secure_admin" ]; then
         SECURE_ADMIN=$(cat "$STATE_DIR/secure_admin")
-        log_info "Usuario admin recuperado de sesión anterior: ${BOLD}$SECURE_ADMIN${NC}"
+        log_info "Admin user recovered from a previous session: ${BOLD}$SECURE_ADMIN${NC}"
     fi
 
-    # Si todo ya estuvo completado, aún permitimos configurar backups pendientes y auditar
+    # If everything is already done, still allow pending backups to be set up and the audit to run
     if is_step_done "prep_done" && is_step_done "users_done" && is_step_done "project_done" \
        && is_step_done "env_done" && is_step_done "seed_done" && is_step_done "final_done"; then
         local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
@@ -1577,28 +1577,28 @@ main() {
             cd "$PROJECT_DIR" || exit 1
             ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
             load_env_if_present
-            print_section "BACKUPS PENDIENTES"
+            print_section "PENDING BACKUPS"
             if ensure_backup_volume; then
                 prompt_initial_backup "$PROJECT_DIR"
                 mark_step_done "backups_prepared"
                 mark_step_done "backups_done"
             else
-                log_warn "Backups no configurados (prepara un disco y reejecuta)"
+                log_warn "Backups not configured (prepare a disk and run again)"
             fi
-            print_section "AUDITORÍA DE PERMISOS"
-            log_info "Instalación completa detectada. Ejecutando auditoría y finalizando..."
-            audit_permissions "$PROJECT_DIR" || log_warn "La auditoría de permisos encontró problemas (ver arriba)"
+            print_section "PERMISSION AUDIT"
+            log_info "Complete installation detected. Running the audit and finishing..."
+            audit_permissions "$PROJECT_DIR" || log_warn "The permission audit found problems (see above)"
             exit 0
         fi
     fi
     
     # =========================================================================
-    # PASO 1: Preparación del Sistema
+    # STEP 1: System preparation
     # =========================================================================
-    print_section "PASO 1/5: PREPARACIÓN DEL SISTEMA"
+    print_section "STEP 1/5: SYSTEM PREPARATION"
     if is_step_done "prep_done"; then
-        log_info "Preparación previa detectada"
-        log_info "Saltando reinstalación de dependencias y firewall"
+        log_info "Previous preparation detected"
+        log_info "Skipping the reinstall of dependencies and firewall"
     else
         install_dependencies
         setup_firewall
@@ -1606,58 +1606,58 @@ main() {
     fi
     
     # =========================================================================
-    # PASO 2: Configuración de Usuario y Seguridad
+    # STEP 2: User and security configuration
     # =========================================================================
-    print_section "PASO 2/5: USUARIOS Y SEGURIDAD"
+    print_section "STEP 2/5: USERS AND SECURITY"
     
-    # Preguntar puerto SSH ANTES de configurar (si no está ya configurado)
+    # Ask for the SSH port BEFORE configuring (if it is not configured yet)
     local SSH_PORT="22"
     if ! is_step_done "users_done"; then
         echo ""
         echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-        echo -e "${CYAN}│${NC}  ${BOLD}[SSH] CONFIGURACIÓN DE PUERTO SSH REAL (Admin)${NC}              ${CYAN}│${NC}"
+        echo -e "${CYAN}│${NC}  ${BOLD}[SSH] REAL SSH PORT SETUP (admin)${NC}                          ${CYAN}│${NC}"
         echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
         echo ""
-        echo -e "  ${RED}⚠  Puerto 22 está reservado para Cowrie (honeypot) — NO lo uses aquí${NC}"
+        echo -e "  ${RED}⚠  Port 22 is reserved for Cowrie (honeypot): do NOT use it here${NC}"
         echo ""
-        echo -e "  Elige el puerto de tu ${BOLD}SSH real${NC} (acceso de administrador):"
-        echo -e "    • ${WHITE}2929${NC}        → Recomendado: libre de bots, acceso exclusivo admin"
-        echo -e "    • ${WHITE}Otro número${NC} → Cualquier puerto libre entre 1024 y 65535"
-        echo -e "    • ${RED}NO uses 22${NC}  → Ocupado por el honeypot Cowrie"
+        echo -e "  Choose the port for your ${BOLD}real SSH${NC} (admin access):"
+        echo -e "    • ${WHITE}2929${NC}        → Recommended: free of bots, admin access only"
+        echo -e "    • ${WHITE}Other port${NC}  → Any free port between 1024 and 65535"
+        echo -e "    • ${RED}NOT 22${NC}      → Taken by the Cowrie honeypot"
         echo ""
-        echo -n -e "  ${CYAN}Puerto SSH real (ENTER para usar 2929):${NC} "
+        echo -n -e "  ${CYAN}Real SSH port (ENTER for 2929):${NC} "
         read -r SSH_PORT < /dev/tty
         if [ -z "$SSH_PORT" ]; then
             SSH_PORT="2929"
         fi
         if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [ "$SSH_PORT" -lt 1 ] || [ "$SSH_PORT" -gt 65535 ]; then
-            log_warn "Puerto no válido. Se usará el puerto 2929 por defecto."
+            log_warn "Invalid port. Using the default port 2929."
             SSH_PORT="2929"
         fi
-        log_info "Puerto SSH seleccionado: ${BOLD}$SSH_PORT${NC}"
+        log_info "SSH port selected: ${BOLD}$SSH_PORT${NC}"
         
-        # Abrir puerto SSH real en UFW
-        # Puerto 22 se mantiene siempre abierto para Cowrie (honeypot)
+        # Open the real SSH port in UFW
+        # Port 22 always stays open for Cowrie (honeypot)
         if [ "$SSH_PORT" != "22" ]; then
-            ufw allow "$SSH_PORT"/tcp comment 'SSH real (admin)' || log_warn "No se pudo abrir el puerto $SSH_PORT en UFW"
-            log_info "Puerto 22 mantenido abierto → Cowrie honeypot"
-            log_info "Puerto $SSH_PORT abierto → SSH real (admin)"
+            ufw allow "$SSH_PORT"/tcp comment 'Real SSH (admin)' || log_warn "Could not open port $SSH_PORT in UFW"
+            log_info "Port 22 kept open → Cowrie honeypot"
+            log_info "Port $SSH_PORT open → real SSH (admin)"
         else
-            log_warn "SSH real en puerto 22 solapa con Cowrie. Se recomienda puerto alternativo (ej: 2929)"
+            log_warn "Real SSH on port 22 overlaps with Cowrie. An alternative port is recommended (e.g. 2929)"
         fi
     fi
     
     if is_step_done "users_done"; then
-        log_info "Usuarios y seguridad ya configurados"
+        log_info "Users and security already configured"
         if [ -z "$SECURE_ADMIN" ]; then
-            log_error "No se pudo recuperar SECURE_ADMIN del estado previo"
+            log_error "Could not recover SECURE_ADMIN from the previous state"
             echo ""
-            echo -e "  ${CYAN}Para rehacer este paso, elimina el archivo de estado:${NC}"
+            echo -e "  ${CYAN}To redo this step, delete the state file:${NC}"
             echo -e "    ${YELLOW}rm -f $STATE_DIR/users_done${NC}"
             echo ""
             exit 1
         fi
-        # Recuperar puerto SSH de la configuración existente
+        # Recover the SSH port from the existing configuration
         SSH_PORT=$(grep -E '^Port ' /etc/ssh/sshd_config | awk '{print $2}' || echo "22")
     else
         create_secure_admin
@@ -1667,47 +1667,47 @@ main() {
     fi
     
     # =========================================================================
-    # PASO 3: Configuración del Proyecto
+    # STEP 3: Project configuration
     # =========================================================================
-    print_section "PASO 3/5: PROVISIONADO DEL PROYECTO"
+    print_section "STEP 3/5: PROJECT PROVISIONING"
     local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
-    log_info "Directorio del proyecto: ${BOLD}$PROJECT_DIR${NC}"
+    log_info "Project directory: ${BOLD}$PROJECT_DIR${NC}"
 
     if is_step_done "project_done"; then
-        log_info "Proyecto ya presente"
+        log_info "Project already present"
         cd "$PROJECT_DIR" || exit 1
         ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
     else
-        # Crear directorio si no existe
+        # Create the directory if it does not exist
         if [ ! -d "$PROJECT_DIR" ]; then
             mkdir -p "$PROJECT_DIR"
         fi
 
-        # Lógica para poblar el directorio
+        # Logic to populate the directory
         if [ -f "docker-compose.yml" ]; then
-            log_info "Copiando archivos de instalación locales..."
+            log_info "Copying the local installation files..."
             rsync -av --exclude ".git" --exclude "asir-vps-defense" . "$PROJECT_DIR/" 2>/dev/null || cp -R . "$PROJECT_DIR/"
         else
-            log_info "Descargando repositorio oficial..."
+            log_info "Downloading the official repository..."
             rm -rf "$PROJECT_DIR"
             git clone https://github.com/paulusgi/asir-vps-defense.git "$PROJECT_DIR"
         fi
 
-        # Asegurar que la propiedad es correcta inmediatamente
+        # Make sure the ownership is correct right away
         chown -R "$SECURE_ADMIN:$SECURE_ADMIN" "$PROJECT_DIR"
         ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
         cd "$PROJECT_DIR" || exit 1
         mark_step_done "project_done"
-        log_success "Directorio de trabajo: ${BOLD}$(pwd)${NC}"
+        log_success "Working directory: ${BOLD}$(pwd)${NC}"
     fi
 
     # =========================================================================
-    # PASO 4: Despliegue de la Aplicación
+    # STEP 4: Application deployment
     # =========================================================================
-    print_section "PASO 4/5: DESPLIEGUE DE LA APLICACIÓN"
+    print_section "STEP 4/5: APPLICATION DEPLOYMENT"
     if is_step_done "env_done"; then
-        log_info "Archivo .env ya existe"
-        log_info "No se regenera para preservar credenciales"
+        log_info ".env file already exists"
+        log_info "Not regenerated, to preserve the credentials"
         load_env_if_present
     else
         generate_env
@@ -1715,60 +1715,60 @@ main() {
         mark_step_done "env_done"
     fi
 
-    # Descarga GeoLite2-City desde CDN (sin requerir License Key)
+    # Download GeoLite2-City from the CDN (no license key required)
     download_geolite_mmdb
 
-    # Preparar directorio de logs de Cowrie en el host
-    # Cowrie (UID 1000 en la imagen oficial) escribe aquí
-    # Promtail lo lee como /var/log/host/cowrie/ (ya monta /var/log:/var/log/host:ro)
-    log_info "Preparando directorio de logs de Cowrie en el host..."
+    # Prepare the Cowrie log directory on the host
+    # Cowrie (UID 999 in the official image) writes here
+    # Promtail reads it as /var/log/host/cowrie/ (it already mounts /var/log:/var/log/host:ro)
+    log_info "Preparing the Cowrie log directory on the host..."
     mkdir -p /var/log/cowrie
     chown -R 999:999 /var/log/cowrie
     chmod 755 /var/log/cowrie
-    log_success "Directorio /var/log/cowrie listo (UID 999, lectura por Promtail)"
+    log_success "Directory /var/log/cowrie ready (UID 999, readable by Promtail)"
 
     if is_step_done "seed_done"; then
-        log_info "Semilla de base de datos ya generada"
+        log_info "Database seed already generated"
     else
         generate_db_seed
         mark_step_done "seed_done"
     fi
     
-    # Corregir permisos para secretos generados
+    # Fix permissions for the generated secrets
     chown "$SECURE_ADMIN:$SECURE_ADMIN" .env
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" mysql/init
 
-    # Corregir permisos para webroot
-    log_info "Ajustando permisos de archivos web..."
+    # Fix permissions for the webroot
+    log_info "Adjusting web file permissions..."
     chown -R "$SECURE_ADMIN:$SECURE_ADMIN" src
 
-    log_step "Desplegando contenedores Docker (esto puede tardar varios minutos)"
+    log_step "Deploying the Docker containers (this can take several minutes)"
     set +e
-    run_quiet "Construyendo y levantando contenedores" docker compose up -d --build
+    run_quiet "Building and starting containers" docker compose up -d --build
     local up_status=$?
     set -e
 
-    # Cowrie crea subdirectorios al arrancar (cowrie.log, cowrie.json, tty/...)
-    # Hay que volver a aplicar el chown después del up para que sean escribibles
+    # Cowrie creates subdirectories on startup (cowrie.log, cowrie.json, tty/...)
+    # The chown must be applied again after the up so they are writable
     chown -R 999:999 /var/log/cowrie 2>/dev/null || true
 
-    # El directorio tty/ dentro del volumen nombrado nace con owner root.
-    # Cowrie (UID 999) no puede crearlo → hay que pre-crearlo manualmente.
+    # The tty/ directory inside the named volume is created owned by root.
+    # Cowrie (UID 999) cannot create it, so it has to be created beforehand.
     local cowrie_vol
     cowrie_vol=$(docker volume inspect asir-vps-defense_cowrie_data --format '{{.Mountpoint}}' 2>/dev/null || true)
     if [ -n "$cowrie_vol" ]; then
         mkdir -p "$cowrie_vol/tty"
         chown -R 999:999 "$cowrie_vol"
-        log_success "Directorio tty/ del volumen Cowrie listo (UID 999)"
+        log_success "Cowrie volume tty/ directory ready (UID 999)"
     fi
 
     if [ $up_status -ne 0 ]; then
-        log_error "docker compose up falló"
+        log_error "docker compose up failed"
         echo ""
-        echo -e "  ${CYAN}Mostrando logs de diagnóstico (MySQL):${NC}"
+        echo -e "  ${CYAN}Showing diagnostic logs (MySQL):${NC}"
         docker compose logs --tail=60 mysql || true
         echo ""
-        echo -e "  ${CYAN}Si ves errores de autenticación/root password, ejecuta:${NC}"
+        echo -e "  ${CYAN}If you see authentication/root password errors, run:${NC}"
         echo -e "    ${YELLOW}docker compose down -v${NC}"
         echo -e "    ${YELLOW}rm -f $STATE_DIR/env_done $STATE_DIR/seed_done${NC}"
         echo -e "    ${YELLOW}./deploy.sh${NC}"
@@ -1777,105 +1777,105 @@ main() {
     fi
     
     # =========================================================================
-    # PASO 5: Backups y Acciones Finales
+    # STEP 5: Backups and final actions
     # =========================================================================
-    print_section "PASO 5/5: CONFIGURACIÓN DE BACKUPS"
+    print_section "STEP 5/5: BACKUP CONFIGURATION"
 
-    # Preparar volumen de backups (pero NO crear backup aún - se hará al final)
-    ensure_backup_volume || log_warn "Backups no configurados (puedes ejecutar ./deploy.sh tras preparar el VG 'backups')"
+    # Prepare the backup volume (but do NOT create a backup yet: that happens at the end)
+    ensure_backup_volume || log_warn "Backups not configured (you can run ./deploy.sh after preparing the 'backups' VG)"
     
-    # Verificar y ofrecer hardening de root
+    # Check root and offer hardening
     check_and_harden_root
     
     if is_step_done "final_done"; then
-        log_info "Acciones finales ya aplicadas"
+        log_info "Final actions already applied"
     else
         mark_step_done "final_done"
     fi
     
     # =========================================================================
-    # RESUMEN Y VERIFICACIÓN
+    # SUMMARY AND VERIFICATION
     # =========================================================================
-    print_section "INSTALACIÓN FINALIZADA"
+    print_section "INSTALLATION FINISHED"
     
     echo ""
-    echo -e "${YELLOW}Por favor, revisa los mensajes anteriores en busca de errores (texto rojo).${NC}"
+    echo -e "${YELLOW}Please review the messages above for errors (red text).${NC}"
     echo ""
-    echo -n -e "Presiona ${BOLD}ENTER${NC} para continuar con la verificación de estado..."
+    echo -n -e "Press ${BOLD}ENTER${NC} to continue with the status check..."
     read -r _ < /dev/tty
     
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}[SERVICIOS] ESTADO DE LOS SERVICIOS${NC}                        ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[SERVICES] SERVICE STATUS${NC}                                  ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     
-    # Asegurar que estamos en el directorio del proyecto
+    # Make sure we are in the project directory
     local PROJECT_DIR="/home/$SECURE_ADMIN/asir-vps-defense"
     cd "$PROJECT_DIR" || {
-        log_error "No se pudo acceder al directorio del proyecto: $PROJECT_DIR"
+        log_error "Could not access the project directory: $PROJECT_DIR"
         exit 1
     }
     
-    log_info "Esperando a que los servicios estén listos (30-60s)..."
+    log_info "Waiting for the services to be ready (30-60s)..."
     
-    # 1. Esperar al Healthcheck de MySQL
+    # 1. Wait for the MySQL healthcheck
     local retries=0
     while [ $retries -lt 30 ]; do
         if [ "$(docker inspect -f '{{.State.Health.Status}}' asir_mysql 2>/dev/null)" = "healthy" ]; then
             break
         fi
-        printf "\r  ${CYAN}⏳${NC} Esperando healthchecks... [%02d/30]" "$retries"
+        printf "\r  ${CYAN}⏳${NC} Waiting for healthchecks... [%02d/30]" "$retries"
         sleep 2
         retries=$((retries + 1))
     done
     echo ""
 
-    # 2. Verificar Puerto del Panel de Administración (8888)
-    log_info "Verificando disponibilidad del Panel de Administración..."
+    # 2. Check the admin panel port (8888)
+    log_info "Checking that the admin panel is available..."
     local port_ready=false
     retries=0
     while [ $retries -lt 20 ]; do
         if curl -s -I http://127.0.0.1:8888 >/dev/null; then
             port_ready=true
-            log_success "Panel de Administración ${GREEN}ONLINE${NC} en puerto 8888"
+            log_success "Admin panel ${GREEN}ONLINE${NC} on port 8888"
             break
         fi
-        printf "\r  ${CYAN}⏳${NC} Esperando respuesta HTTP... [%02d/20]" "$retries"
+        printf "\r  ${CYAN}⏳${NC} Waiting for an HTTP response... [%02d/20]" "$retries"
         sleep 3
         retries=$((retries + 1))
     done
     echo ""
 
     if [ "$port_ready" = false ]; then
-        log_error "El servicio en el puerto 8888 no responde"
+        log_error "The service on port 8888 is not responding"
         echo ""
-        echo -e "  ${CYAN}Puede que los contenedores sigan iniciándose.${NC}"
-        echo -e "  ${CYAN}Revisa los logs con:${NC} ${YELLOW}docker compose logs -f${NC}"
+        echo -e "  ${CYAN}The containers may still be starting.${NC}"
+        echo -e "  ${CYAN}Check the logs with:${NC} ${YELLOW}docker compose logs -f${NC}"
         echo ""
     fi
 
-    # 3. Verificar Cowrie honeypot en puerto 22
-    log_info "Verificando Cowrie honeypot en puerto 22..."
+    # 3. Check the Cowrie honeypot on port 22
+    log_info "Checking the Cowrie honeypot on port 22..."
     sleep 3
     if ss -tlnp 2>/dev/null | grep -q ':22 ' || docker compose ps 2>/dev/null | grep -q 'asir_cowrie.*Up'; then
-        log_success "Cowrie honeypot ${GREEN}ACTIVO${NC} — capturando ataques en puerto 22"
+        log_success "Cowrie honeypot ${GREEN}ACTIVE${NC}: capturing attacks on port 22"
     else
-        log_warn "Cowrie no detectado aún en puerto 22 (puede seguir iniciando)"
-        echo -e "  ${DIM}Verifica con:${NC} ${YELLOW}docker compose ps cowrie${NC}"
+        log_warn "Cowrie not detected on port 22 yet (it may still be starting)"
+        echo -e "  ${DIM}Check with:${NC} ${YELLOW}docker compose ps cowrie${NC}"
         echo -e "  ${DIM}Logs:${NC} ${YELLOW}docker compose logs cowrie${NC}"
     fi
 
     echo ""
-    echo -e "  ${DIM}Estado actual de los contenedores:${NC}"
-    docker compose ps 2>/dev/null || log_warn "No se pudo obtener el estado de los contenedores"
+    echo -e "  ${DIM}Current container status:${NC}"
+    docker compose ps 2>/dev/null || log_warn "Could not get the container status"
     
     # =========================================================================
-    # GESTIÓN DE CREDENCIALES
+    # CREDENTIAL MANAGEMENT
     # =========================================================================
     echo ""
     echo -e "${CYAN}╭─────────────────────────────────────────────────────────────╮${NC}"
-    echo -e "${CYAN}│${NC}  ${BOLD}[CREDENCIALES] GESTIÓN DE CREDENCIALES${NC}                      ${CYAN}│${NC}"
+    echo -e "${CYAN}│${NC}  ${BOLD}[CREDENTIALS] CREDENTIAL MANAGEMENT${NC}                        ${CYAN}│${NC}"
     echo -e "${CYAN}╰─────────────────────────────────────────────────────────────╯${NC}"
     echo ""
     
@@ -1885,104 +1885,104 @@ main() {
 
     if [ -f "$CRED_ENC" ]; then
         while true; do
-            echo -e "  Archivo cifrado: ${BOLD}$CRED_ENC${NC}"
+            echo -e "  Encrypted file: ${BOLD}$CRED_ENC${NC}"
             echo ""
-            echo -e "  ${GREEN}[1]${NC} Mostrar credenciales en pantalla (texto plano temporal)"
-            echo -e "  ${GREEN}[2]${NC} Ver comando para descargar el archivo cifrado"
-            echo -e "  ${GREEN}[3]${NC} Continuar sin mostrar credenciales"
+            echo -e "  ${GREEN}[1]${NC} Show the credentials on screen (temporary plain text)"
+            echo -e "  ${GREEN}[2]${NC} Show the command to download the encrypted file"
+            echo -e "  ${GREEN}[3]${NC} Continue without showing the credentials"
             echo ""
-            echo -n -e "  ${CYAN}Opción (1/2/3):${NC} "
+            echo -n -e "  ${CYAN}Option (1/2/3):${NC} "
             read -r CRED_CHOICE < /dev/tty
 
             case "$CRED_CHOICE" in
                 1)
                     echo ""
-                    echo -e "  ${YELLOW}Credenciales (no se guardan en disco):${NC}"
-                    echo -e "    • Panel Web → usuario: ${GREEN}admin${NC} | contraseña: ${GREEN}$WEB_ADMIN_PASS${NC}"
+                    echo -e "  ${YELLOW}Credentials (not saved to disk):${NC}"
+                    echo -e "    • Web panel → username: ${GREEN}admin${NC} | password: ${GREEN}$WEB_ADMIN_PASS${NC}"
                     echo -e "    • DB root   → ${GREEN}$MYSQL_ROOT_PASS${NC}"
                     echo -e "    • DB app    → ${GREEN}$MYSQL_APP_PASS${NC}"
                     echo ""
                     ;;
                 2)
                     echo ""
-                    echo -e "  ${CYAN}Ejecuta en tu máquina local para descargar:${NC}"
+                    echo -e "  ${CYAN}Run this on your local machine to download it:${NC}"
                     echo ""
-                    echo -e "    ${YELLOW}scp $SECURE_ADMIN@${HOST_HINT:-<dominio_o_ip>}:$CRED_ENC ./admin_credentials.txt.age${NC}"
+                    echo -e "    ${YELLOW}scp $SECURE_ADMIN@${HOST_HINT:-<domain_or_ip>}:$CRED_ENC ./admin_credentials.txt.age${NC}"
                     echo ""
-                    echo -e "  ${CYAN}Luego descifra con tu clave privada:${NC}"
+                    echo -e "  ${CYAN}Then decrypt it with your private key:${NC}"
                     echo ""
-                    echo -e "    ${YELLOW}age -d -i ~/.ssh/<tu_clave> -o admin_credentials.txt ./admin_credentials.txt.age${NC}"
+                    echo -e "    ${YELLOW}age -d -i ~/.ssh/<your_key> -o admin_credentials.txt ./admin_credentials.txt.age${NC}"
                     echo ""
                     ;;
                 3)
-                    log_info "Continuando sin mostrar credenciales"
+                    log_info "Continuing without showing the credentials"
                     break
                     ;;
                 *)
-                    log_warn "Opción no válida. Elige 1, 2 o 3."
+                    log_warn "Invalid option. Choose 1, 2 or 3."
                     ;;
             esac
         done
     elif [ -f "$CRED_PLAIN" ]; then
-        echo -e "${RED}[!] ATENCIÓN: Credenciales sin cifrar${NC}"
-        echo -e "  Se mostrarán ${BOLD}UNA sola vez${NC} y el archivo se eliminará."
+        echo -e "${RED}[!] WARNING: unencrypted credentials${NC}"
+        echo -e "  They will be shown ${BOLD}ONCE only${NC} and the file will be deleted."
         echo ""
         cat "$CRED_PLAIN"
         shred -u "$CRED_PLAIN"
         echo ""
-        log_success "Archivo de credenciales eliminado de forma segura"
+        log_success "Credentials file securely deleted"
     else
-        log_info "El archivo de credenciales ya no está presente"
+        log_info "The credentials file is no longer present"
     fi
 
     unset WEB_ADMIN_PASS
 
     # =========================================================================
-    # INSTRUCCIONES FINALES
+    # FINAL INSTRUCTIONS
     # =========================================================================
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║${NC}  ${BOLD}[OK] INSTRUCCIONES DE CONEXIÓN${NC}                               ${GREEN}║${NC}"
+    echo -e "${GREEN}║${NC}  ${BOLD}[OK] CONNECTION INSTRUCTIONS${NC}                                ${GREEN}║${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "  ${CYAN}1.${NC} Abre una ${BOLD}NUEVA terminal${NC} en tu ordenador local"
+    echo -e "  ${CYAN}1.${NC} Open a ${BOLD}NEW terminal${NC} on your local computer"
     echo ""
-    echo -e "  ${CYAN}2.${NC} Ejecuta el siguiente comando para crear el túnel seguro:"
+    echo -e "  ${CYAN}2.${NC} Run the following command to create the secure tunnel:"
     echo ""
     echo -e "     ${YELLOW}ssh -p $SSH_PORT -L 8888:127.0.0.1:8888 $SECURE_ADMIN@$DOMAIN_NAME${NC}"
     echo ""
-    echo -e "  ${CYAN}3.${NC} Abre tu navegador web y accede a:"
+    echo -e "  ${CYAN}3.${NC} Open your web browser and go to:"
     echo ""
-    echo -e "     Panel de Administración: ${GREEN}http://localhost:8888${NC}"
+    echo -e "     Admin panel: ${GREEN}http://localhost:8888${NC}"
     echo ""
-    echo -e "  ${DIM}Si recibes 'Connection Refused', espera unos segundos a que${NC}"
-    echo -e "  ${DIM}los contenedores terminen de arrancar.${NC}"
+    echo -e "  ${DIM}If you get 'Connection Refused', wait a few seconds for${NC}"
+    echo -e "  ${DIM}the containers to finish starting.${NC}"
     echo ""
 
-    echo -e "${DIM}Log detallado: ${LOG_FILE}${NC}"
+    echo -e "${DIM}Detailed log: ${LOG_FILE}${NC}"
     echo ""
-    echo -n -e "Pulsa ${BOLD}ENTER${NC} para borrar el log y salir (escribe '${YELLOW}No${NC}' para conservarlo): "
+    echo -n -e "Press ${BOLD}ENTER${NC} to delete the log and exit (type '${YELLOW}No${NC}' to keep it): "
     read -r CLEAN_LOG < /dev/tty
     if [[ "$CLEAN_LOG" =~ ^[Nn][Oo]$ ]]; then
-        log_info "Log conservado en $LOG_FILE"
+        log_info "Log kept at $LOG_FILE"
     else
-        rm -f "$LOG_FILE" && log_info "Log eliminado"
+        rm -f "$LOG_FILE" && log_info "Log deleted"
     fi
 
     # =========================================================================
-    # SANITIZACIÓN DEL .env Y BACKUP INICIAL
+    # .env SANITIZATION AND INITIAL BACKUP
     # =========================================================================
-    # Ahora que las credenciales ya se mostraron al usuario, podemos:
-    # Crear el backup inicial (los secrets están en ./secrets/, no en .env)
+    # Now that the credentials have been shown to the user, we can:
+    # Create the initial backup (the secrets are in ./secrets/, not in .env)
     echo ""
-    print_section "BACKUP INICIAL"
+    print_section "INITIAL BACKUP"
     
-    # Crear backup inicial si el volumen está disponible
+    # Create the initial backup if the volume is available
     prompt_initial_backup "$PROJECT_DIR"
 
     echo ""
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}   [OK] INSTALACIÓN COMPLETADA EXITOSAMENTE${NC}"
+    echo -e "${GREEN}   [OK] INSTALLATION COMPLETED SUCCESSFULLY${NC}"
     echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
     echo ""
 }

@@ -34,9 +34,9 @@ scrape_configs:
           job: auth
           __path__: /var/log/host/auth.log*
     pipeline_stages:
-      # Formato systemd journal (Debian 11+/Ubuntu 20.04+):
+      # systemd journal format (Debian 11+/Ubuntu 20.04+):
       #   "2026-03-02T17:11:41.406523+01:00 hostname sshd[1234]: ..."
-      # Formato syslog clásico (sistemas más antiguos):
+      # Classic syslog format (older systems):
       #   "Jan 31 14:23:45 hostname sshd[1234]: ..."
       - regex:
           expression: '^(?P<ts_iso>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2})|^(?P<ts_syslog>\w{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})'
@@ -51,7 +51,7 @@ scrape_configs:
             - 'Jan  2 15:04:05'
           location: Local
 
-  # RHEL/CentOS/AlmaLinux usan /var/log/secure (formato syslog clásico)
+  # RHEL/CentOS/AlmaLinux use /var/log/secure (classic syslog format)
   - job_name: system_auth_secure
     static_configs:
       - targets:
@@ -73,8 +73,8 @@ scrape_configs:
           location: Local
 
   # ===========================================================================
-  # COWRIE SSH HONEYPOT - Log de texto (eventos legibles)
-  # Formato: 2024-01-31T14:23:45+0000 [cowrie.ssh.transport...] mensaje
+  # COWRIE SSH HONEYPOT - text log (human-readable events)
+  # Format: 2024-01-31T14:23:45+0000 [cowrie.ssh.transport...] message
   # ===========================================================================
   - job_name: cowrie
     static_configs:
@@ -84,7 +84,7 @@ scrape_configs:
           job: cowrie
           __path__: /var/log/host/cowrie/cowrie.log*
     pipeline_stages:
-      # Extraer timestamp ISO 8601 del inicio de la línea
+      # Extract the ISO 8601 timestamp from the start of the line
       - regex:
           expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})'
       - timestamp:
@@ -93,8 +93,8 @@ scrape_configs:
           location: UTC
 
   # ===========================================================================
-  # COWRIE SSH HONEYPOT - Log JSON (eventos estructurados para métricas avanzadas)
-  # Cowrie emite eventos JSON en cowrie.json: conexiones, logins, comandos ejecutados
+  # COWRIE SSH HONEYPOT - JSON log (structured events for advanced metrics)
+  # Cowrie writes JSON events to cowrie.json: connections, logins, executed commands
   # ===========================================================================
   - job_name: cowrie_json
     static_configs:
@@ -104,7 +104,7 @@ scrape_configs:
           job: cowrie_json
           __path__: /var/log/host/cowrie/cowrie.json*
     pipeline_stages:
-      # Parsear campos del JSON de Cowrie
+      # Parse the Cowrie JSON fields
       - json:
           expressions:
             ts: timestamp
@@ -112,11 +112,11 @@ scrape_configs:
             src_ip: src_ip
             username: username
             session: session
-      # Usar el timestamp del propio evento Cowrie
+      # Use the timestamp of the Cowrie event itself
       - timestamp:
           source: ts
           format: '2006-01-02T15:04:05.999999'
           location: UTC
-      # Propagar campos como labels para facilitar filtrado en Loki
+      # Promote fields to labels to make filtering in Loki easier
       - labels:
           eventid:

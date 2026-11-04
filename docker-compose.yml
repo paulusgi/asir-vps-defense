@@ -1,19 +1,19 @@
 services:
   # ============================================================================
-  # COWRIE SSH HONEYPOT (Puerto 22 - captura ataques reales)
-  # Real SSH está en puerto alternativo (default: 2929)
+  # COWRIE SSH HONEYPOT (port 22: captures real attacks)
+  # The real SSH runs on an alternative port (default: 2929)
   # ============================================================================
   cowrie:
     image: cowrie/cowrie:2.9.0   # version the evidence was captured with
     container_name: asir_cowrie
     restart: always
     ports:
-      - "0.0.0.0:22:2222"   # Honeypot en puerto 22 del host → 2222 en contenedor
+      - "0.0.0.0:22:2222"   # Honeypot on host port 22 → 2222 in the container
     volumes:
       - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
       - ./cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
-      - /var/log/cowrie:/cowrie/var/log/cowrie   # Promtail lee /var/log/host/cowrie
-      - cowrie_data:/cowrie/var/lib/cowrie         # Sesiones TTY grabadas
+      - /var/log/cowrie:/cowrie/var/log/cowrie   # Promtail reads /var/log/host/cowrie
+      - cowrie_data:/cowrie/var/lib/cowrie         # Recorded TTY sessions
     environment:
       - TZ=Europe/Madrid
     networks:
@@ -22,8 +22,8 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Cowrie no necesita NET_BIND_SERVICE: Docker mapea host:22→container:2222
-    # y el contenedor escucha en el puerto no-privilegiado 2222 internamente
+    # Cowrie does not need NET_BIND_SERVICE: Docker maps host:22→container:2222
+    # and the container listens internally on the unprivileged port 2222
     mem_limit: "256m"
     pids_limit: 64
     healthcheck:
@@ -184,11 +184,11 @@ networks:
 volumes:
   mysql_data:
   loki_data:
-  cowrie_data:    # Sesiones TTY grabadas por el honeypot Cowrie
+  cowrie_data:    # TTY sessions recorded by the Cowrie honeypot
   promtail_positions:
 
 # ==============================================================================
-# SECRETS (archivos con credenciales, permisos 600)
+# SECRETS (credential files, mode 600)
 # ==============================================================================
 secrets:
   mysql_root_password:

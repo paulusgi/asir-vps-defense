@@ -14,7 +14,7 @@ COPY_CMD=()
 WARN_COPY=0
 BACKUP_PROTECT_DEFAULT="${BACKUP_PROTECT_DEFAULT:-ask}"
 
-# Estilo (ANSI con $'...' para compatibilidad con printf)
+# Style (ANSI with $'...' for printf compatibility)
 RED=$'\033[0;31m'
 GREEN=$'\033[0;32m'
 YELLOW=$'\033[1;33m'
@@ -33,7 +33,7 @@ copy_tree() {
         else
             COPY_CMD=(cp -a)
             if [ $WARN_COPY -eq 0 ]; then
-                echo "rsync no disponible; usando cp -a (puede ser más lento)" >&2
+                echo "rsync not available; using cp -a (may be slower)" >&2
                 WARN_COPY=1
             fi
         fi
@@ -46,21 +46,21 @@ ensure_dependencies() {
     command -v rsync >/dev/null 2>&1 || missing+=(rsync)
 
     if [ ${#missing[@]} -eq 0 ]; then
-        echo "Dependencias OK"
+        echo "Dependencies OK"
         return
     fi
 
     if ! command -v apt-get >/dev/null 2>&1; then
-        echo "Faltan dependencias y no está apt-get disponible: ${missing[*]}" >&2
+        echo "Missing dependencies and apt-get is not available: ${missing[*]}" >&2
         return
     fi
 
-    echo "Instalando dependencias: ${missing[*]}" >&2
+    echo "Installing dependencies: ${missing[*]}" >&2
     apt-get update -y >/dev/null 2>&1 || true
     if apt-get install -y "${missing[@]}" >/dev/null 2>&1; then
-        echo "Dependencias instaladas: ${missing[*]}"
+        echo "Dependencies installed: ${missing[*]}"
     else
-        echo "No se pudo instalar: ${missing[*]}" >&2
+        echo "Could not install: ${missing[*]}" >&2
     fi
 }
 
@@ -82,7 +82,7 @@ detect_host_ip() {
 
 pause() {
     echo ""
-    echo -n "  ${DIM}[Pulsa ENTER para continuar]${NC} "
+    echo -n "  ${DIM}[Press ENTER to continue]${NC} "
     read -r _
 }
 
@@ -95,15 +95,15 @@ render_header() {
     echo ""
 
     local mount_icon mount_state mount_color
-    local usage="desconocido"
+    local usage="unknown"
     if mountpoint -q "$BACKUP_ROOT"; then
         mount_icon="●"
-        mount_state="MONTADO"
+        mount_state="MOUNTED"
         mount_color="$GREEN"
-        usage=$(df -h "$BACKUP_ROOT" 2>/dev/null | awk 'NR==2 {print $4" libres / "$2" total"}')
+        usage=$(df -h "$BACKUP_ROOT" 2>/dev/null | awk 'NR==2 {print $4" free / "$2" total"}')
     else
         mount_icon="○"
-        mount_state="DESMONTADO"
+        mount_state="NOT MOUNTED"
         mount_color="$RED"
     fi
 
@@ -118,13 +118,13 @@ render_header() {
         last_date=$(echo "$last_entry" | awk '{print $1}' | xargs -I{} date -d @{} '+%Y-%m-%d %H:%M' 2>/dev/null || echo "?")
     fi
 
-    echo "  ${DIM}┌─ Estado ─────────────────────────────────────────┐${NC}"
-    echo "  ${DIM}│${NC}  ${CYAN}Destino:${NC}  $BACKUP_ROOT"
-    echo "  ${DIM}│${NC}  ${CYAN}Estado:${NC}   ${mount_color}${mount_icon} ${mount_state}${NC}"
-    echo "  ${DIM}│${NC}  ${CYAN}Espacio:${NC}  ${usage}"
-    echo "  ${DIM}│${NC}  ${CYAN}Backups:${NC}  ${WHITE}${total}${NC} total  ${GREEN}${protected}${NC} protegidos  ${YELLOW}keep=${BACKUP_RETENTION}${NC}"
+    echo "  ${DIM}┌─ Status ─────────────────────────────────────────┐${NC}"
+    echo "  ${DIM}│${NC}  ${CYAN}Target:${NC}   $BACKUP_ROOT"
+    echo "  ${DIM}│${NC}  ${CYAN}Mount:${NC}    ${mount_color}${mount_icon} ${mount_state}${NC}"
+    echo "  ${DIM}│${NC}  ${CYAN}Space:${NC}    ${usage}"
+    echo "  ${DIM}│${NC}  ${CYAN}Backups:${NC}  ${WHITE}${total}${NC} total  ${GREEN}${protected}${NC} protected  ${YELLOW}keep=${BACKUP_RETENTION}${NC}"
     if [ -n "$last_name" ]; then
-        echo "  ${DIM}│${NC}  ${CYAN}Último:${NC}   ${last_name}"
+        echo "  ${DIM}│${NC}  ${CYAN}Latest:${NC}   ${last_name}"
         echo "  ${DIM}│${NC}            ${DIM}${last_date}${NC}"
     fi
     echo "  ${DIM}└──────────────────────────────────────────────────┘${NC}"
@@ -133,25 +133,25 @@ render_header() {
 
 usage() {
     cat <<EOF
-Uso: $0 <comando> [opciones]
+Usage: $0 <command> [options]
 
-Comandos:
-  create [--retention N]   Crea un backup completo
-  list                     Lista backups disponibles
-  delete <fichero>         Elimina un backup concreto (.tar.xz)
-  prune [--keep N]         Conserva solo los N últimos (por fecha)
-  download-hint            Muestra cómo descargar un backup vía scp
-  restore <fichero>        Restaura un backup existente
+Commands:
+  create [--retention N]   Create a full backup
+  list                     List the available backups
+  delete <file>            Delete one backup (.tar.xz)
+  prune [--keep N]         Keep only the N most recent (by date)
+  download-hint            Show how to download a backup with scp
+  restore <file>           Restore an existing backup
   schedule <HH:MM> [N] [FREQ] [DAY]
-                           Programa backup automático
-                           FREQ: daily (defecto), weekly, monthly
-                           DAY:  0-6 (día semana) o 1-28 (día mes)
+                           Schedule an automatic backup
+                           FREQ: daily (default), weekly, monthly
+                           DAY:  0-6 (day of week) or 1-28 (day of month)
 
-Contenido de cada backup:
-  - docker-compose.yml, .env (configuración)
-  - nginx/, php/, promtail/, loki/ (servicios)
-  - mysql/init/, src/ (código y SQL)
-  - db/ (datadir MySQL completo)
+Contents of each backup:
+  - docker-compose.yml, .env (configuration)
+  - nginx/, php/, promtail/, loki/ (services)
+  - mysql/init/, src/ (code and SQL)
+  - db/ (full MySQL datadir)
 EOF
 }
 
@@ -162,7 +162,7 @@ log() {
 
 require_root() {
     if [ "$EUID" -ne 0 ]; then
-        echo "Este script debe ejecutarse como root" >&2
+        echo "This script must be run as root" >&2
         exit 1
     fi
 }
@@ -172,10 +172,10 @@ load_env() {
         # shellcheck source=/dev/null
         . "$PROJECT_DIR/.env" 2>/dev/null || true
     fi
-    # Nota: MYSQL_ROOT_PASSWORD ya no es necesario porque usamos copia física
-    # del datadir (stop MySQL → copy → start). Si está redactado o no existe, es correcto.
+    # Note: MYSQL_ROOT_PASSWORD is no longer needed because we take a physical copy
+    # of the datadir (stop MySQL → copy → start). If it is redacted or missing, that is fine.
     if [ -z "${MYSQL_ROOT_PASSWORD:-}" ] || [[ "${MYSQL_ROOT_PASSWORD:-}" == *REDACTED* ]]; then
-        # Password no disponible o sanitizada - OK para backup físico
+        # Password unavailable or sanitized: fine for a physical backup
         MYSQL_ROOT_PASSWORD=""
     fi
 }
@@ -192,14 +192,14 @@ ensure_mount() {
         vgchange -ay "$BACKUP_VG" >/dev/null 2>&1 || true
     fi
 
-    # Intento de montaje automático (loop o disco dedicado deben estar en /etc/fstab)
+    # Try to mount automatically (the loop file or dedicated disk must be in /etc/fstab)
     if mount "$BACKUP_ROOT" >/dev/null 2>&1 || mount -a >/dev/null 2>&1; then
         if mountpoint -q "$BACKUP_ROOT"; then
             return
         fi
     fi
 
-    echo "El punto de montaje $BACKUP_ROOT no está disponible" >&2
+    echo "Mount point $BACKUP_ROOT is not available" >&2
     exit 1
 }
 
@@ -218,17 +218,17 @@ prune_backups() {
     local count_total=${#files[@]}
     local count_cand=${#candidates[@]}
     if [ "$count_cand" -le "$keep" ]; then
-        echo "  ${GREEN}✔${NC} Prune: nada que borrar (total=$count_total, protegidos=$((count_total-count_cand)), keep=$keep)"
+        echo "  ${GREEN}✔${NC} Prune: nothing to delete (total=$count_total, protected=$((count_total-count_cand)), keep=$keep)"
         return
     fi
     local to_delete=$((count_cand-keep))
     local deleted=0
     for fname in "${candidates[@]:0:to_delete}"; do
         rm -f "$BACKUP_ROOT/$fname"
-        log "Backup eliminado por rotación: $fname"
+        log "Backup deleted by rotation: $fname"
         deleted=$((deleted+1))
     done
-    echo "  ${GREEN}✔${NC} Prune completado: ${YELLOW}$deleted eliminados${NC} (protegidos intactos)"
+    echo "  ${GREEN}✔${NC} Prune complete: ${YELLOW}$deleted deleted${NC} (protected backups untouched)"
 }
 
 # Name of the Docker volume mounted at <destination> in <container> (empty if none)
@@ -264,25 +264,25 @@ create_backup() {
 
     mkdir -p "$staging/db"
     if ! "${COMPOSE[@]}" ps >/dev/null 2>&1; then
-        echo -e "${RED}docker compose no está disponible o no hay proyecto en $PROJECT_DIR${NC}" >&2
+        echo -e "${RED}docker compose is not available or there is no project in $PROJECT_DIR${NC}" >&2
         rm -rf "$staging"
         exit 1
     fi
 
-    echo "  ${DIM}Deteniendo MySQL para copia física del datadir...${NC}"
+    echo "  ${DIM}Stopping MySQL for a physical copy of the datadir...${NC}"
     local mysql_stopped=false
     if "${COMPOSE[@]}" stop mysql >/dev/null 2>&1; then
         mysql_stopped=true
     else
-        echo "  ${RED}✗ No se pudo detener MySQL${NC}" >&2
+        echo "  ${RED}✗ Could not stop MySQL${NC}" >&2
         rm -rf "$staging"
         exit 1
     fi
 
-    # Copiar datadir desde el volumen del contenedor detenido
-    echo "  ${DIM}Copiando datadir...${NC}"
+    # Copy the datadir from the stopped container volume
+    echo "  ${DIM}Copying the datadir...${NC}"
     if ! docker run --rm --volumes-from asir_mysql -v "$staging/db":/backup busybox:1.37 sh -c 'cd /var/lib/mysql && cp -a . /backup'; then
-        echo "  ${RED}✗ Fallo al copiar el datadir de MySQL${NC}" >&2
+        echo "  ${RED}✗ Failed to copy the MySQL datadir${NC}" >&2
         rm -rf "$staging"
         if [ "$mysql_stopped" = true ]; then
             "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || true
@@ -290,9 +290,9 @@ create_backup() {
         exit 1
     fi
 
-    echo "  ${DIM}Iniciando MySQL...${NC}"
+    echo "  ${DIM}Starting MySQL...${NC}"
     if [ "$mysql_stopped" = true ]; then
-        "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || echo "MySQL no se pudo iniciar automáticamente" >&2
+        "${COMPOSE[@]}" start mysql >/dev/null 2>&1 || echo "MySQL could not be started automatically" >&2
     fi
 
     # Honeypot data: recorded TTY sessions (Docker volume) and Cowrie logs (host)
@@ -301,7 +301,7 @@ create_backup() {
     if [ -n "$cowrie_volume" ]; then
         mkdir -p "$staging/cowrie/data"
         docker run --rm -v "$cowrie_volume":/data:ro -v "$staging/cowrie/data":/backup busybox:1.37 sh -c 'cp -a /data/. /backup/' \
-            || echo "  ${YELLOW}⚠ No se pudieron copiar las sesiones de Cowrie${NC}" >&2
+            || echo "  ${YELLOW}⚠ Could not copy the Cowrie sessions${NC}" >&2
     fi
     if [ -d /var/log/cowrie ]; then
         mkdir -p "$staging/cowrie"
@@ -325,24 +325,24 @@ EOF
     chown root:root "$archive"
     local archive_size
     archive_size=$(du -h "$archive" | awk '{print $1}')
-    log "Backup creado: $archive ($archive_size)"
+    log "Backup created: $archive ($archive_size)"
     echo ""
-    echo "  ${GREEN}✔ Backup creado:${NC} $archive"
-    echo "  ${DIM}Tamaño: ${archive_size}${NC}"
+    echo "  ${GREEN}✔ Backup created:${NC} $archive"
+    echo "  ${DIM}Size: ${archive_size}${NC}"
     echo ""
 
     if [ -z "$protect_flag" ]; then
         protect_flag="$BACKUP_PROTECT_DEFAULT"
     fi
-    # Si es el primer backup, protégelo siempre
+    # The first backup is always protected
     if [ "$existing_count" -eq 0 ]; then
         protect_flag="yes"
-        echo "  ${YELLOW}🔒 Primer backup detectado: marcado como protegido automáticamente${NC}"
+        echo "  ${YELLOW}🔒 First backup detected: automatically marked as protected${NC}"
     fi
     if [ "$protect_flag" = "ask" ]; then
-        echo -n "  ¿Proteger este backup para excluirlo de prune? (${GREEN}S${NC}/n): "
+        echo -n "  Protect this backup so prune skips it? (${GREEN}Y${NC}/n): "
         read -r ans
-        if [ -z "$ans" ] || [[ "$ans" =~ ^[Ss]$ ]]; then
+        if [ -z "$ans" ] || [[ "$ans" =~ ^[Yy]$ ]]; then
             protect_flag="yes"
         else
             protect_flag="no"
@@ -350,7 +350,7 @@ EOF
     fi
     if [ "$protect_flag" = "yes" ]; then
         touch "$archive.keep"
-        echo "  ${GREEN}🔒 Backup marcado como protegido${NC}"
+        echo "  ${GREEN}🔒 Backup marked as protected${NC}"
     fi
 
     prune_backups "$retention"
@@ -362,19 +362,19 @@ list_backups() {
     output=$(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\t%TY-%Tm-%Td %TH:%TM\t%k\n' | sort)
     if [ -z "$output" ]; then
         echo ""
-        echo "  ${YELLOW}No hay backups disponibles${NC}"
+        echo "  ${YELLOW}No backups available${NC}"
         echo ""
     else
         echo ""
-        echo "  ${BOLD}${CYAN}📋 Lista de backups${NC}"
+        echo "  ${BOLD}${CYAN}📋 Backup list${NC}"
         echo "  ${DIM}────────────────────────────────────────────────────────────────────${NC}"
-        printf "  ${BOLD}%-38s  %-18s  %10s  %s${NC}\n" "Nombre" "Fecha" "Tamaño" "Estado"
+        printf "  ${BOLD}%-38s  %-18s  %10s  %s${NC}\n" "Name" "Date" "Size" "Status"
         echo "  ${DIM}────────────────────────────────────────────────────────────────────${NC}"
         while IFS=$'\t' read -r name date size_kb; do
             local protected_icon="  "
             local protected_color="$NC"
             if [ -f "$BACKUP_ROOT/$name.keep" ]; then
-                protected_icon="🔒 Protegido"
+                protected_icon="🔒 Protected"
                 protected_color="$GREEN"
             fi
             local size_human
@@ -394,29 +394,29 @@ delete_backup() {
     ensure_mount
     local file="$1"
     if [ -z "$file" ]; then
-        echo "  ${RED}✗ Debes indicar el nombre del backup (.tar.xz)${NC}" >&2
+        echo "  ${RED}✗ You must give the backup name (.tar.xz)${NC}" >&2
         exit 1
     fi
     echo ""
-    echo -n "  ${YELLOW}⚠ Confirma eliminación de '$file'${NC} (escribe ${WHITE}YES${NC}): "
+    echo -n "  ${YELLOW}⚠ Confirm deletion of '$file'${NC} (type ${WHITE}YES${NC}): "
     read -r confirm
     if [ "$confirm" != "YES" ]; then
-        echo "  ${DIM}Operación cancelada${NC}"
+        echo "  ${DIM}Operation cancelled${NC}"
         return
     fi
     if [ -f "$BACKUP_ROOT/$file.keep" ]; then
         echo ""
-        echo -n "  ${RED}⚠⚠ ATENCIÓN: backup PROTEGIDO.${NC} Escribe ${WHITE}DELETE${NC} para eliminar: "
+        echo -n "  ${RED}⚠⚠ WARNING: PROTECTED backup.${NC} Type ${WHITE}DELETE${NC} to delete it: "
         read -r confirm2
         if [ "$confirm2" != "DELETE" ]; then
-            echo "  ${DIM}Operación cancelada${NC}"
+            echo "  ${DIM}Operation cancelled${NC}"
             return
         fi
     fi
     if rm -f "$BACKUP_ROOT/$file"; then
-        log "Backup eliminado manualmente: $file"
+        log "Backup deleted manually: $file"
         echo ""
-        echo "  ${GREEN}✔${NC} Backup eliminado: $file"
+        echo "  ${GREEN}✔${NC} Backup deleted: $file"
         rm -f "$BACKUP_ROOT/$file.keep"
     fi
 }
@@ -430,48 +430,48 @@ download_hint() {
     mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort -r)
     if [ ${#files[@]} -eq 0 ]; then
         echo ""
-        echo "  ${YELLOW}⚠ No hay backups disponibles para descargar${NC}"
+        echo "  ${YELLOW}⚠ No backups available to download${NC}"
         return
     fi
 
     echo ""
-    echo "  ${BOLD}${CYAN}📥 Descargar backup via SCP${NC}"
+    echo "  ${BOLD}${CYAN}📥 Download a backup via SCP${NC}"
     echo "  ${DIM}────────────────────────────────────────${NC}"
     echo ""
-    echo "  Selecciona el backup a descargar:"
+    echo "  Select the backup to download:"
     echo ""
     local i=1
     for f in "${files[@]}"; do
         local prot=""
-        [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protegido${NC}"
+        [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protected${NC}"
         local size
         size=$(du -h "$BACKUP_ROOT/$f" 2>/dev/null | awk '{print $1}')
         echo "    ${GREEN}$i${NC})  $f  ${DIM}($size)${NC}$prot"
         i=$((i+1))
     done
     echo ""
-    echo -n "  ${CYAN}➤ Número:${NC} "
+    echo -n "  ${CYAN}➤ Number:${NC} "
     read -r sel
 
     if ! [[ "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt ${#files[@]} ]; then
         echo ""
-        echo "  ${RED}✗ Selección inválida${NC}"
+        echo "  ${RED}✗ Invalid selection${NC}"
         return
     fi
 
     local chosen="${files[$((sel-1))]}"
     echo ""
-    echo "  ${BOLD}${YELLOW}Desde tu máquina local, ejecuta:${NC}"
+    echo "  ${BOLD}${YELLOW}From your local machine, run:${NC}"
     echo ""
-    echo "  ${DIM}1) En el servidor, copia el backup a tu home (los backups solo los lee root):${NC}"
+    echo "  ${DIM}1) On the server, copy the backup to your home directory (only root can read the backups):${NC}"
     echo "  ${WHITE}sudo install -m 600 -o \"\$USER\" ${BACKUP_ROOT}/${chosen} ~/${NC}"
-    echo "  ${DIM}2) En tu máquina local:${NC}"
-    echo "  ${WHITE}scp -P ${port} <usuario>@${host:-<IP>}:~/${chosen} .${NC}"
+    echo "  ${DIM}2) On your local machine:${NC}"
+    echo "  ${WHITE}scp -P ${port} <user>@${host:-<IP>}:~/${chosen} .${NC}"
     echo ""
-    echo "  ${DIM}Notas:${NC}"
-    echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
-    echo "  ${DIM}  • Puerto SSH detectado: ${WHITE}${port}${NC}"
-    echo "  ${DIM}  • IP detectada: ${WHITE}${host:-desconocida}${NC}"
+    echo "  ${DIM}Notes:${NC}"
+    echo "  ${DIM}  • Replace <user> with your SSH admin user${NC}"
+    echo "  ${DIM}  • Detected SSH port: ${WHITE}${port}${NC}"
+    echo "  ${DIM}  • Detected IP: ${WHITE}${host:-unknown}${NC}"
     echo ""
 }
 
@@ -482,21 +482,21 @@ import_backup() {
     port=$(detect_ssh_port)
 
     echo ""
-    echo "  ${BOLD}${CYAN}📤 Importar backup externo${NC}"
+    echo "  ${BOLD}${CYAN}📤 Import an external backup${NC}"
     echo "  ${DIM}────────────────────────────────────────${NC}"
     echo ""
-    echo "  ${WHITE}Para subir un backup desde tu máquina local:${NC}"
+    echo "  ${WHITE}To upload a backup from your local machine:${NC}"
     echo ""
-    echo "  ${WHITE}scp -P ${port} /ruta/local/backup-XXXXXX.tar.xz <usuario>@${host:-<IP>}:~/${NC}"
-    echo "  ${DIM}Después, en el servidor:${NC} ${WHITE}sudo mv ~/backup-XXXXXX.tar.xz ${BACKUP_ROOT}/${NC}"
+    echo "  ${WHITE}scp -P ${port} /local/path/backup-XXXXXX.tar.xz <user>@${host:-<IP>}:~/${NC}"
+    echo "  ${DIM}Then, on the server:${NC} ${WHITE}sudo mv ~/backup-XXXXXX.tar.xz ${BACKUP_ROOT}/${NC}"
     echo ""
-    echo "  ${DIM}Notas:${NC}"
-    echo "  ${DIM}  • Sustituye <usuario> por tu usuario admin SSH${NC}"
-    echo "  ${DIM}  • El archivo debe terminar en .tar.xz${NC}"
-    echo "  ${DIM}  • Puerto SSH detectado: ${WHITE}${port}${NC}"
-    echo "  ${DIM}  • IP detectada: ${WHITE}${host:-desconocida}${NC}"
+    echo "  ${DIM}Notes:${NC}"
+    echo "  ${DIM}  • Replace <user> with your SSH admin user${NC}"
+    echo "  ${DIM}  • The file name must end in .tar.xz${NC}"
+    echo "  ${DIM}  • Detected SSH port: ${WHITE}${port}${NC}"
+    echo "  ${DIM}  • Detected IP: ${WHITE}${host:-unknown}${NC}"
     echo ""
-    echo "  ${YELLOW}Una vez subido, usa la opción 8 para restaurarlo.${NC}"
+    echo "  ${YELLOW}Once it is uploaded, use option 8 to restore it.${NC}"
     echo ""
 }
 
@@ -506,29 +506,29 @@ restore_backup() {
     local archive="$BACKUP_ROOT/$file"
 
     if [ ! -f "$archive" ]; then
-        echo "  ${RED}✗ Backup no encontrado: $file${NC}" >&2
+        echo "  ${RED}✗ Backup not found: $file${NC}" >&2
         return 1
     fi
 
     echo ""
-    echo "  ${BOLD}${YELLOW}⚠ RESTAURACIÓN DE BACKUP${NC}"
+    echo "  ${BOLD}${YELLOW}⚠ BACKUP RESTORE${NC}"
     echo "  ${DIM}────────────────────────────────────────${NC}"
     echo ""
-    echo "  ${WHITE}Contenido del backup:${NC}"
-    echo "    • docker-compose.yml, .env (configuración)"
+    echo "  ${WHITE}Backup contents:${NC}"
+    echo "    • docker-compose.yml, .env (configuration)"
     echo "    • nginx/, php/, promtail/, loki/ (configs)"
-    echo "    • mysql/init/ (scripts SQL)"
-    echo "    • src/ (código del panel)"
-    echo "    • db/ (datadir MySQL completo)"
+    echo "    • mysql/init/ (SQL scripts)"
+    echo "    • src/ (panel code)"
+    echo "    • db/ (full MySQL datadir)"
     echo ""
-    echo "  ${RED}⚠ ADVERTENCIA:${NC}"
-    echo "    Esto SOBRESCRIBIRÁ la configuración actual"
-    echo "    y REEMPLAZARÁ la base de datos MySQL."
+    echo "  ${RED}⚠ WARNING:${NC}"
+    echo "    This will OVERWRITE the current configuration"
+    echo "    and REPLACE the MySQL database."
     echo ""
-    echo -n "  Escribe ${WHITE}RESTORE${NC} para continuar: "
+    echo -n "  Type ${WHITE}RESTORE${NC} to continue: "
     read -r confirm
     if [ "$confirm" != "RESTORE" ]; then
-        echo "  ${DIM}Operación cancelada${NC}"
+        echo "  ${DIM}Operation cancelled${NC}"
         return
     fi
 
@@ -536,9 +536,9 @@ restore_backup() {
     staging=$(mktemp -d)
 
     echo ""
-    echo "  ${DIM}Extrayendo backup...${NC}"
+    echo "  ${DIM}Extracting the backup...${NC}"
     if ! tar -xJf "$archive" -C "$staging"; then
-        echo "  ${RED}✗ Fallo al extraer el backup${NC}" >&2
+        echo "  ${RED}✗ Failed to extract the backup${NC}" >&2
         rm -rf "$staging"
         return 1
     fi
@@ -546,7 +546,7 @@ restore_backup() {
     local restore_ok=true
 
     # Configuration files (same list and layout as create_backup)
-    echo "  ${DIM}Restaurando archivos de configuración...${NC}"
+    echo "  ${DIM}Restoring configuration files...${NC}"
     for path in docker-compose.yml .env secrets nginx php promtail loki mysql/init src; do
         local src="$staging/files/$path"
         # Backups made before v3.0.0 stored mysql/init as files/init
@@ -568,23 +568,23 @@ restore_backup() {
             mysql_volume=$(docker volume ls -q | grep -E '_mysql_data$' | head -1 || true)
         fi
         if [ -z "$mysql_volume" ]; then
-            echo "  ${RED}✗ No se encontró el volumen de MySQL: la base de datos NO se ha restaurado${NC}" >&2
+            echo "  ${RED}✗ MySQL volume not found: the database has NOT been restored${NC}" >&2
             restore_ok=false
         else
-            echo "  ${DIM}Deteniendo MySQL...${NC}"
+            echo "  ${DIM}Stopping MySQL...${NC}"
             "${COMPOSE[@]}" stop mysql >/dev/null 2>&1 || true
             # Whatever happens from here on, MySQL is started again and the staging copy removed
             # shellcheck disable=SC2064  # $staging is expanded now on purpose: it is a local variable
             trap "restart_mysql_quietly; rm -rf -- '$staging'" EXIT
-            echo "  ${DIM}Restaurando datadir de MySQL...${NC}"
+            echo "  ${DIM}Restoring the MySQL datadir...${NC}"
             if ! docker run --rm -v "$mysql_volume":/var/lib/mysql -v "$staging/db":/backup:ro busybox:1.37 \
                     sh -c 'find /var/lib/mysql -mindepth 1 -delete && cp -a /backup/. /var/lib/mysql/'; then
-                echo "  ${RED}✗ Falló la copia del datadir de MySQL${NC}" >&2
+                echo "  ${RED}✗ Copying the MySQL datadir failed${NC}" >&2
                 restore_ok=false
             fi
-            echo "  ${DIM}Iniciando MySQL...${NC}"
+            echo "  ${DIM}Starting MySQL...${NC}"
             if ! "${COMPOSE[@]}" start mysql >/dev/null 2>&1; then
-                echo "  ${RED}✗ MySQL no ha arrancado; revisa: docker compose logs mysql${NC}" >&2
+                echo "  ${RED}✗ MySQL did not start; check: docker compose logs mysql${NC}" >&2
                 restore_ok=false
             fi
             trap - EXIT
@@ -597,7 +597,7 @@ restore_backup() {
         cowrie_volume=$(container_volume asir_cowrie /cowrie/var/lib/cowrie)
         if [ -n "$cowrie_volume" ]; then
             docker run --rm -v "$cowrie_volume":/data -v "$staging/cowrie/data":/backup:ro busybox:1.37 sh -c 'cp -a /backup/. /data/' \
-                || { echo "  ${YELLOW}⚠ No se pudieron restaurar las sesiones de Cowrie${NC}" >&2; restore_ok=false; }
+                || { echo "  ${YELLOW}⚠ Could not restore the Cowrie sessions${NC}" >&2; restore_ok=false; }
         fi
     fi
     if [ -d "$staging/cowrie/logs" ]; then
@@ -609,16 +609,16 @@ restore_backup() {
 
     echo ""
     if [ "$restore_ok" != true ]; then
-        echo "  ${YELLOW}⚠ Restauración incompleta: revisa los mensajes de arriba${NC}"
-        log "Backup restaurado con errores: $file"
+        echo "  ${YELLOW}⚠ Restore incomplete: check the messages above${NC}"
+        log "Backup restored with errors: $file"
         return 1
     fi
-    echo "  ${GREEN}✔ Backup restaurado correctamente${NC}"
+    echo "  ${GREEN}✔ Backup restored${NC}"
     echo ""
-    echo "  ${YELLOW}Nota:${NC} Puede ser necesario reiniciar los servicios:"
+    echo "  ${YELLOW}Note:${NC} the services may need a restart:"
     echo "    ${DIM}cd $PROJECT_DIR && docker compose down && docker compose up -d${NC}"
     echo ""
-    log "Backup restaurado: $file"
+    log "Backup restored: $file"
 }
 
 schedule_backup() {
@@ -628,7 +628,7 @@ schedule_backup() {
     local day_param="${4:-}"
 
     if ! [[ "$time" =~ ^[0-9]{2}:[0-9]{2}$ ]]; then
-        echo "  ${RED}✗ Hora inválida. Usa HH:MM${NC}" >&2
+        echo "  ${RED}✗ Invalid time. Use HH:MM${NC}" >&2
         return 1
     fi
 
@@ -638,47 +638,47 @@ schedule_backup() {
 
     local cron_schedule=""
     local freq_desc=""
-    local day_names=("Domingo" "Lunes" "Martes" "Miércoles" "Jueves" "Viernes" "Sábado")
+    local day_names=("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")
 
     case "$freq" in
         daily)
             cron_schedule="${minute} ${hour} * * *"
-            freq_desc="Diario a las ${hour}:${minute}"
+            freq_desc="Daily at ${hour}:${minute}"
             ;;
         weekly)
             if ! [[ "$day_param" =~ ^[0-6]$ ]]; then
-                echo "  ${RED}✗ Día de semana inválido (0=Dom, 6=Sáb)${NC}" >&2
+                echo "  ${RED}✗ Invalid day of the week (0=Sun, 6=Sat)${NC}" >&2
                 return 1
             fi
             cron_schedule="${minute} ${hour} * * ${day_param}"
-            freq_desc="Semanal: ${day_names[$day_param]} a las ${hour}:${minute}"
+            freq_desc="Weekly: ${day_names[$day_param]} at ${hour}:${minute}"
             ;;
         monthly)
             if ! [[ "$day_param" =~ ^[0-9]+$ ]] || [ "$day_param" -lt 1 ] || [ "$day_param" -gt 28 ]; then
-                echo "  ${RED}✗ Día del mes inválido (1-28)${NC}" >&2
+                echo "  ${RED}✗ Invalid day of the month (1-28)${NC}" >&2
                 return 1
             fi
             cron_schedule="${minute} ${hour} ${day_param} * *"
-            freq_desc="Mensual: día ${day_param} a las ${hour}:${minute}"
+            freq_desc="Monthly: day ${day_param} at ${hour}:${minute}"
             ;;
         *)
-            echo "  ${RED}✗ Frecuencia inválida${NC}" >&2
+            echo "  ${RED}✗ Invalid frequency${NC}" >&2
             return 1
             ;;
     esac
 
     local cron_file="/etc/cron.d/asir-backups"
     cat > "$cron_file" <<EOF
-# Backup automático ASIR VPS Defense
-# Frecuencia: ${freq_desc}
+# ASIR VPS Defense automatic backup
+# Frequency: ${freq_desc}
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ${cron_schedule} root BACKUP_RETENTION=${keep} BACKUP_ROOT=${BACKUP_ROOT} LOG_FILE=${LOG_FILE} bash ${PROJECT_DIR}/backups.sh create --retention ${keep} --no-protect >> ${LOG_FILE} 2>&1
 EOF
     chmod 644 "$cron_file"
-    log "Cron configurado: ${freq_desc} con retención ${keep}"
+    log "Cron configured: ${freq_desc}, retention ${keep}"
     echo ""
-    echo "  ${GREEN}✔${NC} Backup programado: ${WHITE}${freq_desc}${NC}"
-    echo "  ${DIM}Retención: ${keep} backups${NC}"
+    echo "  ${GREEN}✔${NC} Backup scheduled: ${WHITE}${freq_desc}${NC}"
+    echo "  ${DIM}Retention: ${keep} backups${NC}"
 }
 
 show_current_schedule() {
@@ -687,17 +687,17 @@ show_current_schedule() {
         local schedule_line
         schedule_line=$(grep -v '^#' "$cron_file" | grep -v '^PATH=' | grep -v '^$' | head -1)
         if [ -n "$schedule_line" ]; then
-            echo "  ${CYAN}Programación actual:${NC}"
-            # Extraer campos del cron
+            echo "  ${CYAN}Current schedule:${NC}"
+            # Extract the cron fields
             local min hour dom dow
             IFS=' ' read -r min hour dom _ dow _ <<< "$schedule_line"
             if [ "$dom" = "*" ] && [ "$dow" = "*" ]; then
-                echo "    ${WHITE}Diario${NC} a las ${hour}:${min}"
+                echo "    ${WHITE}Daily${NC} at ${hour}:${min}"
             elif [ "$dom" = "*" ] && [ "$dow" != "*" ]; then
-                local day_names=("Domingo" "Lunes" "Martes" "Miércoles" "Jueves" "Viernes" "Sábado")
-                echo "    ${WHITE}Semanal${NC}: ${day_names[$dow]} a las ${hour}:${min}"
+                local day_names=("Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday")
+                echo "    ${WHITE}Weekly${NC}: ${day_names[$dow]} at ${hour}:${min}"
             elif [ "$dom" != "*" ]; then
-                echo "    ${WHITE}Mensual${NC}: día ${dom} a las ${hour}:${min}"
+                echo "    ${WHITE}Monthly${NC}: day ${dom} at ${hour}:${min}"
             fi
             echo ""
         fi
@@ -708,43 +708,43 @@ remove_schedule() {
     local cron_file="/etc/cron.d/asir-backups"
     if [ -f "$cron_file" ]; then
         rm -f "$cron_file"
-        log "Programación de backup eliminada"
-        echo "  ${GREEN}✔${NC} Programación eliminada"
+        log "Backup schedule removed"
+        echo "  ${GREEN}✔${NC} Schedule removed"
     else
-        echo "  ${YELLOW}⚠ No hay programación configurada${NC}"
+        echo "  ${YELLOW}⚠ No schedule configured${NC}"
     fi
 }
 
 menu_loop() {
     while true; do
         render_header
-        echo "  ${BOLD}Acciones disponibles:${NC}"
+        echo "  ${BOLD}Available actions:${NC}"
         echo ""
-        echo "    ${GREEN}1${NC})  📦  Crear backup ahora"
-        echo "    ${GREEN}2${NC})  📋  Listar backups"
-        echo "    ${GREEN}3${NC})  🗑️   Eliminar backup"
-        echo "    ${GREEN}4${NC})  🔒  Proteger/Desproteger backup"
-        echo "    ${GREEN}5${NC})  🧹  Prune (mantener N últimos)"
-        echo "    ${GREEN}6${NC})  ⏰  Programar backups automáticos"
-        echo "    ${GREEN}7${NC})  📥  Descargar backup (scp)"
-        echo "    ${GREEN}8${NC})  🔄  Restaurar backup"
-        echo "    ${GREEN}9${NC})  📤  Importar backup externo"
-        echo "    ${GREEN}i${NC})  ℹ️   Qué contiene un backup"
-        echo "    ${RED}0${NC})  🚪  Salir"
+        echo "    ${GREEN}1${NC})  📦  Create a backup now"
+        echo "    ${GREEN}2${NC})  📋  List backups"
+        echo "    ${GREEN}3${NC})  🗑️   Delete a backup"
+        echo "    ${GREEN}4${NC})  🔒  Protect/unprotect a backup"
+        echo "    ${GREEN}5${NC})  🧹  Prune (keep the N most recent)"
+        echo "    ${GREEN}6${NC})  ⏰  Schedule automatic backups"
+        echo "    ${GREEN}7${NC})  📥  Download a backup (scp)"
+        echo "    ${GREEN}8${NC})  🔄  Restore a backup"
+        echo "    ${GREEN}9${NC})  📤  Import an external backup"
+        echo "    ${GREEN}i${NC})  ℹ️   What a backup contains"
+        echo "    ${RED}0${NC})  🚪  Exit"
         echo ""
-        echo -n "  ${CYAN}➤ Selecciona opción [0-9/i]:${NC} "
+        echo -n "  ${CYAN}➤ Select an option [0-9/i]:${NC} "
         read -r opt
 
         case "$opt" in
             1)
                 echo ""
-                echo "  ${BOLD}${CYAN}📦 Crear backup${NC}"
+                echo "  ${BOLD}${CYAN}📦 Create a backup${NC}"
                 echo ""
-                echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                echo -n "  Retention (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                 echo ""
-                # Manuales: proteger por defecto, pero preguntar si desea cambiar
+                # Manual backups: protect by default, but ask in case the user wants otherwise
                 create_backup "$keep" "ask"
                 pause
                 ;;
@@ -758,29 +758,29 @@ menu_loop() {
                 mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
                 if [ ${#files[@]} -eq 0 ]; then
                     echo ""
-                    echo "  ${YELLOW}⚠ No hay backups para borrar${NC}"
+                    echo "  ${YELLOW}⚠ No backups to delete${NC}"
                     pause
                     continue
                 fi
                 echo ""
-                echo "  ${BOLD}${CYAN}🗑️  Eliminar backup${NC}"
+                echo "  ${BOLD}${CYAN}🗑️  Delete a backup${NC}"
                 echo "  ${DIM}────────────────────────────────────────${NC}"
                 echo ""
                 local i=1
                 for f in "${files[@]}"; do
                     local prot=""
-                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protegido${NC}"
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protected${NC}"
                     echo "    ${GREEN}$i${NC})  $f$prot"
                     i=$((i+1))
                 done
                 echo ""
-                echo -n "  ${CYAN}➤ Número a eliminar:${NC} "
+                echo -n "  ${CYAN}➤ Number to delete:${NC} "
                 read -r sel
                 if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
                     delete_backup "${files[$((sel-1))]}"
                 else
                     echo ""
-                    echo "  ${RED}✗ Selección inválida${NC}"
+                    echo "  ${RED}✗ Invalid selection${NC}"
                 fi
                 pause
                 ;;
@@ -790,46 +790,46 @@ menu_loop() {
                 mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort)
                 if [ ${#files[@]} -eq 0 ]; then
                     echo ""
-                    echo "  ${YELLOW}⚠ No hay backups para gestionar${NC}"
+                    echo "  ${YELLOW}⚠ No backups to manage${NC}"
                     pause
                     continue
                 fi
                 echo ""
-                echo "  ${BOLD}${CYAN}🔐 Proteger/Desproteger backup${NC}"
+                echo "  ${BOLD}${CYAN}🔐 Protect/unprotect a backup${NC}"
                 echo "  ${DIM}────────────────────────────────────────${NC}"
                 echo ""
                 local i=1
                 for f in "${files[@]}"; do
-                    local tag="${DIM}(sin protección)${NC}"
-                    [ -f "$BACKUP_ROOT/$f.keep" ] && tag="${GREEN}🔒 PROTEGIDO${NC}"
+                    local tag="${DIM}(not protected)${NC}"
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && tag="${GREEN}🔒 PROTECTED${NC}"
                     echo "    ${GREEN}$i${NC})  $f  $tag"
                     i=$((i+1))
                 done
                 echo ""
-                echo -n "  ${CYAN}➤ Número para alternar:${NC} "
+                echo -n "  ${CYAN}➤ Number to toggle:${NC} "
                 read -r sel
                 if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
                     local target="${files[$((sel-1))]}"
                     if [ -f "$BACKUP_ROOT/$target.keep" ]; then
                         rm -f "$BACKUP_ROOT/$target.keep"
                         echo ""
-                        echo "  ${YELLOW}🔓 Backup desprotegido:${NC} $target"
+                        echo "  ${YELLOW}🔓 Backup unprotected:${NC} $target"
                     else
                         touch "$BACKUP_ROOT/$target.keep"
                         echo ""
-                        echo "  ${GREEN}🔒 Backup protegido:${NC} $target"
+                        echo "  ${GREEN}🔒 Backup protected:${NC} $target"
                     fi
                 else
                     echo ""
-                    echo "  ${RED}✗ Selección inválida${NC}"
+                    echo "  ${RED}✗ Invalid selection${NC}"
                 fi
                 pause
                 ;;
             5)
                 echo ""
-                echo "  ${BOLD}${CYAN}🧹 Prune (limpieza)${NC}"
+                echo "  ${BOLD}${CYAN}🧹 Prune (clean-up)${NC}"
                 echo ""
-                echo -n "  Mantener cuántos backups (ENTER=${BACKUP_RETENTION}): "
+                echo -n "  How many backups to keep (ENTER=${BACKUP_RETENTION}): "
                 read -r keep
                 [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                 echo ""
@@ -838,53 +838,53 @@ menu_loop() {
                 ;;
             6)
                 echo ""
-                echo "  ${BOLD}${CYAN}⏰ Programar backups automáticos${NC}"
+                echo "  ${BOLD}${CYAN}⏰ Schedule automatic backups${NC}"
                 echo "  ${DIM}────────────────────────────────────────${NC}"
                 echo ""
                 show_current_schedule
-                echo "  Selecciona frecuencia:"
+                echo "  Select the frequency:"
                 echo ""
-                echo "    ${GREEN}1${NC})  Diario"
-                echo "    ${GREEN}2${NC})  Semanal"
-                echo "    ${GREEN}3${NC})  Mensual"
-                echo "    ${RED}0${NC})  Eliminar programación"
+                echo "    ${GREEN}1${NC})  Daily"
+                echo "    ${GREEN}2${NC})  Weekly"
+                echo "    ${GREEN}3${NC})  Monthly"
+                echo "    ${RED}0${NC})  Remove the schedule"
                 echo ""
-                echo -n "  ${CYAN}➤ Opción:${NC} "
+                echo -n "  ${CYAN}➤ Option:${NC} "
                 read -r freq_opt
 
                 case "$freq_opt" in
                     1)
                         echo ""
-                        echo -n "  Hora (HH:MM): "
+                        echo -n "  Time (HH:MM): "
                         read -r hhmm
-                        echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                        echo -n "  Retention (ENTER=${BACKUP_RETENTION}): "
                         read -r keep
                         [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                         schedule_backup "$hhmm" "$keep" "daily"
                         ;;
                     2)
                         echo ""
-                        echo "  Día de la semana:"
-                        echo "    ${GREEN}0${NC}) Domingo    ${GREEN}1${NC}) Lunes      ${GREEN}2${NC}) Martes"
-                        echo "    ${GREEN}3${NC}) Miércoles  ${GREEN}4${NC}) Jueves     ${GREEN}5${NC}) Viernes"
-                        echo "    ${GREEN}6${NC}) Sábado"
+                        echo "  Day of the week:"
+                        echo "    ${GREEN}0${NC}) Sunday     ${GREEN}1${NC}) Monday     ${GREEN}2${NC}) Tuesday"
+                        echo "    ${GREEN}3${NC}) Wednesday  ${GREEN}4${NC}) Thursday   ${GREEN}5${NC}) Friday"
+                        echo "    ${GREEN}6${NC}) Saturday"
                         echo ""
-                        echo -n "  ${CYAN}➤ Día (0-6):${NC} "
+                        echo -n "  ${CYAN}➤ Day (0-6):${NC} "
                         read -r dow
-                        echo -n "  Hora (HH:MM): "
+                        echo -n "  Time (HH:MM): "
                         read -r hhmm
-                        echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                        echo -n "  Retention (ENTER=${BACKUP_RETENTION}): "
                         read -r keep
                         [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                         schedule_backup "$hhmm" "$keep" "weekly" "$dow"
                         ;;
                     3)
                         echo ""
-                        echo -n "  Día del mes (1-28): "
+                        echo -n "  Day of the month (1-28): "
                         read -r dom
-                        echo -n "  Hora (HH:MM): "
+                        echo -n "  Time (HH:MM): "
                         read -r hhmm
-                        echo -n "  Retención (ENTER=${BACKUP_RETENTION}): "
+                        echo -n "  Retention (ENTER=${BACKUP_RETENTION}): "
                         read -r keep
                         [ -z "$keep" ] && keep="$BACKUP_RETENTION"
                         schedule_backup "$hhmm" "$keep" "monthly" "$dom"
@@ -895,7 +895,7 @@ menu_loop() {
                         ;;
                     *)
                         echo ""
-                        echo "  ${RED}✗ Opción inválida${NC}"
+                        echo "  ${RED}✗ Invalid option${NC}"
                         ;;
                 esac
                 pause
@@ -910,31 +910,31 @@ menu_loop() {
                 mapfile -t files < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name "*.tar.xz" -printf '%f\n' | sort -r)
                 if [ ${#files[@]} -eq 0 ]; then
                     echo ""
-                    echo "  ${YELLOW}⚠ No hay backups para restaurar${NC}"
+                    echo "  ${YELLOW}⚠ No backups to restore${NC}"
                     pause
                     continue
                 fi
                 echo ""
-                echo "  ${BOLD}${CYAN}🔄 Restaurar backup${NC}"
+                echo "  ${BOLD}${CYAN}🔄 Restore a backup${NC}"
                 echo "  ${DIM}────────────────────────────────────────${NC}"
                 echo ""
                 local i=1
                 for f in "${files[@]}"; do
                     local prot=""
-                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protegido${NC}"
+                    [ -f "$BACKUP_ROOT/$f.keep" ] && prot=" ${GREEN}🔒 Protected${NC}"
                     local size
                     size=$(du -h "$BACKUP_ROOT/$f" 2>/dev/null | awk '{print $1}')
                     echo "    ${GREEN}$i${NC})  $f  ${DIM}($size)${NC}$prot"
                     i=$((i+1))
                 done
                 echo ""
-                echo -n "  ${CYAN}➤ Número a restaurar:${NC} "
+                echo -n "  ${CYAN}➤ Number to restore:${NC} "
                 read -r sel
                 if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#files[@]} ]; then
                     restore_backup "${files[$((sel-1))]}"
                 else
                     echo ""
-                    echo "  ${RED}✗ Selección inválida${NC}"
+                    echo "  ${RED}✗ Invalid selection${NC}"
                 fi
                 pause
                 ;;
@@ -944,31 +944,31 @@ menu_loop() {
                 ;;
             i|I)
                 echo ""
-                echo "  ${BOLD}${CYAN}ℹ️  Contenido de un backup${NC}"
+                echo "  ${BOLD}${CYAN}ℹ️  Backup contents${NC}"
                 echo "  ${DIM}────────────────────────────────────────${NC}"
                 echo ""
-                echo "  Cada backup (.tar.xz) incluye:"
+                echo "  Each backup (.tar.xz) includes:"
                 echo ""
-                echo "    ${WHITE}Configuración:${NC}"
-                echo "      • docker-compose.yml  ${DIM}(definición de servicios)${NC}"
-                echo "      • .env                ${DIM}(credenciales y variables)${NC}"
+                echo "    ${WHITE}Configuration:${NC}"
+                echo "      • docker-compose.yml  ${DIM}(service definitions)${NC}"
+                echo "      • .env                ${DIM}(credentials and variables)${NC}"
                 echo ""
-                echo "    ${WHITE}Servicios:${NC}"
-                echo "      • nginx/              ${DIM}(configuración web server)${NC}"
-                echo "      • php/                ${DIM}(configuración PHP-FPM)${NC}"
-                echo "      • promtail/           ${DIM}(recolector de logs)${NC}"
-                echo "      • loki/               ${DIM}(almacén de logs)${NC}"
+                echo "    ${WHITE}Services:${NC}"
+                echo "      • nginx/              ${DIM}(web server configuration)${NC}"
+                echo "      • php/                ${DIM}(PHP-FPM configuration)${NC}"
+                echo "      • promtail/           ${DIM}(log collector)${NC}"
+                echo "      • loki/               ${DIM}(log store)${NC}"
                 echo ""
-                echo "    ${WHITE}Datos:${NC}"
-                echo "      • mysql/init/         ${DIM}(scripts SQL iniciales)${NC}"
-                echo "      • src/                ${DIM}(código fuente del panel)${NC}"
-                echo "      • db/                 ${DIM}(datadir MySQL completo)${NC}"
+                echo "    ${WHITE}Data:${NC}"
+                echo "      • mysql/init/         ${DIM}(initial SQL scripts)${NC}"
+                echo "      • src/                ${DIM}(panel source code)${NC}"
+                echo "      • db/                 ${DIM}(full MySQL datadir)${NC}"
                 echo ""
-                echo "    ${WHITE}Metadatos:${NC}"
-                echo "      • meta.json           ${DIM}(fecha, host, retención)${NC}"
+                echo "    ${WHITE}Metadata:${NC}"
+                echo "      • meta.json           ${DIM}(date, host, retention)${NC}"
                 echo ""
-                echo "  ${DIM}El backup permite restaurar completamente el sistema${NC}"
-                echo "  ${DIM}incluyendo usuarios del panel y configuración.${NC}"
+                echo "  ${DIM}A backup can fully restore the system,${NC}"
+                echo "  ${DIM}including the panel users and configuration.${NC}"
                 echo ""
                 pause
                 ;;
@@ -977,7 +977,7 @@ menu_loop() {
                 ;;
             *)
                 echo ""
-                echo "  ${RED}✗ Opción inválida${NC}"
+                echo "  ${RED}✗ Invalid option${NC}"
                 pause
                 ;;
         esac
