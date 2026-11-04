@@ -92,15 +92,15 @@ flowchart LR
 On a fresh server, from a session you can keep open, one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/v3.0.1/deploy.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/paulusgi/asir-vps-defense/v3.0.2/deploy.sh | sudo bash
 ```
 
-The URL points to a release tag, not to a branch, and the installer then fetches the project files of that same release: what runs is exactly the published v3.0.1. Its questions are read from the terminal, so they work through the pipe.
+The URL points to a release tag, not to a branch, and the installer then fetches the project files of that same release: what runs is exactly the published v3.0.2. Its questions are read from the terminal, so they work through the pipe.
 
 To read the script before it runs as root:
 
 ```bash
-git clone --branch v3.0.1 https://github.com/paulusgi/asir-vps-defense.git
+git clone --branch v3.0.2 https://github.com/paulusgi/asir-vps-defense.git
 cd asir-vps-defense
 less deploy.sh
 sudo ./deploy.sh
@@ -115,6 +115,10 @@ The installer is interactive and can be re-run: completed steps are recorded and
 5. prepares the backup volume and offers a first backup.
 
 Before closing the installer's session, **open a new terminal and check that you can log in** with `ssh -p 2929 <admin_user>@<server-ip>`.
+
+### Upgrading
+
+Run the one-command install of the new release on the server, as the admin (`sudo` asks for its password). On a finished installation it does not reinstall anything: it updates the project files (dashboard, configuration, scripts) to that release, keeps the secrets, `.env`, the GeoIP database and every data volume, and restarts only the containers whose files changed. The SSH, Fail2Ban and firewall set-up of the host is left as it is.
 
 ## Using it
 
@@ -147,12 +151,12 @@ Fail2Ban does not exempt your own address: two failed logins on the real SSH, or
 ## How it was validated
 
 - **v2.1.0** ran on a Debian 12 VPS exposed to the Internet between March and April 2026. The [evidence](evidence/README.md) folder documents 31 checks with screenshots and logs: listening ports and firewall, real attacks captured by Cowrie, TTY session replays, a controlled Hydra test, Fail2Ban bans, LogQL queries, the dashboard behind the tunnel, and the full attack → log → Loki and attempt → ban paths. Public IPs of the VPS and of the admin's computer are redacted.
-- **v3.0**, the current version (v3.0.0, and v3.0.1 for the one-command install), came out of a review of that deployment: key-only real SSH, a working honeypot jail, an isolated honeypot network, panel hardening and backup fixes (see the commit history). Its changes were tested on Debian 13 (OpenSSH 10, Fail2Ban 1.1): the generated `sshd_config` with `sshd -t` / `sshd -T` and live logins (key accepted; password, unknown user, root and wrong key rejected; `-L` allowed, `-R` refused); the jails with `fail2ban-client -t` and `fail2ban-regex` on real log lines; the dashboard's log parser, login, CSP and GeoIP lookups; the backup and restore paths; the Promtail health check; and `shellcheck` on both scripts. **v3.0.0 has not yet been re-deployed end to end on a VPS**; the screenshots show v2.1.0.
+- **v3.0**, the current version (v3.0.0; v3.0.1 fixed the one-command install; v3.0.2 added the offline map and in-place upgrades), came out of a review of that deployment: key-only real SSH, a working honeypot jail, an isolated honeypot network, panel hardening and backup fixes (see the commit history). Its changes were tested on Debian 13 (OpenSSH 10, Fail2Ban 1.1): the generated `sshd_config` with `sshd -t` / `sshd -T` and live logins (key accepted; password, unknown user, root and wrong key rejected; `-L` allowed, `-R` refused); the jails with `fail2ban-client -t` and `fail2ban-regex` on real log lines; the dashboard's log parser, login, CSP and GeoIP lookups; the backup and restore paths; the Promtail health check; and `shellcheck` on both scripts. **v3.0.0 has not yet been re-deployed end to end on a VPS**; the screenshots show v2.1.0.
 
 ## Limitations
 
 - Promtail is deprecated in favour of Grafana Alloy; Loki and Promtail stay on the 2.9 line, and Cowrie on 2.9.0, until the upgrade is tested.
-- The dashboard loads Leaflet from jsDelivr (with SRI) and map tiles from CARTO. Geolocation itself is offline (GeoLite2).
+- The dashboard loads Leaflet from jsDelivr (with SRI). Everything else is local: the world map is drawn from a bundled Natural Earth outline, and geolocation uses the GeoLite2 database on the server.
 - Totals come from Loki counts; the "top" tables are built from the most recent events (for example, the last 2,000 honeypot logins).
 - Behind the SSH tunnel every request reaches nginx from the Docker gateway, so the audit log's IP column is not meaningful; the SSH logs say who opened the tunnel. Failed logins are recorded without the user name that was tried.
 - Cowrie's disguise can be fingerprinted: its banner says Ubuntu, its MOTD Debian.
@@ -183,4 +187,4 @@ This project is for learning and defence. A honeypot collects credentials that a
 
 [PolyForm Noncommercial 1.0.0](LICENSE): free to use, study and modify for any non-commercial purpose. Commercial use requires the author's permission.
 
-This product includes GeoLite2 data created by MaxMind, available from <https://www.maxmind.com>.
+This product includes GeoLite2 data created by MaxMind, available from <https://www.maxmind.com>. The world map outline is [Natural Earth](https://www.naturalearthdata.com) data, in the public domain.

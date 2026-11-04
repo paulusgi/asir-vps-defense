@@ -1,6 +1,6 @@
 # Evidence
 
-Screenshots and log excerpts from a deployment of **ASIR VPS Defense v2.1.0** on a Debian 12 VPS exposed to the Internet, captured between 2 March and 6 April 2026. The current version is v3.0.1; what changed since the captures is listed under [Version notes](#version-notes).
+Screenshots and log excerpts from a deployment of **ASIR VPS Defense v2.1.0** on a Debian 12 VPS exposed to the Internet, captured between 2 March and 6 April 2026. The current version is v3.0.2; what changed since the captures is listed under [Version notes](#version-notes).
 
 Each folder covers one part of the system. Its `METHODOLOGY.md` describes every capture in the same way: what it shows, the command used, what it demonstrates, and notes on anything that needs context.
 
@@ -75,5 +75,5 @@ The captures show v2.1.0. These are the changes in v3.0.0 that affect how they s
 4. **Honeypot network.** In v3.0.0 Cowrie runs alone on its own Docker network, `honeypot_net`. In v2.1.0 it shared a network with nginx and PHP-FPM. The captures do not show the networks.
 5. **Panel.** v3.0.0 escapes everything that comes from logs (XSS), sends a nonce-based Content Security Policy and hardens the login. Its UI is in English; the screenshots show the earlier Spanish UI.
 6. **Pinned images.** v3.0.0 pins Cowrie 2.9.0 (the version the captures were taken with), nginx 1.30, PHP 8.3, MySQL 8.4, and Loki and Promtail 2.9.17. The v2.1.0 Compose file used `cowrie/cowrie:latest`, `nginx:alpine`, PHP 8.2, MySQL 8.0, and Loki and Promtail 2.9.2.
-7. **Geolocation.** The cities and continents in the panel's country column (EV-10b, EV-13b) came from a v2.1.0 parsing bug: the panel took the first English name in the GeoLite2 record. v3.0.0 reads the record through the MaxMind PHP extension and shows the country.
+7. **Geolocation.** The cities and continents in the panel's country column (EV-10b, EV-13b) came from a v2.1.0 parsing bug: the panel took the first English name in the GeoLite2 record. v3.0.0 reads the record through the MaxMind PHP extension and shows the country. The map in EV-22 used CARTO tiles, which now require an API key; since v3.0.2 the map is drawn from a bundled Natural Earth outline instead.
 8. **Promtail health check.** The Promtail image has no `wget`, which the v2.1.0 health check called, so Promtail could never be reported healthy (EV-02 catches it still starting). v3.0.0 checks `/ready` with bash instead.
