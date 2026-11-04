@@ -12,7 +12,7 @@ session_start();
 
 // Only scripts carrying this per-request nonce may run: no 'unsafe-inline' for scripts.
 $cspNonce = base64_encode(random_bytes(16));
-header("Content-Security-Policy: default-src 'self'; script-src 'nonce-{$cspNonce}' https://cdn.jsdelivr.net/npm/leaflet@1.9.4/; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/leaflet@1.9.4/; img-src 'self' data: https://cdn.jsdelivr.net https://*.basemaps.cartocdn.com; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+header("Content-Security-Policy: default-src 'self'; script-src 'nonce-{$cspNonce}' https://cdn.jsdelivr.net/npm/leaflet@1.9.4/; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/leaflet@1.9.4/; img-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
 
 require_once __DIR__ . '/includes/security_metrics.php';
 
@@ -306,7 +306,7 @@ function h($value) {
         .seg-btn { background: transparent; border: none; color: var(--text-muted); padding: 5px 14px; font-size: 0.8rem; cursor: pointer; transition: background 0.15s, color 0.15s; }
         .seg-btn:not(:last-child) { border-right: 1px solid var(--panel-border); }
         .seg-btn.active { background: var(--accent); color: #000; font-weight: 600; }
-        #geoMap { height: 380px; width: 100%; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; }
+        #geoMap { height: 380px; width: 100%; border-radius: 14px; border: 1px solid var(--panel-border); overflow: hidden; background: #0b1220; }
         #geoSkeleton { height: 380px; width: 100%; }
         .system-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; width: 100%; }
         .sys-card { background: #0d1627; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden; }
@@ -1225,13 +1225,23 @@ function h($value) {
         };
 
         // Leaflet map
-        const map = L.map('geoMap', { worldCopyJump: true, zoomControl: false, zoomSnap: 0.25, minZoom: 0 });
-        const tiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap, © Carto',
-            maxZoom: 6,
-            minZoom: 0,
-        }).addTo(map);
+        // Countries come from a bundled Natural Earth outline (public domain): no tile server,
+        // API key or third-party request is needed to draw the map.
+        const map = L.map('geoMap', {
+            zoomControl: false, zoomSnap: 0.25, minZoom: 0, maxZoom: 6,
+            maxBounds: [[-85, -200], [85, 200]], maxBoundsViscosity: 1,
+        });
+        map.attributionControl.addAttribution('Natural Earth');
         const geoLayer = L.featureGroup().addTo(map);
+        fetch('assets/world-110m.json')
+            .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+            .then((world) => {
+                L.geoJSON(world, {
+                    interactive: false,
+                    style: { color: '#334155', weight: 0.6, fillColor: '#1e293b', fillOpacity: 1 },
+                }).addTo(map).bringToBack();
+            })
+            .catch(() => { /* the attack markers still work without the outline */ });
         map.setView([20, 0], 0.25);
 
         document.getElementById('refreshSelect').addEventListener('change', (e) => {
