@@ -13,7 +13,7 @@
 ###############################################################################
 #
 # NAME:         deploy.sh
-# VERSION:      3.0.1
+# VERSION:      3.0.2
 # AUTHOR:       Pau Ginesta
 # LICENSE:      PolyForm Noncommercial 1.0.0
 #
@@ -50,7 +50,7 @@ export NEEDRESTART_SUSPEND=1
 # CONSTANTS AND CONFIGURATION
 # =============================================================================
 
-readonly SCRIPT_VERSION="3.0.1"
+readonly SCRIPT_VERSION="3.0.2"
 readonly SCRIPT_NAME="ASIR VPS Defense"
 # BASH_SOURCE is empty when the script arrives through a pipe (curl ... | sudo bash)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" && pwd)"
@@ -208,6 +208,7 @@ collect_public_keys_for_user() {
     declare -A seen
     declare -A file_seen
     PUBLIC_KEY_CANDIDATES=()
+    PUBLIC_KEY_SOURCES=()
     local files=()
     
     # Prefer find so keys injected by the provider are covered; fall back if find is missing
@@ -256,6 +257,7 @@ collect_public_keys_for_user() {
             [[ "$line" =~ $SSH_PUBKEY_REGEX ]] || continue
             if [ -z "${seen[$line]:-}" ]; then
                 PUBLIC_KEY_CANDIDATES+=("$line")
+                PUBLIC_KEY_SOURCES+=("$file")
                 seen[$line]=1
             fi
         done < <(grep -hE "$SSH_PUBKEY_REGEX" "$file" 2>/dev/null || true)
@@ -268,6 +270,7 @@ choose_public_key_for_user() {
     local purpose="$2"
     collect_public_keys_for_user "$user"
     local candidates=("${PUBLIC_KEY_CANDIDATES[@]}")
+    local sources=("${PUBLIC_KEY_SOURCES[@]}")
 
     if [ ${#candidates[@]} -gt 0 ]; then
         echo "" >&2
@@ -280,6 +283,7 @@ choose_public_key_for_user() {
             local key_id
             key_id=$(ssh-keygen -lf /dev/stdin <<<"$key" 2>/dev/null | cut -d' ' -f2-) || key_id="${key:0:50}..."
             echo -e "  ${GREEN}[$i]${NC} ${DIM}${key_type}${NC} ${key_id}" >&2
+            echo -e "      ${DIM}from ${sources[$((i-1))]}${NC}" >&2
             ((i++))
         done
         echo "" >&2
@@ -839,7 +843,7 @@ configure_fail2ban() {
     if [ -f "$SCRIPT_DIR/fail2ban/filter.d/cowrie.conf" ]; then
         cp "$SCRIPT_DIR/fail2ban/filter.d/cowrie.conf" /etc/fail2ban/filter.d/cowrie.conf
     else
-        log_warn "cowrie.conf not found in $SCRIPT_DIR/fail2ban/filter.d/; writing it inline"
+        log_info "Using the built-in Cowrie filter for Fail2Ban"
         cat > /etc/fail2ban/filter.d/cowrie.conf <<'COWRIE_FILTER'
 [Definition]
 failregex = ^.*New connection: <HOST>:\d+ .*$
@@ -1562,6 +1566,98 @@ prompt_initial_backup() {
     fi
 }
 
+# =============================================================================
+# UPGRADE OF A FINISHED INSTALLATION
+# =============================================================================
+
+# Version of the project files installed in <dir>, read from its deploy.sh
+installed_project_version() {
+    grep -oE '^readonly SCRIPT_VERSION="[^"]+"' "$1/deploy.sh" 2>/dev/null | cut -d'"' -f2 || true
+}
+
+# Running a newer installer on a finished installation updates the project files
+# (dashboard, configuration, scripts) to this release and restarts only the containers
+# whose files changed. Secrets, .env, the GeoIP database, the database seed and every
+# data volume are kept; the host configuration (SSH, Fail2Ban, firewall) is not touched.
+upgrade_project_files() {
+    local project_dir="$1"
+    local owner="$2"
+    local installed
+    installed=$(installed_project_version "$project_dir")
+    if [ "$installed" = "$SCRIPT_VERSION" ]; then
+        log_info "Project files already at v${SCRIPT_VERSION}"
+        return 0
+    fi
+
+    print_section "UPGRADE v${installed:-?} -> v${SCRIPT_VERSION}"
+    local source_dir="" cleanup=""
+    if [ -f "$SCRIPT_DIR/deploy.sh" ] && [ -f "$SCRIPT_DIR/docker-compose.yml" ] && [ -f "$SCRIPT_DIR/cowrie/cowrie.cfg" ] \
+       && [ "$(cd "$SCRIPT_DIR" && pwd -P)" != "$(cd "$project_dir" && pwd -P)" ]; then
+        source_dir="$SCRIPT_DIR"
+    else
+        source_dir=$(mktemp -d)
+        cleanup="$source_dir"
+        log_info "Downloading release v${SCRIPT_VERSION}..."
+        if ! git clone --quiet --depth 1 --branch "v${SCRIPT_VERSION}" "$REPO_URL" "$source_dir" 2>>"$LOG_FILE"; then
+            rm -rf "$source_dir"
+            log_error "Release v${SCRIPT_VERSION} could not be downloaded; nothing was changed"
+            return 1
+        fi
+    fi
+
+    # Project files only: everything generated on this server stays as it is.
+    # --checksum: only files whose content changed are copied and listed (fresh clones
+    # have new timestamps, which would otherwise make every file look changed).
+    # Checked explicitly: set -e does not apply inside a function called with ||.
+    local listing changed
+    listing=$(mktemp)
+    if ! rsync -aic --chown="$owner:$owner" \
+        --exclude '.git' --exclude '.env' --exclude 'secrets/' --exclude 'geoip/' \
+        --exclude 'mysql/init/02-seed.sql' \
+        "$source_dir/" "$project_dir/" > "$listing"; then
+        rm -f "$listing"
+        [ -n "$cleanup" ] && rm -rf "$cleanup"
+        log_error "Copying the new project files failed"
+        return 1
+    fi
+    changed=$(awk '$1 ~ /^>f/ {print $2}' "$listing")
+    rm -f "$listing"
+    [ -n "$cleanup" ] && rm -rf "$cleanup"
+    log_success "Project files updated to v${SCRIPT_VERSION} ($(grep -c . <<<"$changed") changed)"
+
+    # A git checkout of the project (one-command installs) is moved to the new tag too
+    if [ -d "$project_dir/.git" ]; then
+        git -c safe.directory="$project_dir" -C "$project_dir" fetch --quiet origin \
+            "refs/tags/v${SCRIPT_VERSION}:refs/tags/v${SCRIPT_VERSION}" 2>>"$LOG_FILE" \
+            && git -c safe.directory="$project_dir" -C "$project_dir" reset --quiet "v${SCRIPT_VERSION}" 2>>"$LOG_FILE" \
+            || log_warn "The project's git metadata was not updated (the files are)"
+    fi
+
+    # Restart only what reads the changed files; Cowrie, MySQL and Loki keep running otherwise
+    local services=()
+    grep -qE '^(src|nginx)/' <<<"$changed" && services+=(admin-nginx php-app)
+    grep -qE '^php/' <<<"$changed" && services+=(php-app)
+    grep -qE '^promtail/' <<<"$changed" && services+=(promtail)
+    grep -qE '^loki/' <<<"$changed" && services+=(loki)
+    grep -qE '^cowrie/' <<<"$changed" && services+=(cowrie)
+
+    cd "$project_dir" || return 1
+    set +e
+    run_quiet "Applying image and Compose changes" docker compose up -d --build
+    local up_status=$?
+    set -e
+    if [ "$up_status" -ne 0 ]; then
+        log_error "docker compose up failed; see $LOG_FILE"
+        return 1
+    fi
+    if [ ${#services[@]} -gt 0 ]; then
+        local unique=()
+        mapfile -t unique < <(printf '%s\n' "${services[@]}" | sort -u)
+        run_quiet "Restarting $(printf '%s ' "${unique[@]}")" docker compose restart "${unique[@]}" || true
+    fi
+    log_success "Upgrade to v${SCRIPT_VERSION} applied"
+}
+
 # ==============================================================================
 # MAIN EXECUTION
 # ==============================================================================
@@ -1597,6 +1693,8 @@ main() {
             else
                 log_warn "Backups not configured (prepare a disk and run again)"
             fi
+            upgrade_project_files "$PROJECT_DIR" "$SECURE_ADMIN" || log_warn "Upgrade not applied (see above)"
+            ensure_backups_script "$PROJECT_DIR" "$SECURE_ADMIN"
             print_section "PERMISSION AUDIT"
             log_info "Complete installation detected. Running the audit and finishing..."
             audit_permissions "$PROJECT_DIR" || log_warn "The permission audit found problems (see above)"
@@ -1925,7 +2023,7 @@ main() {
                     echo ""
                     echo -e "  ${CYAN}Run this on your local machine to download it:${NC}"
                     echo ""
-                    echo -e "    ${YELLOW}scp $SECURE_ADMIN@${HOST_HINT:-<domain_or_ip>}:$CRED_ENC ./admin_credentials.txt.age${NC}"
+                    echo -e "    ${YELLOW}scp -P $SSH_PORT $SECURE_ADMIN@${HOST_HINT:-<domain_or_ip>}:$CRED_ENC ./admin_credentials.txt.age${NC}"
                     echo ""
                     echo -e "  ${CYAN}Then decrypt it with your private key:${NC}"
                     echo ""
