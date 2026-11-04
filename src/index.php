@@ -10,6 +10,10 @@ session_set_cookie_params([
 ]);
 session_start();
 
+// Only scripts carrying this per-request nonce may run: no 'unsafe-inline' for scripts.
+$cspNonce = base64_encode(random_bytes(16));
+header("Content-Security-Policy: default-src 'self'; script-src 'nonce-{$cspNonce}' https://cdn.jsdelivr.net/npm/leaflet@1.9.4/; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net/npm/leaflet@1.9.4/; img-src 'self' data: https://cdn.jsdelivr.net https://*.basemaps.cartocdn.com; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+
 require_once __DIR__ . '/includes/security_metrics.php';
 
 function readSystemMetrics(): array
@@ -142,6 +146,15 @@ if (isset($_GET['action'])) {
 }
 
 if (isset($_GET['logout'])) {
+    $_SESSION = [];
+    $cookie = session_get_cookie_params();
+    setcookie(session_name(), '', [
+        'expires' => time() - 3600,
+        'path' => $cookie['path'],
+        'secure' => $cookie['secure'],
+        'httponly' => true,
+        'samesite' => 'Strict',
+    ]);
     session_destroy();
     header('Location: index.php');
     exit;
@@ -232,7 +245,7 @@ function h($value) {
 <head>
     <meta charset="UTF-8">
     <title>ASIR VPS Defense</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
     <style>
         :root {
             --bg: #0b1220;
@@ -653,8 +666,8 @@ function h($value) {
 
     <div id="toast" class="toast" role="status">No se pudo actualizar la telemetría.</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous" nonce="<?= h($cspNonce) ?>"></script>
+    <script nonce="<?= h($cspNonce) ?>">
         const setText = (id, value) => {
             const el = document.getElementById(id);
             if (el) el.textContent = value;
@@ -708,11 +721,15 @@ function h($value) {
             };
             return icons[type] || icons.activity;
         };
+        // Usernames, IPs and log fields come from attackers: escape them before any innerHTML.
+        const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const clampPage = (page, total, size) => Math.min(page, Math.max(0, Math.ceil(total / size) - 1));
         const highlightUser = (username) => {
-            const u = (username || '').toLowerCase();
-            if (u === 'root') return `<span class="user-critical">⚠️ ${username}</span>`;
-            if (CRITICAL_USERS.includes(u)) return `<span class="user-warning">${username}</span>`;
-            return username;
+            const safe = escapeHtml(username);
+            const u = String(username ?? '').toLowerCase();
+            if (u === 'root') return `<span class="user-critical">⚠️ ${safe}</span>`;
+            if (CRITICAL_USERS.includes(u)) return `<span class="user-warning">${safe}</span>`;
+            return safe;
         };
         const updateTable = (tbodyId, rows, columns = 3, htmlCols = [], userCol = -1) => {
             const tbody = document.getElementById(tbodyId);
@@ -919,6 +936,11 @@ function h($value) {
         };
 
         const renderCowrieTables = () => {
+            cowriePages.ips = clampPage(cowriePages.ips, state.cowrieIps.length, COWRIE_PAGE_SIZE);
+            cowriePages.users = clampPage(cowriePages.users, state.cowrieUsers.length, COWRIE_PAGE_SIZE);
+            cowriePages.events = clampPage(cowriePages.events, state.cowrieEvents.length, COWRIE_PAGE_SIZE);
+            const cmdsTotal = (cowrieCmdsMode === 'recent' ? state.cowrieCmds : state.cowrieCmdsTop).length;
+            cowriePages.cmds = clampPage(cowriePages.cmds, cmdsTotal, COWRIE_PAGE_SIZE);
             const slice = (arr, page) => arr.slice(page * COWRIE_PAGE_SIZE, (page + 1) * COWRIE_PAGE_SIZE);
             updateTable('cowrieIpsBody', slice(state.cowrieIps, cowriePages.ips), 3, [1], -1);
             renderPager('cowrieIpsPager', cowriePages.ips, state.cowrieIps.length, (p) => { cowriePages.ips = p; renderCowrieTables(); });
@@ -967,7 +989,7 @@ function h($value) {
                     weight: 1,
                     fillColor: color,
                     fillOpacity: 0.7,
-                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${p.ip}<br><span style="color:${color}">${p.type}</span>`);
+                }).addTo(geoLayer).bindTooltip(`${flagFromCode(p.code)} ${escapeHtml(p.ip)}<br><span style="color:${color}">${escapeHtml(p.type)}</span>`);
             });
             // Actualizar estadísticas del mapa
             const mapStats = document.getElementById('mapStats');
@@ -1060,6 +1082,9 @@ function h($value) {
         };
 
         const renderTables = () => {
+            banPages.events = clampPage(banPages.events, state.banEvents.length, PAGE_SIZE_BAN);
+            banPages.cowrie = clampPage(banPages.cowrie, state.cowrieBanEvents.length, PAGE_SIZE_BAN);
+            banPages.ips = clampPage(banPages.ips, state.banIps.length, PAGE_SIZE_BAN);
             updateTable('banEventsBody', sliceBan(state.banEvents, banPages.events), 3, [0, 1], -1);
             renderPagerBan('banEventsPager', banPages.events, state.banEvents.length, banPages, 'events');
             updateTable('cowrieBanBody', sliceBan(state.cowrieBanEvents, banPages.cowrie), 3, [0, 1], -1);
@@ -1128,13 +1153,12 @@ function h($value) {
                         const generatedAt = (data.generatedAt ?? Date.now() / 1000) * 1000;
                         setText('lastRefresh', new Date(generatedAt).toLocaleTimeString('es-ES'));
 
-                        const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${name || cc || ''}`.trim();
+                        const flagLabel = (cc, name = '') => `<span class="flag">${flagFromCode(cc)}</span> ${escapeHtml(name || cc || '')}`.trim();
                         state.banIps = ((data.fail2ban && data.fail2ban.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         const allBanEvents = ((data.fail2ban && data.fail2ban.events) || []);
                         state.banIps         = allBanEvents.map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         state.banEvents      = allBanEvents.filter(r => r.jail !== 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
                         state.cowrieBanEvents = allBanEvents.filter(r => r.jail === 'cowrie').map((r) => [formatTs(r.timestamp), flagLabel(r.country_code, r.country), r.ip]);
-                        banPages.events = 0; banPages.cowrie = 0; banPages.ips = 0;
                         state.sshIps = ((data.ssh && data.ssh.topIps) || []).map((r) => [r.ip, flagLabel(r.country_code, r.country), r.count]);
                         state.sshUsers = ((data.ssh && data.ssh.topUsers) || []).map((r) => [r.label, r.count]);
                         state.sshEvents = ((data.ssh && data.ssh.events) || []).map((r) => [formatTs(r.timestamp), r.username, flagLabel(r.country_code, r.ip), badgeResult(r.result)]);
@@ -1153,8 +1177,6 @@ function h($value) {
                             .map((r) => [formatTs(r.timestamp), flagLabel('', r.ip), r.command]);
                         state.cowrieCmdsTop   = ((data.cowrie && data.cowrie.topCommands) || [])
                             .map((r) => [r.label, r.count]);
-                        // Resetear páginas al actualizar datos para que no queden en páginas inexistentes
-                        Object.keys(cowriePages).forEach(k => { cowriePages[k] = 0; });
                         state.geo = (data.geo || []).map((p) => ({ lat: p.lat, lon: p.lon, ip: p.ip, country: p.country, code: p.country_code, type: p.type }));
 
                         renderTables();
