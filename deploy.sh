@@ -50,24 +50,27 @@ export NEEDRESTART_SUSPEND=1
 # CONSTANTES Y CONFIGURACIÓN
 # =============================================================================
 
-readonly SCRIPT_VERSION="2.1.0"
+readonly SCRIPT_VERSION="3.0.0"
 readonly SCRIPT_NAME="ASIR VPS Defense"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 readonly BACKUP_VG_NAME="backups"
 readonly BACKUP_LV_NAME="backups"
 readonly BACKUP_MOUNTPOINT="/srv/backups"
 readonly BACKUP_RETENTION_DEFAULT=7
 readonly BACKUP_LOOP_FILE="/var/lib/asir-vps-defense/backups.img"
 readonly BACKUP_LOOP_DEFAULT_SIZE="20G"
+readonly SSH_PUBKEY_REGEX='^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)[[:space:]]'
 
 # Rutas de estado y logs
-readonly ENV_FILE=".env"
 readonly STATE_DIR="/var/lib/asir-vps-defense"
 readonly LOG_FILE="/var/log/asir-vps-defense/install.log"
 
 # Crear directorios necesarios
 mkdir -p "$STATE_DIR" "$(dirname "$LOG_FILE")"
->"$LOG_FILE"
+touch "$LOG_FILE"
+chmod 600 "$LOG_FILE"
+printf '\n===== %s · %s %s =====\n' "$(date -Is)" "$SCRIPT_NAME" "$SCRIPT_VERSION" >> "$LOG_FILE"
 
 # =============================================================================
 # PALETA DE COLORES ANSI
@@ -78,7 +81,6 @@ readonly GREEN='\033[0;32m'
 readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly CYAN='\033[0;36m'
-readonly MAGENTA='\033[0;35m'
 readonly WHITE='\033[1;37m'
 readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
@@ -105,7 +107,6 @@ handle_error() {
 
 SECURE_ADMIN=""
 CURRENT_REAL_USER=""
-CREDENTIALS_MODE="unknown"
 
 # =============================================================================
 # FUNCIONES DE LOGGING (UX mejorada con iconos Unicode)
@@ -250,12 +251,12 @@ collect_public_keys_for_user() {
     for file in "${unique_files[@]}"; do
         [ -s "$file" ] || continue
         while IFS= read -r line; do
-            [[ "$line" =~ ^ssh-(rsa|ed25519|ecdsa) ]] || continue
+            [[ "$line" =~ $SSH_PUBKEY_REGEX ]] || continue
             if [ -z "${seen[$line]:-}" ]; then
                 PUBLIC_KEY_CANDIDATES+=("$line")
                 seen[$line]=1
             fi
-        done < <(grep -hE '^ssh-(rsa|ed25519|ecdsa)' "$file" 2>/dev/null || cat "$file")
+        done < <(grep -hE "$SSH_PUBKEY_REGEX" "$file" 2>/dev/null || true)
     done
 }
 
@@ -272,10 +273,11 @@ choose_public_key_for_user() {
         echo "" >&2
         local i=1
         for key in "${candidates[@]}"; do
-            # Mostrar tipo de clave y fingerprint parcial para identificación
+            # Fingerprint + comment: the first characters are identical for every key of a type
             local key_type="${key%% *}"
-            local key_short="${key:0:50}..."
-            echo -e "  ${GREEN}[$i]${NC} ${DIM}${key_type}${NC} ${key_short}" >&2
+            local key_id
+            key_id=$(ssh-keygen -lf /dev/stdin <<<"$key" 2>/dev/null | cut -d' ' -f2-) || key_id="${key:0:50}..."
+            echo -e "  ${GREEN}[$i]${NC} ${DIM}${key_type}${NC} ${key_id}" >&2
             ((i++))
         done
         echo "" >&2
@@ -301,7 +303,7 @@ choose_public_key_for_user() {
     echo "" >&2
     echo -n -e "${CYAN}Pega una clave pública SSH (ssh-rsa/ssh-ed25519) o ENTER para omitir: ${NC}" >&2
     read -r manual < /dev/tty
-    if [[ "$manual" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
+    if [[ "$manual" =~ $SSH_PUBKEY_REGEX ]] && ssh-keygen -lf /dev/stdin <<<"$manual" >/dev/null 2>&1; then
         printf '%s' "$manual"
         return 0
     fi
@@ -463,7 +465,7 @@ EOF
 
 detect_context() {
     # Identificar el usuario humano real que ejecuta el script (incluso detrás de sudo)
-    if [ -n "$SUDO_USER" ]; then
+    if [ -n "${SUDO_USER:-}" ]; then
         CURRENT_REAL_USER="$SUDO_USER"
     else
         CURRENT_REAL_USER=$(whoami)
@@ -499,8 +501,8 @@ detect_os() {
             log_error "Sistema Operativo no soportado: ${BOLD}$OS${NC}"
             echo ""
             echo -e "  ${CYAN}Sistemas soportados:${NC}"
-            echo -e "    • Debian 11+"
-            echo -e "    • Ubuntu 20.04+"
+            echo -e "    • Debian 12 / 13"
+            echo -e "    • Ubuntu 22.04 / 24.04"
             echo ""
             exit 1
         fi
@@ -625,7 +627,6 @@ encrypt_credentials_file() {
 
     if [ ! -f "$cred_file" ]; then
         log_warn "Archivo de credenciales no encontrado: ${BOLD}$cred_file${NC}"
-        CREDENTIALS_MODE="missing"
         return 1
     fi
 
@@ -641,14 +642,12 @@ encrypt_credentials_file() {
     if [ -z "$selected_key" ]; then
         log_warn "No se seleccionó clave SSH para cifrado"
         log_info "Las credenciales se mostrarán al final y luego se eliminarán"
-        CREDENTIALS_MODE="plain"
         return 1
     fi
 
     if ! install_age_if_missing; then
         log_warn "Sin herramienta 'age' disponible"
         log_info "Las credenciales se mostrarán al final y luego se eliminarán"
-        CREDENTIALS_MODE="plain"
         return 1
     fi
 
@@ -658,11 +657,9 @@ encrypt_credentials_file() {
         shred -u "$cred_file"
         log_success "Credenciales cifradas en ${BOLD}${cred_file}.age${NC}"
         log_info "Archivo de texto plano eliminado de forma segura"
-        CREDENTIALS_MODE="encrypted"
         return 0
     else
         log_warn "Falló el cifrado con age"
-        CREDENTIALS_MODE="plain"
         return 1
     fi
 }
@@ -978,11 +975,11 @@ create_secure_admin() {
             echo ""
             echo -n -e "  ${CYAN}Pega tu clave pública (ssh-ed25519/ssh-rsa):${NC} "
             read -r manual_key < /dev/tty
-            if [[ "$manual_key" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
+            if [[ "$manual_key" =~ $SSH_PUBKEY_REGEX ]] && ssh-keygen -lf /dev/stdin <<<"$manual_key" >/dev/null 2>&1; then
                 SSH_KEY="$manual_key"
                 break
             else
-                log_warn "Formato no válido. Debe comenzar con ssh-rsa, ssh-ed25519 o ssh-ecdsa"
+                log_warn "Clave no válida. Pega la línea completa de la clave pública (ssh-ed25519, ssh-rsa, ecdsa-sha2-nistp256...)"
             fi
         else
             log_warn "Opción no válida. Elige 1 o 2."
@@ -1103,47 +1100,6 @@ create_docker_secrets() {
     echo -e "  ${DIM}Los passwords se leen de /run/secrets/ dentro de los contenedores${NC}"
 }
 
-sanitize_env() {
-    local env_file="${1:-.env}"
-    if [ ! -f "$env_file" ]; then
-        log_warn "No se encontró $env_file para sanitizar"
-        return 1
-    fi
-
-    log_step "Limpiando credenciales del .env (ya están en Docker Secrets)"
-
-    # Variables sensibles a limpiar
-    local sensitive_vars=(
-        "MYSQL_ROOT_PASSWORD"
-        "MYSQL_PASSWORD"
-    )
-
-    local changed=0
-    for var in "${sensitive_vars[@]}"; do
-        if grep -qE "^${var}=.+" "$env_file" && ! grep -qE "^${var}=<MANAGED_BY_DOCKER_SECRETS>" "$env_file"; then
-            sed -i "s|^${var}=.*|${var}=<MANAGED_BY_DOCKER_SECRETS>|" "$env_file"
-            changed=1
-        fi
-    done
-
-    if [ "$changed" -eq 1 ]; then
-        if ! grep -q "DOCKER SECRETS" "$env_file"; then
-            cat >> "$env_file" <<'SECURITY_EOF'
-
-# ==============================================================================
-# DOCKER SECRETS
-# ==============================================================================
-# Las credenciales de MySQL se gestionan mediante Docker Secrets.
-# Los passwords están en ./secrets/ con permisos 600 (solo root).
-# Los contenedores los leen de /run/secrets/ (más seguro que env vars).
-# ==============================================================================
-SECURITY_EOF
-        fi
-        log_success "Credenciales movidas a Docker Secrets"
-    else
-        log_info ".env ya está configurado para Docker Secrets"
-    fi
-}
 
 # =============================================================================
 # DESCARGA DE BASE DE DATOS GEOLITE2
@@ -1252,7 +1208,6 @@ EOF
     if encrypt_credentials_file "$CRED_FILE"; then
         log_info "Credenciales cifradas. Podrás verlas o descargarlas al final."
     else
-        CREDENTIALS_MODE="plain"
         log_warn "Credenciales sin cifrar; se mostrarán al final y se eliminarán"
     fi
 }
@@ -1360,7 +1315,7 @@ ensure_backup_volume() {
     }
 
     local root_dev
-    root_dev=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//')
+    root_dev=$(lsblk -nlso NAME,TYPE "$(findmnt -n -o SOURCE /)" 2>/dev/null | awk '$2 == "disk" {print "/dev/" $1; exit}' || true)
 
     if mountpoint -q "$BACKUP_MOUNTPOINT"; then
         log_info "Volumen de backups ya montado en ${BOLD}$BACKUP_MOUNTPOINT${NC}"
@@ -1553,19 +1508,18 @@ ensure_backups_script() {
     local dir="$1"
     local owner="${2:-}"
     local path="$dir/backups.sh"
-    if [ -x "$path" ]; then
+    # backups.sh ships with the project; nothing is downloaded to be run as root
+    if [ ! -f "$path" ] && [ -f "$SCRIPT_DIR/backups.sh" ]; then
+        cp "$SCRIPT_DIR/backups.sh" "$path"
+    fi
+    if [ ! -f "$path" ]; then
+        log_warn "backups.sh no está en $dir; las copias de seguridad habrá que gestionarlas a mano"
         return 0
     fi
-    log_info "Descargando backups.sh en $path"
-    if curl -fsSL "https://raw.githubusercontent.com/paulusgi/asir-vps-defense/mainv2/backups.sh" -o "$path"; then
-        chmod 750 "$path"
-        if [ -n "$owner" ]; then
-            chown "$owner:$owner" "$path" 2>/dev/null || true
-        fi
-        return 0
+    chmod 750 "$path"
+    if [ -n "$owner" ]; then
+        chown "$owner:$owner" "$path" 2>/dev/null || true
     fi
-    log_warn "No se pudo obtener backups.sh desde el repositorio; gestiona el backup manualmente"
-    return 1
 }
 
 prompt_initial_backup() {
@@ -1633,7 +1587,7 @@ main() {
             fi
             print_section "AUDITORÍA DE PERMISOS"
             log_info "Instalación completa detectada. Ejecutando auditoría y finalizando..."
-            audit_permissions "$PROJECT_DIR"
+            audit_permissions "$PROJECT_DIR" || log_warn "La auditoría de permisos encontró problemas (ver arriba)"
             exit 0
         fi
     fi
@@ -1838,7 +1792,6 @@ main() {
     else
         mark_step_done "final_done"
     fi
-    history -c
     
     # =========================================================================
     # RESUMEN Y VERIFICACIÓN
@@ -1869,8 +1822,8 @@ main() {
     # 1. Esperar al Healthcheck de MySQL
     local retries=0
     while [ $retries -lt 30 ]; do
-        if docker compose ps 2>/dev/null | grep -q "healthy"; then
-             break
+        if [ "$(docker inspect -f '{{.State.Health.Status}}' asir_mysql 2>/dev/null)" = "healthy" ]; then
+            break
         fi
         printf "\r  ${CYAN}⏳${NC} Esperando healthchecks... [%02d/30]" "$retries"
         sleep 2
@@ -2015,14 +1968,6 @@ main() {
     else
         rm -f "$LOG_FILE" && log_info "Log eliminado"
     fi
-
-    # =========================================================================
-    # LIMPIEZA DE VARIABLES SENSIBLES
-    # =========================================================================
-    echo ""
-    log_info "Limpiando variables sensibles del entorno..."
-    unset MYSQL_ROOT_PASS MYSQL_APP_PASS WEB_ADMIN_PASS WEB_ADMIN_HASH ADMIN_PASS ADMIN_PASS_CONFIRM \
-        SSH_KEY CREDENTIALS_MODE DOMAIN_NAME HOST_HINT SSH_PORT
 
     # =========================================================================
     # SANITIZACIÓN DEL .env Y BACKUP INICIAL
