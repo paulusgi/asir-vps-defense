@@ -495,8 +495,16 @@ function lookupGeoFromMmdb(string $ip, array $fallback): array
 
     $record = null;
 
-    if (function_exists('maxminddb_fetch_assoc')) {
-        $record = @maxminddb_fetch_assoc($path, $ip);
+    // The maxminddb extension installed in php/Dockerfile provides MaxMind\Db\Reader
+    // (there is no maxminddb_fetch_assoc() function, so this path never ran before).
+    if (class_exists('MaxMind\\Db\\Reader')) {
+        static $reader = null;
+        try {
+            $reader ??= new \MaxMind\Db\Reader($path);
+            $record = $reader->get($ip);
+        } catch (Throwable $exception) {
+            $record = null;
+        }
     }
 
     // Fall back to the mmdblookup CLI tool if the PHP module exposes no functions.
@@ -517,7 +525,7 @@ function lookupGeoFromMmdb(string $ip, array $fallback): array
             if (preg_match('/iso_code"?\s*:\s*"?([A-Z]{2})"?/i', $output, $m)) {
                 $code = strtoupper($m[1]);
             }
-            if (preg_match('/names.*?"en"\s*:\s*"([^"]+)"/is', $output, $m)) {
+            if (preg_match('/"country"\s*:\s*\{.*?"names"\s*:\s*\{.*?"en"\s*:\s*"([^"]+)"/is', $output, $m)) {
                 $name = $m[1];
             }
             if (preg_match('/latitude"?\s*:\s*([+-]?[0-9]+\.[0-9]+)/i', $output, $m)) {
